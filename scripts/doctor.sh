@@ -19,6 +19,12 @@ case "${1:-}" in
   *) die "unknown option: $1 (try --json, --quiet, --help)" ;;
 esac
 
+# Inspect exactly the agent directory whose files we read below. Without this,
+# `pi list` would answer for the real ~/.pi/agent while setting PI_CODING_AGENT_DIR
+# (or running under a different HOME) pointed the file checks somewhere else —
+# and a report that mixes two directories is worse than no report.
+export PI_CODING_AGENT_DIR="$PI_DIR"
+
 FINDINGS=()      # human lines, also the JSON body
 PROBLEMS=0
 
@@ -194,9 +200,13 @@ else
     record warn pi-models "missing $(short "$PI_DIR/models.json") — run ./install.sh pi"
   fi
 
-  # credentials: check that every provider needing a file has a non-empty one
+  # credentials: check that every provider needing a file has a non-empty one.
+  # Skipped (not "ok") when there is no models.json — otherwise a machine with no
+  # config would report a clean credential check it never performed.
   missing_secrets=""
+  have_secrets_check=0
   if [ -f "$PI_DIR/models.json" ]; then
+    have_secrets_check=1
     missing_secrets="$(node -e '
       const fs = require("node:fs");
       const path = require("node:path");
@@ -212,10 +222,12 @@ else
       }
     ' "$PI_DIR/models.json" "$PI_DIR/secrets" 2>/dev/null)"
   fi
-  if [ -z "$missing_secrets" ]; then
-    record ok pi-secrets "every provider has a credential file"
-  else
-    record warn pi-secrets "empty/missing key for: $(printf '%s' "$missing_secrets" | tr '\n' ' ')"
+  if [ "$have_secrets_check" = 1 ]; then
+    if [ -z "$missing_secrets" ]; then
+      record ok pi-secrets "every provider has a credential file"
+    else
+      record warn pi-secrets "empty/missing key for: $(printf '%s' "$missing_secrets" | tr '\n' ' ')"
+    fi
   fi
 
   # does the default route actually authenticate? this is the one check that

@@ -254,7 +254,9 @@ EOF
 # ------------------------------------------------------------------ verify --
 install_verify() {
   step "Verification"
-  "$REPO_ROOT/scripts/doctor.sh"
+  # A doctor failure is a report, not an install failure: everything above it
+  # already ran. Swallow the status so the summary below still prints.
+  "$REPO_ROOT/scripts/doctor.sh" || info "doctor reported open items (see above)"
 }
 
 want herdr   && install_herdr
