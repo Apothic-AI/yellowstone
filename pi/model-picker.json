@@ -1,0 +1,25 @@
+{
+	"version": 1,
+	"mru": [
+		"opencode-go/minimax-m3.1-flash",
+		"openrouter/xiaomi/mimo-v2.6-flash:nitro",
+		"subrouter/deepseek-v4.1-flash-1017",
+		"subtoken-gemini/gemini-3.8-flash-high",
+		"huggingface/deepseek-ai/DeepSeek-R1"
+	],
+	"favorites": [
+		"subtoken-gemini/gemini-3.8-flash-high",
+		"subtoken-gemini/gemini-4-argon-high",
+		"relayfast/gpt-6-luna",
+		"relayfast/gpt-6-astra",
+		"relayfast/gpt-6.1-sol",
+		"openrouter/xiaomi/mimo-v2.6-pro",
+		"openrouter/xiaomi/mimo-v2.6-flash:nitro",
+		"inception/mercury-2.5",
+		"subrouter/deepseek-v4.1-flash-1017",
+		"opencode-go/minimax-m3.1-flash"
+	],
+	"sortMode": "smart",
+	"showGroups": true,
+	"lastScope": "favorites"
+}

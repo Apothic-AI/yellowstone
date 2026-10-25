@@ -1,0 +1,73 @@
+# Herdr plugins we run, in install order.
+#
+# `install.sh` reads this file and runs `herdr plugin install <source> [--ref]`
+# for every entry that is not already installed. Keep it authoritative: if a
+# plugin is not in this list, it is not part of the Yellowstone setup.
+#
+# Install syntax (herdr >= 0.9):
+#   herdr plugin install <owner>/<repo>[/subdir...] [--ref REF] [--yes]
+#   herdr plugin link <path>          # local plugin, no copy
+
+# --- orchestration graph -----------------------------------------------------
+# Live DAG of an agent swarm in a split pane. Renders `.dagr/run.json`; the
+# `dagr` binary comes from this plugin (bin/dagr) and is symlinked onto PATH.
+[[plugin]]
+id        = "herdr-dagr"
+source    = "aemrebarut/herdr-dagr"
+ref       = "52991f9a95a2b8c11518ed66f9530d938c1ba254"
+why       = "dagr view pane + bin/dagr, the validator used by the dagr-producer skill"
+keybind   = "prefix+d -> herdr-dagr.open-dagr"
+
+# --- the human-in-the-loop queue --------------------------------------------
+# One queue for everything agents need from a human. Local plugin: point this at
+# a checkout of Apothic-AI/unblock (upstream: aneym/unblock) and it links.
+[[plugin]]
+id        = "unblock"
+source    = "local"
+repo      = "Apothic-AI/unblock"
+upstream  = "aneym/unblock"
+link_path = "~/Code/apothic-monorepo-workspace/tooling/unblock"
+why       = "structured ask queue: blockers, decisions, consent, spend, messages"
+keybind   = "prefix+u -> unblock.open"
+
+# --- sidebar: Jujutsu state --------------------------------------------------
+# Feeds the $jj_bookmark / $jj_status sidebar rows in config.toml.
+[[plugin]]
+id        = "mroth.jj-status"
+source    = "mroth/herdr-jj-status"
+ref       = "40588ef743e1dd6a252b2e39765616584fd2e39e"
+why       = "jj bookmark + working-copy state in the spaces sidebar"
+requires  = "jj on PATH (only needed for jj repos)"
+
+# --- sidebar: per-tab project context ---------------------------------------
+[[plugin]]
+id        = "herdr-context"
+source    = "Anthodev/herdr-context"
+ref       = "fc081452b5cedb6c7c12ab36d26fa1fb4791efb0"
+why       = "per-tab project context dock next to the terminal"
+build     = "cargo build --release --locked (plugin build step)"
+
+# --- session handoff between agents -----------------------------------------
+[[plugin]]
+id        = "wilbeibi.catchup"
+source    = "wilbeibi/herdr-catchup"
+ref       = "51f690964aa491447baa39c732c5333ed0de315a"
+why       = "summarize / fork / hand a pane's session to another agent"
+
+# --- themes ------------------------------------------------------------------
+[[plugin]]
+id        = "herdr-theme-picker"
+source    = "qintmb/herdr-theme-picker"
+ref       = "36d117d55dca91013e0519c5778397f9764428b4"
+why       = "pick any terminalcolors.com theme; writes [theme.custom]"
+note       = "the keybind moved to prefix+t in the plugin manifest; our config.toml does not rebind it"
+
+# --- jj workspace switcher ---------------------------------------------------
+# The plugin lives in a subdirectory of the jj-waltz repo. Optional: it is a
+# workspace switcher first and a Herdr plugin second.
+[[plugin]]
+id        = "ezracerpac.jj-waltz"
+source    = "EzraCerpac/jj-waltz/plugins/herdr"
+ref       = "bafa126d73eda17d37b634530fc7ca58d9fc1abd"
+why       = "jj workspace switching bound into Herdr"
+optional  = true

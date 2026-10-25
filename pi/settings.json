@@ -1,0 +1,76 @@
+{
+  "$schema": "https://pi.dev/schemas/settings.schema.json",
+  "defaultProvider": "relayfast",
+  "defaultModel": "gpt-6-sol",
+  "modelThinkingLevels": {
+    "relayfast/gpt-6-sol": "high",
+    "relayfast/gpt-6.1-sol": "medium",
+    "relayfast/gpt-6-luna": "max",
+    "relayfast/deepseek-v4.1-flash": "max",
+    "relayfast/gemini-3.8-flash": "high",
+    "relayfast/kimi-k3": "high",
+    "subrouter/deepseek-v4.1-flash-1017": "max",
+    "openrouter/xiaomi/mimo-v2.6-flash:nitro": "high",
+    "openrouter/xiaomi/mimo-v2.6-pro": "high",
+    "opencode/minimax-m3.1-flash-free": "max",
+    "opencode-go/minimax-m3.1-flash": "max",
+    "subtoken-gemini/gemini-3.8-flash-high": "high",
+    "subtoken-gemini/gemini-4-argon-high": "high"
+  },
+  "lastChangelogVersion": "1.4.0",
+  "theme": "neon-noir",
+  "defaultTools": [
+    "+codemode"
+  ],
+  "packages": [
+    "npm:pi-codex-goal",
+    "npm:@howaboua/pi-subdir-agents",
+    "git:github.com/Apothic-AI/bizzy",
+    {
+      "source": "npm:@99percentpeople/pi-thinking-fold",
+      "extensions": [
+        "-index.min.js"
+      ]
+    },
+    "npm:pi-web-access",
+    "npm:pi-auto-compact",
+    "npm:@spences10/pi-themes",
+    "npm:@arhen/pi-core-todo",
+    "npm:pi-nested-skills",
+    "npm:@narumitw/pi-btw",
+    "git:github.com/bitnom/pi-cache-optimizer",
+    "@YELLOWSTONE_REPO@/plugins/pi-pretty-tui",
+    "npm:pi-copy-message",
+    "npm:@timmyjl12/pi-model-picker"
+  ],
+  "enabledModels": [
+    "openrouter/xiaomi/mimo-v2.6-flash:nitro",
+    "openrouter/xiaomi/mimo-v2.6-flash",
+    "openrouter/xiaomi/mimo-v2.6-pro",
+    "openrouter/xiaomi/mimo-v2.5-pro",
+    "opencode/*",
+    "opencode-go/minimax-m3.1-flash",
+    "relayfast/*",
+    "subrouter/*",
+    "subtoken-gemini/*",
+    "inception/*"
+  ],
+  "enableSkillCommands": false,
+  "autocompleteMaxVisible": 10,
+  "terminal": {
+    "clearOnShrink": true,
+    "showTerminalProgress": true
+  },
+  "steeringMode": "all",
+  "transport": "auto",
+  "retry": {
+    "enabled": true,
+    "maxRetries": 6,
+    "baseDelayMs": 2000,
+    "maxAgentDelayMs": 60000
+  },
+  "collapseChangelog": true,
+  "enableInstallTelemetry": false,
+  "defaultProjectTrust": "always",
+  "defaultThinkingLevel": "max"
+}

@@ -1,0 +1,7 @@
+{
+  "browserCookies": {
+    "browser": "chrome",
+    "profile": "Default"
+  },
+  "allowBrowserCookies": true
+}

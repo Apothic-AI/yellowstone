@@ -1,0 +1,30 @@
+# Nothing in this repository is generated, and nothing in it is secret.
+#
+# These entries exist to catch the two ways that could accidentally change: a
+# credential file created in the wrong place, or an editor/tool dropping state
+# into a directory that gets committed.
+
+# Never commit a real credential file, wherever someone puts one.
+secrets/
+*.secret
+*.key
+!herdr/scripts/herdr-agy.sh
+
+# Installer output and backups, in case someone runs the scripts from the repo.
+*.bak-yellowstone-*
+*.tmp
+
+# Editor and OS noise
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# Node, if anyone runs a tool here
+node_modules/
+npm-debug.log*
+
+# Vendored pi-pretty-tui builds/typechecks locally if someone tries it
+plugins/pi-pretty-tui/dist/
+plugins/pi-pretty-tui/*.tsbuildinfo

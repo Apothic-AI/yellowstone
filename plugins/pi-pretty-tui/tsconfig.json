@@ -1,0 +1,18 @@
+{
+  // The npm tarball ships `typecheck`/`test` scripts but no tsconfig, so `npm run typecheck`
+  // failed in this vendored copy before it was added. The flags mirror what the extension
+  // actually needs: Pi loads the TypeScript sources directly through jiti, local imports
+  // use ESM `.js` specifiers that resolve to sibling `.ts` files, and @earendil-works/*
+  // resolve through Pi's VIRTUAL_MODULES at runtime.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "types": ["node"]
+  },
+  "include": ["extensions/**/*.ts"]
+}

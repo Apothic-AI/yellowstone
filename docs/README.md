@@ -1,0 +1,31 @@
+# Yellowstone docs
+
+Longer-form notes that would bloat the README or the skill. The install,
+configure, upgrade and repair instructions live in
+[`yellowstone-skill/SKILL.md`](../yellowstone-skill/SKILL.md) — read that first.
+
+| Document | Read it when |
+|---|---|
+| [`forks.md`](forks.md) | you want to know why a component is a fork or vendored, and whether it still needs to be |
+| [`design.md`](design.md) | you are changing the setup and want the reasoning behind the current shape |
+| [`operations.md`](operations.md) | you are running this on a machine day to day: routines, failure modes, what to check |
+
+## The one-paragraph version
+
+herdr manages terminals and reports agent state; pi is the agent. This repo pins
+the herdr config, the herdr plugin set, pi's settings and model routing, the
+hand-written and forked extensions, and the skills both harnesses read. It
+contains no credentials — pi reads keys from `~/.pi/agent/secrets/` through
+shell commands stored in `models.json`. `install.sh` reconciles a machine,
+`scripts/doctor.sh` reports drift, `scripts/upgrade.sh` moves components forward
+in dependency order.
+
+## What is not documented here
+
+- **herdr itself.** `herdr --help`, `herdr --skill`, and
+  <https://herdr.dev/docs/> are the authority, and the binary's own skill file
+  tracks the version you actually have.
+- **pi itself.** The package ships `docs/` beside the installed binary — start
+  at `configuration.md`, `models.md`, `packages.md`, `extensions.md`.
+- **Each plugin's own behaviour.** `herdr/plugins.toml` records why a plugin is
+  installed and what it needs; the plugin's upstream README records the rest.
