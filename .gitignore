@@ -14,6 +14,11 @@ secrets/
 *.bak-yellowstone-*
 *.tmp
 
+# A generated inventory of THIS machine's skills and themes. Useful locally,
+# never ship it: it lists skills for private projects and names absolute paths.
+# Regenerate with the description in docs/testing.md.
+agent-skills.md
+
 # Editor and OS noise
 .DS_Store
 Thumbs.db

@@ -149,6 +149,15 @@ suite_smoke() {
            "$REPO/overlord/" 2>/dev/null | wc -l)"
   check_eq "no operator project names in the shipped overlord docs" 0 "$leaks"
 
+  # mycord: five skills, one repository, resolved from a checkout at the repo
+  # root rather than npx (which finds nothing there).
+  local mycord_rows
+  mycord_rows="$(grep -vE '^[[:space:]]*(#|$)' "$REPO/skills/skills.tsv" | awk -F'\t' '$3 == "Apothic-AI/mycord"')"
+  check_eq "skills.tsv declares the 5 mycord skills" 5 "$(printf '%s\n' "$mycord_rows" | grep -c .)"
+  local mycord_bad
+  mycord_bad="$(printf '%s\n' "$mycord_rows" | awk -F'\t' '$2 != "repo"' | grep -c .)"
+  check_eq "every mycord skill is a repo-kind skill" 0 "$mycord_bad"
+
   # Plugin manifest.
   local n
   n="$(node "$REPO/scripts/plugins-manifest.js" ids "$REPO/herdr/plugins.toml" 2>/dev/null | wc -l)"
@@ -228,7 +237,16 @@ suite_install() {
   # asserts the directory side and that the script reports the workspace gap.
   check "overlord AGENTS.md installed" test -f "$home/.overlord/AGENTS.md"
   check "overlord README.md installed" test -f "$home/.overlord/README.md"
-  check_contains "overlord reports workspace status" "$out" "Overlord"
+  check_contains "overlord stage ran" "$out" "Overlord"
+  check_contains "overlord reports the tab/space situation" "$out" "workspace"
+  # The two agent tabs are part of the contract; without herdr the script must
+  # say so rather than pretend success.
+  # check_contains is glob-based, so alternation needs two separate assertions.
+  # In the container herdr has no running server, so the tab stage legitimately
+  # reports a gap; either it names the tabs or it explains why it could not.
+  tab_line="$(printf '%s\n' "$out" | grep -iE 'overlord:|comms:|herdr not installed|no herdr server|could not create tab' | head -1)"
+  if [ -n "$tab_line" ]; then ok "overlord tab stage reports: $(printf '%s' "$tab_line" | sed 's/^ *//')"
+  else bad "overlord tab stage said nothing about tabs"; fi
 
   # doctor must run to completion and be honest about the unconfigured key.
   local dout
@@ -380,6 +398,44 @@ suite_failures() {
   check_contains "skills-sync prints the clone command" "$out" "gh repo clone"
 }
 
+# ------------------------------------------------------------- resolvers ----
+suite_resolvers() {
+  suite resolvers
+
+  # skills-sync must resolve a repo whose skills sit at the root (mycord's
+  # layout) as well as one that uses skills/<id>/ (unblock's layout).
+  local home; home="$(new_home resolvers)"
+  local code="$home/Code"
+  mkdir -p "$code/skills-repo/skills/alpha-skill" "$code/root-repo/beta-skill"
+  printf -- '---\nname: alpha-skill\ndescription: a\n---\n' > "$code/skills-repo/skills/alpha-skill/SKILL.md"
+  printf -- '---\nname: beta-skill\ndescription: b\n---\n' > "$code/root-repo/beta-skill/SKILL.md"
+  git -C "$code/skills-repo" init -q; git -C "$code/skills-repo" remote add origin https://github.com/example/skills-repo
+  git -C "$code/root-repo" init -q;    git -C "$code/root-repo" remote add origin https://github.com/example/root-repo
+
+  # A throwaway manifest exercising both layouts.
+  local mf="$home/manifest.tsv"
+  printf 'alpha-skill\trepo\texample/skills-repo\tskills/ layout\n' > "$mf"
+  printf 'beta-skill\trepo\texample/root-repo\troot layout\n' >> "$mf"
+
+  local out
+  # Run the real script from the real repo, pointed at a throwaway manifest —
+  # copying it elsewhere would break its `lib.sh` sibling lookup.
+  out="$(in_home "$home" env SKILLS_MANIFEST="$mf" bash "$REPO/scripts/skills-sync.sh" install 2>&1)"
+
+  check_contains "resolves skills/<id>/ layout" "$out" "alpha-skill: using checkout"
+  check_contains "resolves root-level skill layout" "$out" "beta-skill: using checkout"
+  check "linked the skills/ layout skill" test -L "$home/.agents/skills/alpha-skill"
+  check "linked the root layout skill" test -L "$home/.agents/skills/beta-skill"
+
+  # And the negative: a checkout that has neither must not be silently linked.
+  local home2; home2="$(new_home resolvers2)"
+  mkdir -p "$home2/Code/empty-repo"; git -C "$home2/Code/empty-repo" init -q
+  git -C "$home2/Code/empty-repo" remote add origin https://github.com/example/empty-repo
+  printf 'gamma-skill\trepo\texample/empty-repo\tnothing there\n' > "$home2/m.tsv"
+  out="$(in_home "$home2" env SKILLS_MANIFEST="$home2/m.tsv" bash "$REPO/scripts/skills-sync.sh" install 2>&1)"
+  check_contains "warns when a checkout lacks the skill" "$out" "neither"
+}
+
 # ------------------------------------------------------------------ main ----
 main() {
   printf 'yellowstone test suite\nrepo: %s\nnode: %s\nherdr: %s\npi: %s\n' \
@@ -387,6 +443,17 @@ main() {
 
   # Prefer a mounted work tree when present.
   if [ -d /repo ] && [ -n "$(ls -A /repo 2>/dev/null)" ]; then REPO=/repo; fi
+
+  # The image bakes the repo in, so a stale image silently tests old code. If the
+  # caller mounted a work tree, it must match the baked copy; if the baked copy is
+  # being tested, say when it was built so a stale run is obvious.
+  if [ -f /repo/.git/HEAD ] && [ -d /worktree ]; then
+    if ! diff -rq --exclude=.git /repo /worktree >/dev/null 2>&1; then
+      printf '%sWARNING: /repo differs from the mounted work tree — rebuild the image%s\n' "$YELLOW" "$RESET"
+      printf '  docker build -f test/Dockerfile -t yellowstone-test .\n'
+    fi
+  fi
+  printf '%srepo snapshot: %s%s\n' "$DIM" "$(find "$REPO" -name '*.sh' -newer /repo/install.sh 2>/dev/null | head -1 || echo current)" "$RESET"
 
   mkdir -p "$SANDBOX"
 
@@ -396,7 +463,8 @@ main() {
     idempotent) suite_idempotent ;;
     partial)    suite_partial ;;
     failures)   suite_failures ;;
-    all)        suite_smoke; suite_install; suite_idempotent; suite_partial; suite_failures ;;
+    resolvers)  suite_resolvers ;;
+    all)        suite_smoke; suite_install; suite_idempotent; suite_partial; suite_failures; suite_resolvers ;;
     *) printf 'unknown suite: %s\n' "$SUITE" >&2; exit 2 ;;
   esac
 

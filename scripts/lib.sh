@@ -64,6 +64,17 @@ short() { printf '%s' "${1/#$HOME/~}"; }
 
 have() { command -v -- "$1" >/dev/null 2>&1; }
 
+# Is a herdr *server* reachable, not just the client binary?
+#
+# `herdr` installs its client regardless of whether a server is running, and
+# every workspace/tab/pane call then exits 1 with a server_not_running error on
+# stderr. A script that only checks `have herdr` proceeds, gets empty output, and
+# prints a heading followed by nothing — a silent no-op that reads like success.
+needs_herdr_server() {
+  have herdr || return 1
+  herdr workspace list >/dev/null 2>&1
+}
+
 version_of() { "$1" --version 2>/dev/null | head -n1 || true; }
 
 require() {

@@ -90,7 +90,7 @@ Stages, in the order they run:
 | `herdr` | writes `config.toml`, installs the pi integration, installs/links the plugins from `herdr/plugins.toml`, symlinks the herdr skill, installs `herdr-agy.sh` |
 | `pi` | merges owned keys into `settings.json`, merges providers into `models.json`, installs hand-written extensions, reconciles packages |
 | `skills` | installs every agent skill from the tree that owns it (`skills/skills.tsv`) |
-| `overlord` | creates `~/.overlord` and the `overlord` herdr workspace if absent |
+| `overlord` | creates `~/.overlord`, the `overlord` workspace, and its `overlord` + `comms` pi tabs |
 | `secrets` | creates empty credential files for every provider `models.json` references |
 | `verify` | runs `scripts/doctor.sh` |
 
@@ -224,7 +224,8 @@ Judge the values by what they fix:
 - `"defaultProjectTrust": "always"` — appropriate for a personal machine; set it
   to `"ask"` if you open untrusted repositories.
 - `"enableInstallTelemetry": false` — no install pings.
-- `"theme": "neon-noir"` comes from the `@spences10/pi-themes` package.
+- `"theme": "neon-noir"` comes from the `@spences10/pi-themes` package (11
+  themes under `~/.pi/agent/npm/node_modules/@spences10/pi-themes/themes/`).
 
 Packages are declared, not copied, and nothing points into this repository.
 Two entries are our forks:
@@ -239,6 +240,24 @@ fork's code is reviewed and versioned where it lives. A machine that already has
 either package from a different source is left alone: the merge compares package
 names, not source strings, so you never end up with two copies of an extension
 that claims a tool name.
+
+#### Themes
+
+Two independent theme systems, one per surface:
+
+| Surface | Set in | Choose with |
+|---|---|---|
+| herdr | `[theme]` + `[theme.custom]` in `herdr/config.toml` | `prefix+t` (theme picker plugin), or `herdr --default-config` for the built-in list |
+| pi | `"theme"` in `pi/settings.json` | `/theme` in pi, or list the package's `themes/*.json` |
+
+`herdr-theme-picker` does **not** change `theme.name` — it rewrites the
+`[theme.custom]` block. So a config can say `name = "tokyo-night"` while every
+rendered colour comes from the custom palette, which is exactly what this repo
+ships: `tokyo-night` as the base, overridden by a neon palette.
+
+Do not ship a static snapshot of the available themes. herdr's list comes from
+the binary and pi's from an installed npm package, so a pinned catalogue goes
+stale the moment either updates; enumerate them at run time instead.
 
 ### pi — `pi/models.json`
 
@@ -300,6 +319,74 @@ script exists rather than two commands in the install guide.
 The script never moves an existing space's cwd. If the operator has pointed
 `overlord` somewhere deliberate, changing it is a layout change outside what an
 installer should do.
+
+#### The two agent tabs
+
+The `overlord` workspace has exactly two tabs, each hosting a **pi** agent:
+
+| Tab label | Agent name | Role |
+|---|---|---|
+| `overlord` | `overlord` | the parent orchestrator — reads this directory's `AGENTS.md` and directs the other spaces |
+| `comms` | `comms` | the operator-facing channel — Discord, Telegram, IRC, email and SMS through the mycord skills |
+
+`overlord.sh install` creates each tab if it is missing and starts a `pi` agent
+in it. Three rules keep this safe to re-run:
+
+- **A tab that already hosts an agent is left alone.** `herdr agent start`
+  requires a pane at a shell prompt, and replacing an existing session would
+  discard the operator's conversation. If the tab already has a live agent, the
+  script reports it and moves on — it does not restart, rename, or rebuild it.
+- **Naming is separate from starting.** A tab whose agent is already running but
+  unnamed keeps its session; name it with
+  `herdr agent rename <pane_id> <tab-label>` rather than restarting it.
+- **A freshly created tab needs a moment.** The shell inside it is still coming
+  up, so the script retries `agent start` a few times before giving up and
+  printing the exact command to run by hand.
+
+`overlord.sh status` reports each tab and whether it hosts an agent, so
+`scripts/doctor.sh` surfaces a missing or agentless tab without anyone having to
+click around.
+
+### Comms — the mycord skills
+
+The `comms` tab is only useful if the agent there knows how to reach each
+channel. Those skills all live in one repository,
+[`Apothic-AI/mycord`](https://github.com/Apothic-AI/mycord), one directory per
+channel:
+
+| Skill | Channel | Notes |
+|---|---|---|
+| `mycord-discord-skill` | Discord | `discord.py-self` REPL. **Selfbot automation violates Discord's ToS and can get the account banned** — the operator's risk to accept, never initiated unprompted |
+| `mycord-telegram-skill` | Telegram | Telethon REPL. Telegram permits third-party clients |
+| `mycord-irc-skill` | IRC | pydle REPL, TLS by default |
+| `mycord-email-skill` | email | Himalaya CLI with a per-account wrapper config |
+| `google-voice-skill` | SMS / voice | unofficial `gvoice` TS client; reading works, sending SMS needs a captured exchange |
+
+They are declared in `skills/skills.tsv` as `repo` rows, so `install.sh skills`
+installs them like any other skill. Two things are specific to this repository:
+
+- **The skills sit at the repository root, not under `skills/`.** `skills-sync.sh`
+  resolves both layouts, but a resolver that only knew `skills/<id>/` would fall
+  through to the network and fail: `npx skills add Apothic-AI/mycord` reports
+  "No valid skills found". Clone the repo instead — that is the reliable path and
+  it makes later updates a `git pull`:
+
+  ```bash
+  gh repo clone Apothic-AI/mycord ~/Code/mycord
+  ./scripts/skills-sync.sh install
+  ```
+
+- **A checkout beats a hand-copied skill.** These skills ship `.env.example`,
+  `pyproject.toml`, `Makefile` and `src/` beside `SKILL.md`; a copy of just the
+  markdown loses the environment template and drifts. If you already keep copies
+  under `~/.agents/skills/`, move them aside and let the script link the
+  checkout — it backs them up under
+  `~/.local/state/yellowstone/backups/` first.
+
+Each skill documents its own setup (`uv sync`, `cp .env.example .env`, then a
+REPL start command); run those inside the skill's directory, not through this
+installer. The `comms` agent reads them, so it needs the checkout to be readable
+by whoever runs it.
 
 ### Skills
 
@@ -459,6 +546,8 @@ while you are working.
 | Two extensions claim the same tool | startup error naming both | they conflict by design; disable one |
 | herdr updated but behaves old | `herdr status` → `server_binary_stale` | reattach (`herdr`); the new client works at once, server features need a server restart — avoid `herdr server stop` while agents are running, it ends their panes |
 | `doctor.sh` says a skill is elsewhere | `readlink -f ~/.agents/skills/<s>` | re-run `./install.sh skills`, or leave it if intentional |
+| `overlord` or `comms` tab has no agent | `scripts/overlord.sh status` | re-run `./install.sh overlord`; it starts a pi agent in an agentless tab and renames nothing |
+| `npx skills add Apothic-AI/mycord` finds no skills | the skills are at the repo root | clone the repo and run `./scripts/skills-sync.sh install` |
 | Two `overlord` workspaces exist | `herdr workspace list` | `overlord.sh install` should have prevented it; close the extra one, then re-run to confirm |
 | `~/.agent-context` still exists | `ls -ld ~/.agent-context` | it is probably the compatibility symlink from the rename to `~/.overlord`; remove it once no pane uses it |
 
@@ -498,6 +587,7 @@ pi/
 overlord/
   AGENTS.md                orchestrator role + operating rules (installed)
   README.md                workspace-index template (installed once)
+                           its space hosts two pi tabs: `overlord`, `comms`
 scripts/
   overlord.sh              create ~/.overlord + the `overlord` workspace
 skills/

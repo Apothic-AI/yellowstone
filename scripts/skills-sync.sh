@@ -21,7 +21,9 @@
 
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-MANIFEST="$REPO_ROOT/skills/skills.tsv"
+# SKILLS_MANIFEST exists so the test suite can exercise the resolver logic
+# against a synthetic manifest without touching the real one.
+MANIFEST="${SKILLS_MANIFEST:-$REPO_ROOT/skills/skills.tsv}"
 [ -f "$MANIFEST" ] || die "missing $MANIFEST"
 
 # id <TAB> kind <TAB> spec <TAB> why, skipping comments and blank lines.
@@ -123,16 +125,27 @@ install_dagr() {
   link_dir "$dest" "$AGENTS_SKILLS/$id"
 }
 
+# A skill directory inside a checkout. Repositories put skills in either
+# `skills/<id>/` (unblock) or at the top level (mycord's sibling skills), and a
+# resolver that only knows one layout silently falls through to the network.
+skill_dir_in() {
+  local checkout="$1" id="$2"
+  for candidate in "$checkout/skills/$id" "$checkout/$id"; do
+    [ -f "$candidate/SKILL.md" ] && { printf '%s\n' "$candidate"; return 0; }
+  done
+  return 1
+}
+
 install_repo() {
-  local id="$1" repo="$2" checkout
+  local id="$1" repo="$2" checkout dir
 
   if checkout="$(find_checkout "$repo")"; then
-    if [ -f "$checkout/skills/$id/SKILL.md" ]; then
+    if dir="$(skill_dir_in "$checkout" "$id")"; then
       info "$id: using checkout $(short "$checkout")"
-      link_dir "$checkout/skills/$id" "$AGENTS_SKILLS/$id"
+      link_dir "$dir" "$AGENTS_SKILLS/$id"
       return 0
     fi
-    warn "$id: checkout $(short "$checkout") has no skills/$id — falling back to fetch"
+    warn "$id: checkout $(short "$checkout") has neither skills/$id nor $id — falling back to fetch"
   fi
 
   # No checkout. Cloning the owning repo is the reliable path, and it is what
@@ -195,8 +208,10 @@ cmd_status() {
         else detail="$kind (no dagr on PATH)"; fi
         ;;
       repo)
-        if local ck; ck="$(find_checkout "$spec")"; then detail="$kind ($(short "$ck"))"
-        else detail="$kind ($spec)"; fi
+        if local ck; ck="$(find_checkout "$spec")"; then
+          if skill_dir_in "$ck" "$id" >/dev/null; then detail="$kind (checkout $(short "$ck"))"
+          else detail="$kind ($spec — checkout lacks this skill)"; fi
+        else detail="$kind ($spec — no checkout; will fetch)"; fi
         ;;
       bundle) detail="$kind"; debt=$((debt + 1)) ;;
     esac

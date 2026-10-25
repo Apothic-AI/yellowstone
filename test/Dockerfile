@@ -71,8 +71,9 @@ WORKDIR /repo
 ENV PATH="/home/tester/.pi/agent/bin:/home/tester/.local/bin:/usr/local/bin:${PATH}"
 RUN sh -c 'set -e; herdr --version; node --version; if command -v pi >/dev/null 2>&1; then pi --version; else echo "pi not on PATH after install" >&2; ls -la /home/tester/.local/bin /usr/local/bin >&2; exit 1; fi'
 
-COPY --chown=tester:tester test/run-tests.sh /home/tester/run-tests.sh
-RUN chmod +x /home/tester/run-tests.sh
+# The suite itself is read from the repo at run time, not copied here: a baked
+# copy silently keeps testing yesterday's assertions after the tree changes.
+RUN chmod +x /repo/test/run-tests.sh
 
-ENTRYPOINT ["/home/tester/run-tests.sh"]
+ENTRYPOINT ["/repo/test/run-tests.sh"]
 CMD ["all"]

@@ -69,6 +69,21 @@ These are real defects the suite found, not hypotheticals:
 - If a check fails, the failure output should be enough to act on without
   re-running. Print the expectation and what arrived.
 
+## Machine inventories are not repo content
+
+A list of what is installed *on one machine* — skills, themes, plugins with
+their versions — is useful for an operator and wrong for a repository: it pins
+versions that move, and on a personal machine it names private projects. The
+inventory generated for this machine lives at
+`~/.overlord/notes/skill-inventory.md`; `agent-skills.md` is gitignored so a copy
+never lands in a commit.
+
+Regenerate it from the sources rather than trusting a stored copy: herdr's themes
+come from `herdr --default-config`, pi's from
+`~/.pi/agent/npm/node_modules/@spences10/pi-themes/themes/`, and the skill list
+from `~/.agents/skills` plus `~/.pi/agent/skills`. The repo documents *how to
+enumerate* each of those; the enumeration itself is a snapshot.
+
 ## Limits
 
 - **herdr plugins are per-user, not per-HOME.** The sandbox cannot install them,
