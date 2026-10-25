@@ -158,6 +158,20 @@ suite_smoke() {
   mycord_bad="$(printf '%s\n' "$mycord_rows" | awk -F'\t' '$2 != "repo"' | grep -c .)"
   check_eq "every mycord skill is a repo-kind skill" 0 "$mycord_bad"
 
+  # Theme provenance: a [theme.custom] block is a derived palette, not a package.
+  # Documenting it as "comes from <plugin>" is wrong unless the plugin's own
+  # mapping reproduces it, so the tree must not claim a shipped source for it.
+  if grep -q 'theme.custom' "$REPO/herdr/config.toml"; then
+    ok "herdr ships a [theme.custom] palette (derived, not a package)"
+    local misclaim
+    misclaim="$(grep -riE 'palette (comes|ships) from|theme.*(shipped|packaged) (by|with) the .*plugin' \
+                "$REPO"/yellowstone-skill/SKILL.md "$REPO"/docs 2>/dev/null | wc -l)"
+    check_eq "docs do not claim a packaged source for the custom palette" 0 "$misclaim"
+  fi
+  # And the skill must name a way to verify, not just assert.
+  check "skill documents verifying palette provenance" \
+    grep -q 'palette_to_tokens' "$REPO/yellowstone-skill/SKILL.md"
+
   # Plugin manifest.
   local n
   n="$(node "$REPO/scripts/plugins-manifest.js" ids "$REPO/herdr/plugins.toml" 2>/dev/null | wc -l)"

@@ -1,5 +1,10 @@
 onboarding = false
 [theme]
+# `name` is only the base theme: every rendered colour below comes from
+# [theme.custom], which herdr-theme-picker writes and never touches `name`.
+# So this says tokyo-night while displaying a palette derived from
+# pi-neon-afterglow (verified by running the plugin's own map.sh). Changing
+# `name` alone changes almost nothing visible; edit or clear [theme.custom] too.
 name = "tokyo-night"
 auto_switch = false
 

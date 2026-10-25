@@ -243,21 +243,41 @@ that claims a tool name.
 
 #### Themes
 
-Two independent theme systems, one per surface:
+Two theme systems, and it matters which one you are reading, because a
+`config.toml` can name one theme while displaying another.
 
-| Surface | Set in | Choose with |
+| Surface | Set in | Source of the colours |
 |---|---|---|
-| herdr | `[theme]` + `[theme.custom]` in `herdr/config.toml` | `prefix+t` (theme picker plugin), or `herdr --default-config` for the built-in list |
-| pi | `"theme"` in `pi/settings.json` | `/theme` in pi, or list the package's `themes/*.json` |
+| herdr | `[theme]` + `[theme.custom]` in `herdr/config.toml` | built-in theme by name; `[theme.custom]` overrides individual tokens |
+| pi | `"theme"` in `pi/settings.json` | an npm package (`@spences10/pi-themes` here) |
 
-`herdr-theme-picker` does **not** change `theme.name` — it rewrites the
-`[theme.custom]` block. So a config can say `name = "tokyo-night"` while every
-rendered colour comes from the custom palette, which is exactly what this repo
-ships: `tokyo-night` as the base, overridden by a neon palette.
+**`[theme.custom]` wins, and `theme.name` stays whatever it was.**
+`herdr-theme-picker` never changes `theme.name`; it rewrites `[theme.custom]`
+from a *terminalcolors/ghostty* palette through its own
+`palette_to_tokens` mapping (`bin/map.sh`). So a shipped config can read
+`name = "tokyo-night"` while every rendered colour comes from a derived palette —
+`tokyo-night` is vestigial in that case, not the active theme.
 
-Do not ship a static snapshot of the available themes. herdr's list comes from
-the binary and pi's from an installed npm package, so a pinned catalogue goes
-stale the moment either updates; enumerate them at run time instead.
+**A custom palette is not a package, so do not document it as one.** The palette
+in `herdr/config.toml` is 19 derived tokens, not a file any plugin ships. To find
+where it came from, derive it yourself and compare:
+
+```bash
+# herdr-theme-picker's own mapping, applied to a cached palette
+source ~/.config/herdr/plugins/github/herdr-theme-picker-*/bin/map.sh
+palette_to_tokens ~/.local/state/herdr/plugins/herdr-theme-picker/themes/<name> | sort
+# and the live values
+sed -n '/theme.custom/,$p' ~/.config/herdr/config.toml | grep -E '^[a-z_0-9]+ = ' | sort
+```
+
+If those match, the live palette *is* that palette file, mechanically derived;
+if they differ, a human hand-tuned the tokens. Both are legitimate, and only the
+comparison tells you which you have.
+
+Do not ship a static catalogue of available themes. herdr's list comes from the
+binary (`herdr --default-config`), pi's from an installed npm package (list
+`themes/*.json`), and the picker's from a cache it fills on demand — all three
+move with their source, so a pinned list goes stale. Enumerate at run time.
 
 ### pi — `pi/models.json`
 
