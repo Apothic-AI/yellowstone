@@ -1,0 +1,22 @@
+# Where every agent skill comes from. One row per skill, TSV, '# ' comments.
+#
+#   id <TAB> kind <TAB> spec <TAB> why
+#
+# kind:
+#   repo    link <checkout>/skills/<id> into ~/.agents/skills.
+#           spec = GitHub repository that owns the skill. Linked from a checkout
+#           when one exists (so it updates with `git pull`), otherwise fetched
+#           with `npx skills add <repo> --skill <id> -g`. The CLI does not
+#           discover every layout, so a clone is the reliable path.
+#   dagr    owned by the herdr-dagr plugin. Extracted with `dagr --skill` into
+#           that plugin's own skills/ directory (next to its examples/), then
+#           linked. spec = herdr plugin id that provides the dagr binary.
+#   bundle  no installable home exists, so this repo is the source of truth.
+#           spec = path in this repo. This is debt: the `why` says what would
+#           let it be deleted, and scripts/skills-sync.sh reports the count.
+
+yellowstone	bundle	./yellowstone-skill	This repo's own install/configure/upgrade guide; home is this repo by definition.
+hotshot	bundle	./skills/hotshot	Apothic-AI/one-shot-genius exists but is empty (0 bytes, no commits), so `npx skills add` cannot fetch it yet. Becomes kind=repo once the skill is pushed.
+herdr	bundle	./herdr/skills/herdr	Fork of the skill `herdr --skill` ships: ~56 delta lines, mostly target-verification-before-delegation, which this orchestration setup depends on. Rebase onto the shipped file when herdr changes and send the delta upstream; becomes kind=shipped when herdr takes it.
+dagr-producer	dagr	herdr-dagr	Owned by the herdr-dagr plugin pinned in herdr/plugins.toml. Never bundle: `dagr --skill` is byte-identical to the plugin's own copy, so a bundled copy is a silent fork of a file the plugin already owns.
+unblock	repo	Apothic-AI/unblock	Owned by our fork, which ships skills/unblock/SKILL.md. The fork's copy is newer than any bundled copy (it documents queue-page sign-in), so bundling would freeze agents on a stale skill.

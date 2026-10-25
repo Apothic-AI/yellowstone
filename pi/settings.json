@@ -39,7 +39,7 @@
     "npm:pi-nested-skills",
     "npm:@narumitw/pi-btw",
     "git:github.com/bitnom/pi-cache-optimizer",
-    "@YELLOWSTONE_REPO@/plugins/pi-pretty-tui",
+    "git:github.com/Apothic-AI/pi-pretty-tui",
     "npm:pi-copy-message",
     "npm:@timmyjl12/pi-model-picker"
   ],

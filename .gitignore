@@ -24,7 +24,3 @@ Thumbs.db
 # Node, if anyone runs a tool here
 node_modules/
 npm-debug.log*
-
-# Vendored pi-pretty-tui builds/typechecks locally if someone tries it
-plugins/pi-pretty-tui/dist/
-plugins/pi-pretty-tui/*.tsbuildinfo

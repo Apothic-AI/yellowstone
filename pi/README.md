@@ -53,14 +53,17 @@ If you prefer per-project prompts, leave `trust.json` out entirely and set
 ## Notes on the merged files
 
 `settings.json` in this directory is a **template**, not a copy of a live file.
-Two entries are rewritten at install time:
 
-- `@YELLOWSTONE_REPO@/plugins/pi-pretty-tui` becomes an absolute path inside
-  your clone, so pi loads the vendored fork straight from this repository.
-- Package sources are compared by *package name*, so a machine that already has
-  `pi-pretty-tui` from a local path or `pi-cache-optimizer` from git does not
-  end up with two copies of the same extension — which for a package that
-  registers a tool would mean a load conflict, not just clutter.
+Package sources are compared by *package name*, so a machine that already has
+`pi-pretty-tui` from a local path or `pi-cache-optimizer` from git does not end
+up with two copies of the same extension — which for a package that registers a
+tool would mean a load conflict, not just clutter.
+
+Nothing in `packages` points into this repository. Every entry is either an
+upstream release or one of our forks, installed from its own repository, so an
+upgrade is `pi update` rather than a `git pull` here. If you ever need to load a
+package from a local path, `json-edit.js` still supports a `@YELLOWSTONE_REPO@`
+prefix that it rewrites to the repo root at install time — but prefer a repo.
 
 If you delete a provider block from `models.json` and re-run the installer, the
 provider comes back. To keep a different route, edit the existing block rather

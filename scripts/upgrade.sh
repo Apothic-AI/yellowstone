@@ -185,11 +185,12 @@ report_forks() {
     info "bizzy: not installed"
   fi
 
-  # pi-pretty-tui: vendored in this repo (no public fork). `pi` loads it from
-  # plugins/pi-pretty-tui through a local path entry in settings.json.
-  if [ -d "$REPO_ROOT/plugins/pi-pretty-tui" ]; then
-    info "pi-pretty-tui: vendored at plugins/pi-pretty-tui (upstream ykn0309/pi-pretty-tui 0.3.0)"
-    info "  updates arrive by pulling this repo, not by npm"
+  # pi-pretty-tui: a fork installed as a git package, so `pi update` moves it.
+  local ptui="$PI_DIR/git/github.com/Apothic-AI/pi-pretty-tui"
+  if [ -d "$ptui/.git" ]; then
+    info "pi-pretty-tui @ $(git -C "$ptui" log --oneline -1 2>/dev/null)"
+  else
+    info "pi-pretty-tui: not installed (git:github.com/Apothic-AI/pi-pretty-tui)"
   fi
 
   # unblock: local checkout linked into herdr; the CLI is npm-linked from it.

@@ -20,11 +20,11 @@ pi allows exactly one extension to own a given tool name, and the check runs
 after every extension has loaded — so the loser fails as a whole, and a
 `try`/`catch` around `pi.registerTool` cannot recover it.
 
-This single rule is responsible for the vendored `pi-pretty-tui`. `bizzy` owns
+This single rule is responsible for our `pi-pretty-tui` fork. `bizzy` owns
 `bash` so it can background long commands; pretty-tui used to register `bash`
 to render it. Neither extension is wrong; they just cannot both claim the name.
-The vendored copy uses `pi.registerToolRenderer`, which composes instead of
-competing, so rendering and behaviour are decoupled.
+Our fork uses `pi.registerToolRenderer`, which composes instead of competing, so
+rendering and behaviour are decoupled.
 
 **Consequence for you:** any extension that registers a tool pretty-tui
 renders is a potential conflict. If a future install fails with "tool X

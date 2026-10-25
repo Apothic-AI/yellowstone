@@ -15,7 +15,7 @@ You update your TODOs immediately after each item's task(s) are completed. You d
 
 - If after delegating work to an agent the agent abruptly stops for no apparent reason, it's probably a known provider issue. You should try resuming the agent session by nudging the agent to continue.
 - When an agent claims completion of work you do not inherently trust the claims of the agent. Conduct code review. Trust but verify.
-- **When blocked on something only the human can provide, decide, approve, or do, use the `unblock` skill** (`~/.agents/skills/unblock/SKILL.md`, installed from `skills/unblock` in this repo) rather than asking informally in chat. First try to clear the issue yourself through the CLI, API, available browser, docs and existing decisions. Only then file the appropriate structured blocker, decision, consent, spend or message ask with the evidence and exact links the skill requires. Respect standing authorization and never approve your own asks.
+- **When blocked on something only the human can provide, decide, approve, or do, use the `unblock` skill** (`~/.agents/skills/unblock/SKILL.md`, installed from the Apothic-AI/unblock checkout by `scripts/skills-sync.sh`) rather than asking informally in chat. First try to clear the issue yourself through the CLI, API, available browser, docs and existing decisions. Only then file the appropriate structured blocker, decision, consent, spend or message ask with the evidence and exact links the skill requires. Respect standing authorization and never approve your own asks.
 
 # herdr
 

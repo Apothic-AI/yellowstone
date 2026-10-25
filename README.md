@@ -34,7 +34,6 @@ scripts/doctor.sh          # confirm it took
 | `pi/settings.json` | pi settings and the package list |
 | `pi/models.json` | provider routing — commands that read keys, never the keys |
 | `pi/extensions/` | hand-written pi extensions |
-| `plugins/pi-pretty-tui/` | our fork of pi-pretty-tui, vendored |
 | `skills/` | skills: `hotshot`, `dagr-producer`, `unblock` |
 | `scripts/` | `install` helpers, plugin sync, `doctor`, `upgrade` |
 | `docs/` | longer notes on the forks and the decisions behind them |
@@ -50,7 +49,8 @@ and a theme picker.
 pi owns the conversation. Its packages add background tasks, goals, todos,
 sub-agents, web access, cache optimization, and the TUI. Two of those are our
 forks rather than upstream releases, because upstream and our other extensions
-conflict; see [`docs/forks.md`](docs/forks.md).
+conflict; both install from their own repositories, so this repo pins them
+instead of copying them. See [`docs/forks.md`](docs/forks.md).
 
 Both sides read `~/.agents/skills`, which is why the skills live here once
 instead of being copied into each tool.
@@ -72,6 +72,6 @@ source; `jj` only if you use the jj plugins. Full matrix in
 
 ## License
 
-MIT for the scripts and skills in this repository. The vendored
-`plugins/pi-pretty-tui` keeps its own MIT license and copyright (see its
-`LICENSE`); `herdr` itself is Apache-2.0 and is not redistributed here.
+MIT for the scripts, docs and skills in this repository. Nothing else is
+redistributed here: our forks (including `pi-pretty-tui`, MIT © Kainan Yang) are
+installed from their own repositories, and `herdr` is Apache-2.0.

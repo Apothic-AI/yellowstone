@@ -1,4 +1,4 @@
-# Forks and vendored components
+# Forks and bundled components
 
 Yellowstone runs several things that are not upstream releases. This is what
 each one is, why it exists, and where the real copy lives.
@@ -7,36 +7,43 @@ Two rules apply to all of them:
 
 - **A fork has an upstream commit it descends from.** Nothing here is a
   rewrite; each fork is a small delta maintained to stay mergeable.
-- **A vendored component is vendored because it has no public home.** If you
-  find one that does, move it to a pinned source instead of keeping a copy.
+- **Nothing is bundled when it has a home.** A copy of somebody else's package or
+  skill in this repo is a fork nobody reviews, whose version `pi list` cannot
+  report. Bundling is reserved for things with no installable home at all, and
+  each one is listed with what would retire it.
 
-## pi-pretty-tui — vendored
+## pi-pretty-tui — fork
 
 | | |
 |---|---|
 | Upstream | [`ykn0309/pi-pretty-tui`](https://github.com/ykn0309/pi-pretty-tui) 0.3.0 |
-| Our copy | `plugins/pi-pretty-tui/` |
-| License | MIT, © 2026 Kainan Yang (kept in `plugins/pi-pretty-tui/LICENSE`) |
-| Installed as | a local path package in `pi/settings.json` |
-| Delta notes | `plugins/pi-pretty-tui/LOCAL-PATCHES.md` |
+| Our fork | `Apothic-AI/pi-pretty-tui` |
+| License | MIT, © 2026 Kainan Yang (kept in the fork's `LICENSE`) |
+| Installed as | `git:github.com/Apothic-AI/pi-pretty-tui` in `pi/settings.json` |
+| Delta notes | the fork's `LOCAL-PATCHES.md` |
 
-**Why a copy.** pi allows one owner per tool name, and the check that enforces
-it runs after every extension loads — so the losing extension fails as a whole
-and a `try`/`catch` around registration cannot recover it. pretty-tui used to
-register a `bash` tool to render it; `bizzy` owns `bash`. Installing both from
+**Why a fork.** pi allows exactly one owner per tool name, and the check runs
+after every extension loads — so the losing extension fails as a whole and a
+`try`/`catch` around registration cannot recover it. pretty-tui used to register
+a `bash` tool in order to render it; `bizzy` owns `bash`. Installing both from
 npm breaks one of them.
 
-**The delta.** Every built-in tool pretty-tui renders is now render-only.
-`pi.registerToolRenderer` composes instead of competing: resolvers run in load
-order and chain to whichever extension owns the tool. Claiming a tool name now
-changes only how that tool draws.
+**The delta is about twenty lines.** Every built-in tool pretty-tui renders is
+now render-only: registrations go through `pi.registerToolRenderer`, which
+composes across extensions, so resolvers run in load order and chain to whichever
+extension owns the tool. Claiming a tool name changes only how it draws; the
+owner keeps its schema, description and behaviour.
 
-**Why vendored rather than forked on GitHub.** The patch is small and lives
-next to the config that needs it. Vendoring keeps the load path absolute and
-local — `pi` reads the extension straight out of this repository, so a `git
-pull` updates it with no reinstall step. If the upstream project starts
-accepting compositional renderers, drop the vendored copy and pin the npm
-version instead.
+**Why a fork rather than a copy in this repo.** The patch is small, but it is
+code maintenance: when upstream releases a new version the delta has to be
+rebased, and it should be offered upstream. Both of those need the fork to live
+where the upstream project lives, so it is a git package like any other and
+`pi update` reconciles it. Bundling it here would mean this repo owns an
+out-of-tree copy of someone else's extension, and the version an agent runs would
+be invisible to `pi list`.
+
+**If upstream ever accepts compositional renderers,** delete the fork and pin the
+npm release. That is the retirement condition.
 
 ## pi-cache-optimizer — fork
 
@@ -75,7 +82,7 @@ published under a different package name so it never shadows upstream on npm.
 `run_in_background` is available explicitly, Ctrl+Shift+B backgrounds the
 running command, and long jobs report completion without stalling the turn.
 Also the owner of the `bash` tool name — which is the entire reason
-pi-pretty-tui is vendored.
+pi-pretty-tui is a git package.
 
 ## unblock — fork, linked locally
 
@@ -121,5 +128,5 @@ A fork should be deleted when its delta reaches zero. For each one, ask:
    stated reason gets removed.
 
 For this setup, the conflict driving `pi-pretty-tui` is structural (one owner
-per tool name), so that vendored copy outlives any single upstream release until
-the registration model itself changes.
+per tool name), so that fork outlives any single upstream release until pi's
+registration model itself changes.

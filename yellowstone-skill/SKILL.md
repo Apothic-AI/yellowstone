@@ -1,6 +1,6 @@
 ---
 name: yellowstone
-description: Install, configure, upgrade, and diagnose the Yellowstone stack — a herdr + pi coding-agent setup with its plugins, extensions, and agent skills. Use when setting up a new machine, reproducing this agent environment, checking which components are installed or out of date, upgrading herdr/pi/plugins, or repairing a component that stopped working. Covers the vendored forks (pi-pretty-tui, pi-cache-optimizer, bizzy, unblock) and the herdr plugins this setup pins.
+description: Install, configure, upgrade, and diagnose the Yellowstone stack — a herdr + pi coding-agent setup with its plugins, extensions, and agent skills. Use when setting up a new machine, reproducing this agent environment, checking which components are installed or out of date, upgrading herdr/pi/plugins, or repairing a component that stopped working. Covers the forks we maintain (pi-pretty-tui, pi-cache-optimizer, bizzy, unblock) and the herdr plugins this setup pins.
 ---
 
 # Yellowstone
@@ -15,7 +15,7 @@ herdr                    terminal workspace manager, plugin host, socket API
   ├─ plugins             DAG viewer, ask queue, session handoff, themes, jj state
   └─ integrations        per-agent state hooks so the sidebar shows live status
 pi                       coding agent, extension host
-  ├─ packages            npm and git extensions (some vendored, some forked)
+  ├─ packages            npm releases plus our forks, each from its own repo
   ├─ extensions/         hand-written extensions (retry classifier)
   └─ models.json         provider routing, one credential file per provider
 ~/.agents/skills         shared skills both harnesses read
@@ -224,17 +224,19 @@ Judge the values by what they fix:
 - `"enableInstallTelemetry": false` — no install pings.
 - `"theme": "neon-noir"` comes from the `@spences10/pi-themes` package.
 
-Packages are declared, not copied. Two entries are special:
+Packages are declared, not copied, and nothing points into this repository.
+Two entries are our forks:
 
 ```json
 "git:github.com/bitnom/pi-cache-optimizer",
-"@YELLOWSTONE_REPO@/plugins/pi-pretty-tui"
+"git:github.com/Apothic-AI/pi-pretty-tui"
 ```
 
-The first is a fork installed from git, so `pi update` reconciles it. The second
-is a placeholder the installer rewrites to an absolute path inside your clone —
-pi loads that extension from this repository directly, so pulling the repo
-updates it with no reinstall.
+Both install from their own repositories, so `pi update` reconciles them and the
+fork's code is reviewed and versioned where it lives. A machine that already has
+either package from a different source is left alone: the merge compares package
+names, not source strings, so you never end up with two copies of an extension
+that claims a tool name.
 
 ### pi — `pi/models.json`
 
@@ -267,16 +269,51 @@ missing or empty, so the second step is not easy to forget.
 
 ### Skills
 
-`skills/` and `herdr/skills/` are symlinked into `~/.agents/skills`, which both
-pi and other Agent Skills hosts read. Symlinking rather than copying means a
-`git pull` updates every agent at once.
+Every skill is installed from the tree that owns it, decided by
+`skills/skills.tsv`. That file is the authority; `scripts/skills-sync.sh` reads
+it and nothing else decides what gets installed.
 
-| Skill | What it does |
-|---|---|
-| `herdr` | how an agent drives herdr: panes, agents, waits, target verification |
-| `hotshot` | two-phase one-shot job: cheap model reads everything, strong model executes |
-| `dagr-producer` | write and validate a `run.json` DAG without ever publishing an invalid one |
-| `unblock` | decide when something genuinely needs a human, then file the ask |
+| Skill | Owned by | Installed by |
+|---|---|---|
+| `yellowstone` | this repo | symlinked from `yellowstone-skill/` |
+| `herdr` | this repo (a fork of the shipped skill) | symlinked from `herdr/skills/herdr/` |
+| `hotshot` | this repo, for now | symlinked from `skills/hotshot/` |
+| `dagr-producer` | the `herdr-dagr` plugin | `dagr --skill`, then symlinked |
+| `unblock` | `Apothic-AI/unblock` | linked from a checkout, else `npx skills add` |
+
+Three rules, each learned the hard way:
+
+**Do not bundle a skill another tree already ships.** A copy of `dagr-producer`
+here would be a silent fork of a file the pinned plugin owns, free to drift from
+the `dagr` binary beside it. Same for `unblock`: the fork's copy is the current
+one, so a copy here would freeze agents on older instructions.
+
+**For `dagr`, generate from the binary.** `dagr --skill` prints the copy bundled
+with your installed dagr, which is the only version guaranteed to match the
+contract that binary validates. `skills-sync.sh` writes it to
+`<plugin_root>/skills/dagr-producer/SKILL.md` — inside the plugin, so the
+`examples/*.json` links in the skill still resolve — and links that directory
+into `~/.agents/skills`:
+
+```bash
+scripts/skills-sync.sh install          # all of them
+scripts/skills-sync.sh status           # installed / drift / bundled debt
+dagr --skill                            # the text itself, if you just want to read it
+```
+
+A `repo` skill is linked from a checkout when one exists, because that is what
+makes its updates a `git pull`. `npx skills add` is the fallback, and it is not
+dependable for every repository — it did not discover `Apothic-AI/unblock`'s
+`skills/unblock/` at all, and it refused a global install for `herdr-dagr`'s
+layout. When the CLI comes up empty, `skills-sync.sh` prints the `gh repo clone`
+command to run instead, which is also what you want if you intend to edit the
+skill.
+
+**`bundle` is debt, not a design.** `hotshot`'s home repository
+(`Apothic-AI/one-shot-genius`) exists but is empty, and the `herdr` skill here is
+a fork whose delta is worth sending upstream. `scripts/skills-sync.sh status`
+and `scripts/doctor.sh` both count what is bundled, so the debt stays visible
+instead of turning into an unofficial fork.
 
 `hotshot` reads model ids from `.env` beside its `SKILL.md`. The repo ships that
 file with empty values on purpose: the first run asks once, then writes them
@@ -345,7 +382,7 @@ Then it prints the state of the forks, which do not move with a blanket update:
 |---|---|---|
 | `pi-cache-optimizer` | `git:github.com/bitnom/pi-cache-optimizer` | `pi update` reconciles; upstream is `jiangge/pi-cache-optimizer` |
 | `bizzy` | `git:github.com/Apothic-AI/bizzy` | `pi update`; upstream is `patty-io/pi-patty-bg-tasks` |
-| `pi-pretty-tui` | vendored at `plugins/pi-pretty-tui` | `git pull` here; there is no public fork |
+| `pi-pretty-tui` | `git:github.com/Apothic-AI/pi-pretty-tui` | `pi update`; upstream is `ykn0309/pi-pretty-tui` |
 | `unblock` | a local checkout, linked | `git pull` there, then `npm link` if the CLI changed |
 | `herdr-dagr` | a herdr plugin | `scripts/herdr-plugins.sh update`, or bump `ref` first |
 
@@ -392,11 +429,10 @@ while you are working.
 Two conflicts are worth naming because they look like bugs:
 
 **`pi-pretty-tui` versus `bizzy`.** Both historically claimed the `bash` tool,
-and pi fails the whole losing extension. The vendored copy registers render-only
-handlers that compose with whoever owns the tool, instead of claiming the name.
-If you replace the vendored copy with the npm release, it breaks when `bizzy` is
-also installed — that is why the fork exists and why it is vendored rather than
-fetched. See `plugins/pi-pretty-tui/LOCAL-PATCHES.md`.
+and pi fails the whole losing extension. Our fork registers render-only handlers
+that compose with whoever owns the tool instead of claiming the name. Installing
+the upstream npm release alongside `bizzy` breaks one of them — that is why
+`pi/settings.json` points at the fork. See `docs/forks.md`.
 
 **`transient-error-retry` versus pi's retry classifier.** pi retries a fixed set
 of error shapes. Some gateways report a dropped stream as `unknown:`, which pi
@@ -423,10 +459,9 @@ pi/
   pi-auto-compact.json     compaction threshold
   trust.example.json       how trust.json is shaped — copy, do not install blind
   extensions/              hand-written pi extensions
-plugins/
-  pi-pretty-tui/           vendored fork; render-only tool handlers
 skills/
-  herdr, hotshot, dagr-producer, unblock
+  skills.tsv               which skill comes from which tree, and why
+  hotshot/                 bundled: its repo is still empty
 scripts/
   install helpers, plugin sync, doctor, upgrade
 docs/                      longer-form notes
@@ -441,4 +476,4 @@ docs/                      longer-form notes
   `packages.md` and `extensions.md`.
 - The two skill files that describe operating *this* stack rather than
   installing it are `herdr/skills/herdr/SKILL.md` (driving panes) and
-  `skills/dagr-producer/SKILL.md` (publishing a valid run graph).
+  `dagr --skill` (publishing a valid run graph, straight from your binary).

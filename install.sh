@@ -186,17 +186,20 @@ install_pi() {
 # ------------------------------------------------------------------ skills --
 install_skills() {
   step "Agent skills"
-  # `herdr` and `yellowstone` live in their own top-level dirs; the rest are in
-  # skills/. Link both kinds so `~/.agents/skills` mirrors this repo.
-  link_dir "$REPO_ROOT/yellowstone-skill" "$AGENTS_SKILLS/yellowstone"
-  for skill in hotshot dagr-producer unblock; do
-    [ -d "$REPO_ROOT/skills/$skill" ] || continue
-    link_dir "$REPO_ROOT/skills/$skill" "$AGENTS_SKILLS/$skill"
-  done
+  # Each skill is installed from the tree that owns it, per skills/skills.tsv.
+  # Nothing is copied into this repo that already has a home elsewhere: a
+  # bundled copy of a skill that a plugin or fork ships is a silent fork of a
+  # file somebody else maintains.
+  if [ "$DRY_RUN" = 1 ]; then
+    "$REPO_ROOT/scripts/skills-sync.sh" install --dry-run
+  else
+    "$REPO_ROOT/scripts/skills-sync.sh" install || warn "some skills need attention"
+  fi
+
   # hotshot reads model ids from .env beside its SKILL.md; our copy ships empty
   # values on purpose, so a fresh install asks the operator once.
   if [ -e "$AGENTS_SKILLS/hotshot/.env" ]; then
-    info "hotshot: $(short "$AGENTS_SKILLS/hotshot/.env")"
+    info "hotshot config: $(short "$AGENTS_SKILLS/hotshot/.env")"
   fi
 }
 

@@ -248,28 +248,37 @@ fi
 # ---------------------------------------------------------------- skills
 section "Agent skills"
 
-for skill in herdr yellowstone hotshot dagr-producer unblock; do
-  target="$AGENTS_SKILLS/$skill"
-  # Names are not directories: `yellowstone` is yellowstone-skill/, `herdr` is
-  # under herdr/skills/.
-  src="$REPO_ROOT/skills/$skill"
-  [ -d "$src" ] || src="$REPO_ROOT/herdr/skills/$skill"
-  [ -d "$src" ] || src="$REPO_ROOT/yellowstone-skill"
-  if [ -e "$target" ]; then
-    if [ -L "$target" ] && [ -d "$src" ]; then
-      want="$(readlink -f -- "$src" 2>/dev/null)"
-      got="$(readlink -f -- "$target" 2>/dev/null)"
-      if [ "$want" = "$got" ]; then record ok "skill:$skill" "linked to repo"
-      else record info "skill:$skill" "symlinked elsewhere ($(short "$got"))"; fi
-    else
-      record ok "skill:$skill" "present"
-    fi
-  else
-    record warn "skill:$skill" "missing — run ./install.sh skills"
-  fi
-done
+# The manifest decides what should be installed and from where; this just
+# reports whether the installed set matches it, using the same resolver the
+# installer uses.
+if [ -x "$REPO_ROOT/scripts/skills-sync.sh" ]; then
+  skills_report="$(NO_COLOR=1 "$REPO_ROOT/scripts/skills-sync.sh" status 2>/dev/null || true)"
+  if [ -n "$skills_report" ]; then
+    while IFS= read -r line; do
+      case "$line" in
+        linked*)   record ok   "skill:$(printf '%s' "$line" | awk '{print $2}')" "linked to its owning tree" ;;
+        present*)  record warn "skill:$(printf '%s' "$line" | awk '{print $2}')" "a real directory, not a link — run install.sh skills" ;;
+        missing*)  record fail "skill:$(printf '%s' "$line" | awk '{print $2}')" "missing — run ./install.sh skills" ;;
+        "")  : ;;
+        *bundle*)  : ;;   # the debt summary line, not a skill
+        *)         record info skill "$line" ;;
+      esac
+    done <<< "$skills_report"
 
-# skill roots pi actually reads (nested-skills can add more)
+    # Bundled skills are debt, not a fault: they are skills with no installable
+    # home yet. Count them from the manifests's own rows (the status output also
+    # contains a summary line that mentions "bundle", which would double-count).
+    bundles="$(grep -vE '^[[:space:]]*(#|$)' "$REPO_ROOT/skills/skills.tsv" 2>/dev/null \
+               | awk -F'\t' '$2 == "bundle"' | wc -l)"
+    if [ "${bundles:-0}" -gt 0 ]; then
+      record info skills-bundled \
+        "$bundles bundled because no repo ships them yet (see skills/skills.tsv)"
+    fi
+  fi
+else
+  record warn skills "scripts/skills-sync.sh is missing"
+fi
+
 if [ -x "$LOCAL_BIN/herdr-agy.sh" ]; then
   record ok herdr-agy "$(short "$LOCAL_BIN/herdr-agy.sh")"
 else
