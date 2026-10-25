@@ -34,8 +34,10 @@ scripts/doctor.sh          # confirm it took
 | `pi/settings.json` | pi settings and the package list |
 | `pi/models.json` | provider routing — commands that read keys, never the keys |
 | `pi/extensions/` | hand-written pi extensions |
-| `skills/` | skills: `hotshot`, `dagr-producer`, `unblock` |
-| `scripts/` | `install` helpers, plugin sync, `doctor`, `upgrade` |
+| `overlord/` | instructions + index for the `overlord` orchestrator space |
+| `skills/` | agent skills, plus `skills.tsv` recording which tree owns each |
+| `scripts/` | `install` helpers, plugin sync, `doctor`, `upgrade`, `overlord` |
+| `test/` | Docker test environment for the installer |
 | `docs/` | longer notes on the forks and the decisions behind them |
 
 ## The short version of how it fits together
@@ -52,8 +54,10 @@ forks rather than upstream releases, because upstream and our other extensions
 conflict; both install from their own repositories, so this repo pins them
 instead of copying them. See [`docs/forks.md`](docs/forks.md).
 
-Both sides read `~/.agents/skills`, which is why the skills live here once
-instead of being copied into each tool.
+Both sides read `~/.agents/skills`, which is why skills are installed from the
+tree that owns each one rather than copied here. On top of both sits `overlord`:
+a herdr workspace whose cwd is `~/.overlord`, where a parent orchestrator reads
+its role and an index of the other spaces.
 
 ## Requirements
 

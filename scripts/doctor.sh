@@ -279,6 +279,27 @@ else
   record warn skills "scripts/skills-sync.sh is missing"
 fi
 
+# The overlord space: directory + the herdr workspace whose cwd is that directory.
+if [ -x "$REPO_ROOT/scripts/overlord.sh" ]; then
+  ol_report="$(NO_COLOR=1 "$REPO_ROOT/scripts/overlord.sh" status 2>/dev/null || true)"
+  while IFS= read -r line; do
+    # overlord.sh already prints "<status> <component> <detail>": take the
+    # component as field 2 and the detail from field 4 on.
+    ostatus="$(printf '%s' "$line" | awk '{print $1}')"
+    ocomp="$(printf '%s' "$line" | awk '{print $2}')"
+    odetail="$(printf '%s' "$line" | awk '{for(i=3;i<=NF;i++) printf "%s%s", $i, (i<NF?" ":"")}')"
+    case "$ostatus" in
+      ok)   record ok   "$ocomp" "$odetail" ;;
+      miss) record fail "$ocomp" "$odetail" ;;
+      --)   record info "$ocomp" "$odetail" ;;
+      "")   : ;;
+      *)    record info overlord "$line" ;;
+    esac
+  done <<< "$ol_report"
+else
+  record warn overlord "scripts/overlord.sh is missing"
+fi
+
 if [ -x "$LOCAL_BIN/herdr-agy.sh" ]; then
   record ok herdr-agy "$(short "$LOCAL_BIN/herdr-agy.sh")"
 else

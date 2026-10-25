@@ -21,7 +21,8 @@ Usage: ./install.sh [--yes] [--dry-run] [--help] [stage...]
 Stages (default: all, in this order):
   herdr      config.toml, plugins, pi integration, herdr skill, herdr-agy.sh
   pi         settings.json, models.json, extensions, packages
-  skills     hotshot / dagr-producer / unblock / herdr agent skills
+  skills     install every agent skill from the tree that owns it
+  overlord   ~/.overlord context dir + the `overlord` herdr workspace
   secrets    create empty ~/.pi/agent/secrets/<provider> files to fill in
   verify     report what is installed, outdated, or missing
 
@@ -37,14 +38,14 @@ while [ $# -gt 0 ]; do
     -y|--yes) ASSUME_YES=1 ;;
     -n|--dry-run) DRY_RUN=1 ;;
     -h|--help) usage; exit 0 ;;
-    herdr|pi|plugins|skills|secrets|verify) STAGES+=("$1") ;;
+    herdr|pi|plugins|skills|overlord|secrets|verify) STAGES+=("$1") ;;
     *) err "unknown argument: $1"; usage; exit 2 ;;
   esac
   shift
 done
 
 if [ ${#STAGES[@]} -eq 0 ]; then
-  STAGES=(herdr pi skills secrets verify)
+  STAGES=(herdr pi skills overlord secrets verify)
 fi
 
 want() {
@@ -203,6 +204,21 @@ install_skills() {
   fi
 }
 
+# ---------------------------------------------------------------- overlord --
+install_overlord() {
+  step "Overlord space"
+  # The parent-orchestrator surface: a directory of Markdown plus the herdr
+  # workspace whose cwd is that directory. Keeping it behind its own script
+  # means the workspace-existence check travels with it — `herdr workspace
+  # create` does not deduplicate, so creating a second `overlord` space is the
+  # failure mode to design against.
+  if [ "$DRY_RUN" = 1 ]; then
+    "$REPO_ROOT/scripts/overlord.sh" install --dry-run
+  else
+    "$REPO_ROOT/scripts/overlord.sh" install || warn "overlord setup needs attention"
+  fi
+}
+
 # ----------------------------------------------------------------- secrets --
 install_secrets() {
   step "Provider credentials"
@@ -264,7 +280,8 @@ install_verify() {
 
 want herdr   && install_herdr
 want pi      && install_pi
-want skills  && install_skills
+want skills   && install_skills
+want overlord && install_overlord
 want secrets && install_secrets
 if want verify; then
   if [ "$DRY_RUN" = 1 ]; then

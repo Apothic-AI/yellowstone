@@ -9,6 +9,7 @@ configure, upgrade and repair instructions live in
 | [`forks.md`](forks.md) | you want to know why a component is a fork or bundled, and whether it still needs to be |
 | [`design.md`](design.md) | you are changing the setup and want the reasoning behind the current shape |
 | [`operations.md`](operations.md) | you are running this on a machine day to day: routines, failure modes, what to check |
+| [`testing.md`](testing.md) | you are changing the installer and want to prove it on a clean machine |
 
 ## The one-paragraph version
 

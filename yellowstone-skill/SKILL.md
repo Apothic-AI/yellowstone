@@ -1,6 +1,6 @@
 ---
 name: yellowstone
-description: Install, configure, upgrade, and diagnose the Yellowstone stack — a herdr + pi coding-agent setup with its plugins, extensions, and agent skills. Use when setting up a new machine, reproducing this agent environment, checking which components are installed or out of date, upgrading herdr/pi/plugins, or repairing a component that stopped working. Covers the forks we maintain (pi-pretty-tui, pi-cache-optimizer, bizzy, unblock) and the herdr plugins this setup pins.
+description: Install, configure, upgrade, and diagnose the Yellowstone stack — a herdr + pi coding-agent setup with its plugins, extensions, and agent skills. Use when setting up a new machine, reproducing this agent environment, checking which components are installed or out of date, upgrading herdr/pi/plugins, or repairing a component that stopped working. Covers the forks we maintain (pi-pretty-tui, pi-cache-optimizer, bizzy, unblock), the herdr plugins this setup pins, and the `overlord` orchestrator space.
 ---
 
 # Yellowstone
@@ -19,6 +19,7 @@ pi                       coding agent, extension host
   ├─ extensions/         hand-written extensions (retry classifier)
   └─ models.json         provider routing, one credential file per provider
 ~/.agents/skills         shared skills both harnesses read
+~/.overlord              the overlord space's cwd: role instructions + space index
 scripts/                 install, upgrade, doctor, plugin sync
 ```
 
@@ -88,7 +89,8 @@ Stages, in the order they run:
 |---|---|
 | `herdr` | writes `config.toml`, installs the pi integration, installs/links the plugins from `herdr/plugins.toml`, symlinks the herdr skill, installs `herdr-agy.sh` |
 | `pi` | merges owned keys into `settings.json`, merges providers into `models.json`, installs hand-written extensions, reconciles packages |
-| `skills` | symlinks `hotshot`, `dagr-producer`, `unblock` into `~/.agents/skills` |
+| `skills` | installs every agent skill from the tree that owns it (`skills/skills.tsv`) |
+| `overlord` | creates `~/.overlord` and the `overlord` herdr workspace if absent |
 | `secrets` | creates empty credential files for every provider `models.json` references |
 | `verify` | runs `scripts/doctor.sh` |
 
@@ -267,6 +269,38 @@ Adding a provider is two steps: append the block, then create the credential
 file. `scripts/doctor.sh` reports `pi-secrets` for any provider whose file is
 missing or empty, so the second step is not easy to forget.
 
+### The overlord space — `~/.overlord`
+
+Yellowstone ships one herdr workspace that is not a project: **`overlord`**, the
+parent-orchestrator surface. Its cwd is a directory of plain Markdown, and it is
+what an orchestrating agent reads before it directs any other agent.
+
+```bash
+scripts/overlord.sh install    # create the dir, install the docs, create the space
+scripts/overlord.sh status     # dir present? docs present? space exists?
+```
+
+The directory holds exactly two files:
+
+| File | Role | Reinstalled? |
+|---|---|---|
+| `AGENTS.md` | the orchestrator's role, boundaries, and operating rules | yes — the repo is the source of truth |
+| `README.md` | the live workspace index: which space maps to which directory | **no** — never overwritten once it exists |
+
+`README.md` is the one file the operator updates as spaces come and go, so
+overwriting it would destroy the only map. `install.sh` replaces `AGENTS.md` and
+leaves `README.md` alone.
+
+**The space is created only if a workspace labelled `overlord` is absent.**
+`herdr workspace create` does not deduplicate by label or cwd — calling it twice
+produces two workspaces with the same name — so `overlord.sh` lists workspaces
+first and treats an existing one as done. That check is the whole reason the
+script exists rather than two commands in the install guide.
+
+The script never moves an existing space's cwd. If the operator has pointed
+`overlord` somewhere deliberate, changing it is a layout change outside what an
+installer should do.
+
 ### Skills
 
 Every skill is installed from the tree that owns it, decided by
@@ -425,6 +459,8 @@ while you are working.
 | Two extensions claim the same tool | startup error naming both | they conflict by design; disable one |
 | herdr updated but behaves old | `herdr status` → `server_binary_stale` | reattach (`herdr`); the new client works at once, server features need a server restart — avoid `herdr server stop` while agents are running, it ends their panes |
 | `doctor.sh` says a skill is elsewhere | `readlink -f ~/.agents/skills/<s>` | re-run `./install.sh skills`, or leave it if intentional |
+| Two `overlord` workspaces exist | `herdr workspace list` | `overlord.sh install` should have prevented it; close the extra one, then re-run to confirm |
+| `~/.agent-context` still exists | `ls -ld ~/.agent-context` | it is probably the compatibility symlink from the rename to `~/.overlord`; remove it once no pane uses it |
 
 Two conflicts are worth naming because they look like bugs:
 
@@ -459,6 +495,11 @@ pi/
   pi-auto-compact.json     compaction threshold
   trust.example.json       how trust.json is shaped — copy, do not install blind
   extensions/              hand-written pi extensions
+overlord/
+  AGENTS.md                orchestrator role + operating rules (installed)
+  README.md                workspace-index template (installed once)
+scripts/
+  overlord.sh              create ~/.overlord + the `overlord` workspace
 skills/
   skills.tsv               which skill comes from which tree, and why
   hotshot/                 bundled: its repo is still empty
