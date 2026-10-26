@@ -17,7 +17,6 @@ MANIFEST="$REPO_ROOT/herdr/plugins.toml"
 MANIFEST_JS="$REPO_ROOT/scripts/plugins-manifest.js"
 
 have herdr || die "herdr is not installed; install it first (curl -fsSL https://herdr.dev/install.sh | sh)"
-[ -f "$MANIFEST" ] || die "missing $MANIFEST"
 
 rows() { node "$MANIFEST_JS" rows "$MANIFEST"; }
 
@@ -34,6 +33,29 @@ installed_ids() {
 }
 
 is_installed() { printf '%s\n' "$1" | grep -qx -- "$2"; }
+
+# Without a server every plugin reads as "not installed", which is the wrong
+# answer: the plugins are on disk, we simply cannot ask. Say so instead.
+if ! needs_herdr_server; then
+  case "${1:-install}" in
+    status)
+      printf '%s--%s    no herdr server running — cannot enumerate installed plugins\n' \
+        "$C_DIM" "$C_RESET"
+      # Still report what the manifest declares, so the output is useful.
+      while IFS=$'\x1f' read -r id source ref link_path optional why repo note; do
+        [ -n "$id" ] || continue
+        printf '%s?%s      %-22s declared (%s)\n' "$C_DIM" "$C_RESET" "$id" "$source"
+      done < <(rows)
+      exit 0
+      ;;
+    install)
+      warn "no herdr server running — plugins install per-user and need one"
+      info "  start it: herdr        then re-run: $0 install"
+      exit 1
+      ;;
+  esac
+fi
+[ -f "$MANIFEST" ] || die "missing $MANIFEST"
 
 cmd_list() {
   printf '%-22s %-42s %-11s %s\n' ID SOURCE REF ROLE

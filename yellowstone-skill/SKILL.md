@@ -157,6 +157,8 @@ One `[[plugin]]` table per plugin, with a pinned `ref` and a `why` line:
 | `herdr-context` | per-tab project context dock | Rust (built at install) |
 | `wilbeibi.catchup` | summarize/fork/hand a session to another agent | — |
 | `herdr-theme-picker` | theme browser writing `[theme.custom]` | — |
+| `herdr-bar` | command bar: `prefix+k` fuzzy-jumps to any tab, pane, agent, repo or branch; also titles unnamed tabs | — |
+| `ray.plugin-manager` | plugin popup: `prefix+p` to install, update, remove, toggle and browse plugins | — |
 | `ezracerpac.jj-waltz` | jj workspace switcher (optional) | `jj` |
 
 Apply the manifest:
@@ -167,6 +169,32 @@ scripts/herdr-plugins.sh status     # installed / missing / optional
 scripts/herdr-plugins.sh install    # install what is missing
 scripts/herdr-plugins.sh update     # refresh GitHub-managed plugins in place
 ```
+
+### Installing a plugin: the popup, and why the manifest still matters
+
+`ray.plugin-manager` (`prefix+p`) is a popup over the `herdr plugin` CLI. It is the
+comfortable way to install, update, remove, toggle and browse plugins, and
+`herdr-bar` (`prefix+k`) is the navigation counterpart — jump to anything, rather
+than remembering where it lives.
+
+**It installs into the machine, not into this repo.** So there are two surfaces and
+only one source of truth:
+
+| Surface | What it is | Where the record lives |
+|---|---|---|
+| the popup (`prefix+p`) | interactive discovery and one-off management | `~/.config/herdr/plugins.json`, per machine |
+| `herdr/plugins.toml` | the declared set, with pinned refs | this repo |
+
+A plugin installed through the popup exists on that machine and nowhere else — a
+second machine provisioned from this repo will not have it, and `doctor.sh` will
+report it as undeclared only if you also remove it from the manifest. So after
+installing something you intend to keep, add a `[[plugin]]` row with its resolved
+commit and a one-line `why`; `herdr plugin list` prints the ref.
+
+Neither plugin ships keybindings in its manifest, so the binds live in
+`herdr/config.toml` and are part of this repo: `prefix+k` → `herdr-bar.open` and
+`prefix+p` → `ray.plugin-manager.open`. Install the plugin without the bind and it
+is unreachable; install the bind without the plugin and the key does nothing.
 
 Two behaviours worth knowing. herdr refuses to install over a locally linked
 plugin, so `unblock` must be cloned to `link_path` first — the script prints the
@@ -246,6 +274,11 @@ failure modes are silent:
   list` carry no goal fields.
 - **`transient-error-retry`** (below) exists because pi's classifier does not cover
   every gateway's dropped-stream phrasing.
+- **`nonblock`** (see [Never block the session](#never-block-the-session)) refuses the
+  blocking form of a wait, so an intake-style agent stays reachable. It ships
+  **disabled**: it changes agent behaviour, and a machine that legitimately needs a
+  bounded wait should not lose it silently. Opt in with
+  `echo '{"enabled":true}' > ~/.pi/agent/nonblock.json` or `PI_NONBLOCK=1`.
 
 Packages are declared, not copied, and nothing points into this repository.
 Two entries are our forks:
@@ -315,6 +348,40 @@ Do not ship a static catalogue of available themes. herdr's list comes from the
 binary (`herdr --default-config`), pi's from an installed npm package (list
 `themes/*.json`), and the picker's from a cache it fills on demand — all three
 move with their source, so a pinned list goes stale. Enumerate at run time.
+
+### Never block the session
+
+An agent that is the single conversational intake for a fleet must be reachable at
+every instant. A call that holds the turn queues the operator's next message behind
+it, so **blocking is a defect class, not slowness** — and the blocking forms are the
+diligent-sounding ones, which is why a competent agent reaches for them:
+
+| Need | Blocking (never) | Non-blocking (always) |
+|---|---|---|
+| check on a delegated job | `jobs action='attach'` | `jobs action='output'` |
+| wait for a condition | a `sleep` loop in the turn | `run_in_background=true` with an `until` loop |
+| watch for events | polling inside the turn | the `monitor` tool |
+| wait for a lane's stop boundary | prompting or spinning | a backgrounded boundary wait, then next item |
+
+`jobs action='attach'` is the specific trap: it reads as diligence ("I will wait for
+the agent's own report") while doing the one thing that must not happen. This has
+already cost a real operator message — the turn held, their instruction queued behind
+it, and they had to interrupt by hand.
+
+Documentation alone does not hold this invariant, because the tempting call looks
+correct. `pi/extensions/nonblock.ts` enforces it through pi's `tool_call` hook, which
+may mutate `event.input` in place: an `attach` with `wait: false` is rewritten to
+`output`, and an `attach` that would block is refused with the table above as the
+reason. Enable it wherever an agent is an intake:
+
+```bash
+echo '{"enabled":true}' > ~/.pi/agent/nonblock.json   # or PI_NONBLOCK=1
+```
+
+The general lesson is worth more than the specific case: **when the right action is
+available but the wrong one is more discoverable, fix the affordance rather than
+writing the rule again.** An invariant that depends on an agent remembering it is
+followed by luck; one enforced at the call site is followed by construction.
 
 ### pi — `pi/models.json`
 

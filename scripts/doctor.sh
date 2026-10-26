@@ -279,6 +279,20 @@ else
   record warn skills "scripts/skills-sync.sh is missing"
 fi
 
+# The non-blocking guard: opt-in, and worth surfacing because its absence is
+# invisible until a turn blocks and queues an operator message behind it.
+if [ -f "$PI_DIR/extensions/nonblock.ts" ]; then
+  nb_state="installed, disabled"
+  if [ "${PI_NONBLOCK:-}" = "1" ]; then
+    nb_state="installed, enabled (PI_NONBLOCK=1)"
+  elif [ -f "$PI_DIR/nonblock.json" ] && grep -q '"enabled"[[:space:]]*:[[:space:]]*true' "$PI_DIR/nonblock.json" 2>/dev/null; then
+    nb_state="installed, enabled"
+  fi
+  record info nonblock "$nb_state"
+else
+  record info nonblock "not installed (./install.sh pi)"
+fi
+
 # The shared agent instructions at $HOME.
 if [ -f "$HOME/AGENTS.md" ]; then
   if cmp -s "$REPO_ROOT/AGENTS.md" "$HOME/AGENTS.md"; then

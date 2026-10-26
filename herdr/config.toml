@@ -29,6 +29,20 @@ type = "plugin_action"
 command = "unblock.open"
 description = "open unblock queue"
 
+# command bar: jump to any tab, pane, agent, repo or branch
+[[keys.command]]
+key = "prefix+k"
+type = "plugin_action"
+command = "herdr-bar.open"
+description = "command bar"
+
+# plugin manager: install, update, browse plugins from a popup
+[[keys.command]]
+key = "prefix+p"
+type = "plugin_action"
+command = "ray.plugin-manager.open"
+description = "open plugin manager"
+
 
 [theme.custom]
 panel_bg = "#06040f"

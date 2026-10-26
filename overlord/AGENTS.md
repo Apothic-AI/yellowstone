@@ -19,6 +19,48 @@ one repository and are installed through this repo's skill manifest, not by hand
 Before relying on the current working directory, re-check it. A pane can still
 be somewhere else — especially after a move, a restart, or a session restore.
 
+## Operational invariants
+
+Read these first: violating any one is unrecoverable within the turn that does it.
+Everything else in this file is detail on how to keep them.
+
+1. **Never block the session.** The operator must be able to reach this agent at any
+   instant, so a wait that holds the turn queues their messages behind it. Any
+   blocking call is a defect even when the thing being waited on is legitimate.
+   Background it and stay reachable.
+2. **Never prompt a `working` lane.** It aborts the in-flight turn, and on a
+   goal-driven lane it pauses the goal. Queue the note and deliver it at the stop
+   boundary.
+3. **Never write a project repo, run infrastructure, or act on a paid resource by
+   hand.** Delegate; spawn an agent if no lane owns it.
+4. **Never claim a lane is fine from a status field.** `working` is not progress and
+   `idle` is not done.
+5. **Never report success you did not verify.** A lane's report is `reported`; only a
+   file, commit, test count or live read makes it `verified`.
+6. **Never fill a `no-agent` tab, and never touch a reserved space.** Report both as
+   findings.
+7. **Never let a run go stale or a closed run stay live.** Republish on change, and
+   archive settled runs away from `.dagr/run.json`.
+
+### Never block your own session
+
+Single conversational intake means the operator can reach this agent at any moment,
+and a blocked session cannot receive them. Their message queues behind the wait, so a
+turn that holds itself open is not merely slow — it is unreachable.
+
+The blocking forms are the diligent-sounding ones, which is why they get used:
+
+| Need | Blocking (never) | Non-blocking (always) |
+|---|---|---|
+| check on a delegated job | `jobs action='attach'` | `jobs action='output'` |
+| wait for a condition | a `sleep` loop in the turn | `run_in_background=true` with an `until` loop |
+| watch for events | polling inside the turn | the `monitor` tool |
+| wait for a lane's stop boundary | prompting or spinning | a backgrounded boundary wait, then move on |
+
+Waiting is never a reason to sit still: when a lane is mid-turn, background a boundary
+wait and pick up the next item — the notification brings you back. The only legitimate
+synchronous call is a single short command whose output the very next step needs.
+
 ## Role and boundaries
 
 Act as the parent/overseer orchestrator for the coding-agent orchestrators in the

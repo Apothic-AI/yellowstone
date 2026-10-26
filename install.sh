@@ -158,6 +158,10 @@ install_pi() {
   # hand-written extensions (the herdr one is installed by herdr itself)
   install_file "$REPO_ROOT/pi/extensions/transient-error-retry.ts" \
                "$PI_DIR/extensions/transient-error-retry.ts"
+  # Opt-in: it changes agent behaviour, so it ships disabled and is enabled per
+  # machine by ~/.pi/agent/nonblock.json or PI_NONBLOCK=1.
+  install_file "$REPO_ROOT/pi/extensions/nonblock.ts" \
+               "$PI_DIR/extensions/nonblock.ts"
 
   # cosmetic, non-functional state
   install_file "$REPO_ROOT/pi/pi-auto-compact.json" "$PI_DIR/pi-auto-compact.json"

@@ -224,6 +224,40 @@ suite_smoke() {
   check "skill documents locator hygiene" \
     grep -q 'pane gone' "$REPO/yellowstone-skill/SKILL.md"
 
+  # The two plugin-management plugins ship as a pair, and their keybinds live in
+  # config.toml because neither manifest declares keys: plugin without bind is
+  # unreachable, bind without plugin does nothing.
+  check "manifest declares herdr-bar" \
+    awk -F'\t' '$1=="herdr-bar"' "$REPO/herdr/plugins.toml" >/dev/null 2>&1 || \
+    node "$REPO/scripts/plugins-manifest.js" ids "$REPO/herdr/plugins.toml" | grep -qx herdr-bar
+  check "manifest declares the plugin manager" \
+    node "$REPO/scripts/plugins-manifest.js" ids "$REPO/herdr/plugins.toml" | grep -qx ray.plugin-manager
+  check "config ships the command-bar bind" grep -q 'command = "herdr-bar.open"' "$REPO/herdr/config.toml"
+  check "config ships the plugin-manager bind" grep -q 'command = "ray.plugin-manager.open"' "$REPO/herdr/config.toml"
+  # Every plugin whose manifest declares a keybind must have that bind in
+  # config.toml — a manifest-only pin is not reachable.
+  local missing_bind="" id kind_tab src ref link_path optional why repo note
+  while IFS=$'\x1f' read -r id source ref link_path optional why repo note; do
+    [ -n "$id" ] || continue
+    # read the bind recorded in the manifest's keybind field, if any
+    bind="$(node "$REPO/scripts/plugins-manifest.js" get "$REPO/herdr/plugins.toml" "$id" keybind)"
+    [ -n "$bind" ] || continue
+    action="${bind#*-> }"
+    action="${action%% *}"
+    grep -q "command = \"$action\"" "$REPO/herdr/config.toml" \
+      || missing_bind="$missing_bind$id($action) "
+  done < <(node "$REPO/scripts/plugins-manifest.js" rows "$REPO/herdr/plugins.toml")
+  check_eq "every declared keybind is present in config.toml" "" "$missing_bind"
+
+  # The non-blocking invariant must be enforced at a call site, not just written
+  # down: an agent that forgets does not get the benefit of a paragraph.
+  check "nonblock extension ships" test -f "$REPO/pi/extensions/nonblock.ts"
+  check "nonblock defaults to disabled" grep -q 'function enabled' "$REPO/pi/extensions/nonblock.ts"
+  check "nonblock targets the attach trap" grep -q 'action !== "attach"' "$REPO/pi/extensions/nonblock.ts"
+  check "skill documents the blocking table" \
+    grep -q "jobs action='attach'" "$REPO/yellowstone-skill/SKILL.md"
+  check "overlord doc carries the invariants" grep -qF '## Operational invariants' "$REPO/overlord/AGENTS.md"
+
   # Plugin manifest.
   local n
   n="$(node "$REPO/scripts/plugins-manifest.js" ids "$REPO/herdr/plugins.toml" 2>/dev/null | wc -l)"

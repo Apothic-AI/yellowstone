@@ -15,7 +15,7 @@
 
 const fs = require('node:fs');
 
-const FIELDS = ['id', 'source', 'ref', 'link_path', 'optional', 'why', 'repo', 'note'];
+const FIELDS = ['id', 'source', 'ref', 'link_path', 'optional', 'why', 'repo', 'note', 'keybind'];
 
 function parseManifest(file) {
   const text = fs.readFileSync(file, 'utf8');

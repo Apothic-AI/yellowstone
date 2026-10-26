@@ -8,6 +8,34 @@
 #   herdr plugin install <owner>/<repo>[/subdir...] [--ref REF] [--yes]
 #   herdr plugin link <path>          # local plugin, no copy
 
+# --- the command bar ----------------------------------------------------------
+# Fuzzy "go anywhere" switcher: Cmd+K / prefix+k, matching tasks, tabs, panes,
+# agents, repos and branches. Also titles unnamed tabs from the agent's task
+# title and draws per-agent icons. Keybind is prefix+k in config.toml; the
+# plugin manifest ships no keys, so the bind is ours to keep.
+[[plugin]]
+id        = "herdr-bar"
+source    = "jeffarese/herdr-bar"
+ref       = "1ec84901d7922987b4273e4ae98c33bd5d251fab"
+why       = "one keypress to jump to any tab, pane, agent, repo or branch"
+keybind   = "prefix+k -> herdr-bar.open"
+
+# --- plugin management --------------------------------------------------------
+# A popup over the `herdr plugin` CLI: install, update, remove, enable/disable and
+# browse the marketplace without remembering the CLI. Pair it with herdr-bar:
+# the bar is a keypress away for navigation, the manager for the plugin surface
+# itself. Because this exists, this manifest is the *declared* set and the popup
+# is the interactive surface — installing a plugin by hand is no longer the
+# expected path, and an install made through the popup must be reflected here or
+# a fresh machine will not have it.
+[[plugin]]
+id        = "ray.plugin-manager"
+source    = "speardragon/herdr-plugin-manager"
+ref       = "8ed222ab7efe735b3ef5e037e7ee81d6d7650e4e"
+why       = "install, update and browse plugins from a popup instead of the CLI"
+keybind   = "prefix+p -> ray.plugin-manager.open"
+note      = "the manager is a discovery surface, not a source of truth: this manifest is"
+
 # --- orchestration graph -----------------------------------------------------
 # Live DAG of an agent swarm in a split pane. Renders `.dagr/run.json`; the
 # `dagr` binary comes from this plugin (bin/dagr) and is symlinked onto PATH.
