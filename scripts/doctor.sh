@@ -279,6 +279,17 @@ else
   record warn skills "scripts/skills-sync.sh is missing"
 fi
 
+# The shared agent instructions at $HOME.
+if [ -f "$HOME/AGENTS.md" ]; then
+  if cmp -s "$REPO_ROOT/AGENTS.md" "$HOME/AGENTS.md"; then
+    record ok agents-md "in sync with repo"
+  else
+    record warn agents-md "differs from repo — review: diff $(short "$REPO_ROOT/AGENTS.md") ~/AGENTS.md"
+  fi
+else
+  record warn agents-md "missing ~/AGENTS.md — run ./install.sh agents"
+fi
+
 # The overlord space: directory + the herdr workspace whose cwd is that directory.
 if [ -x "$REPO_ROOT/scripts/overlord.sh" ]; then
   ol_report="$(NO_COLOR=1 "$REPO_ROOT/scripts/overlord.sh" status 2>/dev/null || true)"

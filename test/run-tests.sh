@@ -153,7 +153,12 @@ suite_smoke() {
   # root rather than npx (which finds nothing there).
   local mycord_rows
   mycord_rows="$(grep -vE '^[[:space:]]*(#|$)' "$REPO/skills/skills.tsv" | awk -F'\t' '$3 == "Apothic-AI/mycord"')"
-  check_eq "skills.tsv declares the 5 mycord skills" 5 "$(printf '%s\n' "$mycord_rows" | grep -c .)"
+  # Count is derived, not asserted: the repo grows (router, Slack, Ferdium all
+  # appeared later), so a hardcoded total is a test that fails for good reasons.
+  local mycord_n
+  mycord_n="$(printf '%s\n' "$mycord_rows" | grep -c .)"
+  [ "$mycord_n" -ge 5 ] && ok "skills.tsv declares $mycord_n mycord skills" \
+    || bad "skills.tsv declares only $mycord_n mycord skills (expected >=5)"
   local mycord_bad
   mycord_bad="$(printf '%s\n' "$mycord_rows" | awk -F'\t' '$2 != "repo"' | grep -c .)"
   check_eq "every mycord skill is a repo-kind skill" 0 "$mycord_bad"
@@ -171,6 +176,13 @@ suite_smoke() {
   # And the skill must name a way to verify, not just assert.
   check "skill documents verifying palette provenance" \
     grep -q 'palette_to_tokens' "$REPO/yellowstone-skill/SKILL.md"
+
+  # The two default spaces and their tabs are a contract; assert they are taught.
+  check "skill documents the overlord tab" grep -q 'sysop-leader' "$REPO/yellowstone-skill/SKILL.md"
+  check "skill documents the sysops space" grep -q '\~/.sysops' "$REPO/yellowstone-skill/SKILL.md"
+  check "script provisions sysops" grep -q 'SYSOPS_LABEL' "$REPO/scripts/overlord.sh"
+  check "mycord router skill declared" \
+    awk -F'\t' '$1=="mycord-skill" && $2=="repo" && $3=="Apothic-AI/mycord"' "$REPO/skills/skills.tsv" | grep -q .
 
   # Plugin manifest.
   local n
@@ -207,7 +219,7 @@ suite_install() {
   local home; home="$(new_home install)"
 
   local out rc
-  out="$(in_home "$home" bash "$REPO/install.sh" pi skills overlord secrets --yes 2>&1)"; rc=$?
+  out="$(in_home "$home" bash "$REPO/install.sh" pi skills agents overlord secrets --yes 2>&1)"; rc=$?
   check_eq "install.sh exits 0" 0 "$rc"
   check_contains "reports completion" "$out" "Done"
 
@@ -249,6 +261,9 @@ suite_install() {
   # Overlord: the directory and its two documents. The workspace itself cannot
   # be created in the sandbox because herdr workspaces are per-user, so this
   # asserts the directory side and that the script reports the workspace gap.
+  check "~/AGENTS.md installed" test -f "$home/AGENTS.md"
+  check "~/AGENTS.md matches the repo" cmp -s "$REPO/AGENTS.md" "$home/AGENTS.md"
+  check "~/.sysops created" test -d "$home/.sysops"
   check "overlord AGENTS.md installed" test -f "$home/.overlord/AGENTS.md"
   check "overlord README.md installed" test -f "$home/.overlord/README.md"
   check_contains "overlord stage ran" "$out" "Overlord"
@@ -274,11 +289,11 @@ suite_idempotent() {
   suite idempotent
   local home; home="$(new_home idem)"
 
-  in_home "$home" bash "$REPO/install.sh" pi skills overlord secrets --yes >/dev/null 2>&1
+  in_home "$home" bash "$REPO/install.sh" pi skills agents overlord secrets --yes >/dev/null 2>&1
   local before; before="$(fingerprint "$home")"
 
   local out
-  out="$(in_home "$home" bash "$REPO/install.sh" pi skills overlord secrets --yes 2>&1)"
+  out="$(in_home "$home" bash "$REPO/install.sh" pi skills agents overlord secrets --yes 2>&1)"
 
   local after; after="$(fingerprint "$home")"
   if [ "$before" = "$after" ]; then
@@ -352,6 +367,12 @@ JSON
   # But new packages still arrive.
   check "new packages still added" bash -c \
     "node -e 'const s=require(\"$home/.pi/agent/settings.json\");process.exit(s.packages.some(p=>String(p).includes(\"pi-codex-goal\"))?0:1)'"
+
+  # A hand-edited ~/AGENTS.md must be backed up before the repo's version lands.
+  printf '# my own instructions\ncustom rule\n' > "$home/AGENTS.md"
+  in_home "$home" bash "$REPO/install.sh" agents --yes >/dev/null 2>&1
+  check "hand-edited ~/AGENTS.md backed up" bash -c "ls '$home/AGENTS.md.bak-yellowstone-'* >/dev/null 2>&1"
+  check "~/AGENTS.md replaced by the repo version" cmp -s "$REPO/AGENTS.md" "$home/AGENTS.md"
 
   # An operator's live workspace index must survive a reinstall.
   mkdir -p "$home/.overlord"

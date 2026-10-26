@@ -16,8 +16,8 @@
 #           let it be deleted, and scripts/skills-sync.sh reports the count.
 
 # --- mycord: the comms skills -------------------------------------------------
-# All five live in one repository, each in its own top-level directory with its
-# own pyproject/Makefile. They are NOT in skills/ and `npx skills add` does not
+# All of them live in one repository, each in its own top-level directory with
+# its own pyproject/Makefile. They are NOT in skills/ and `npx skills add` does not
 # find them (verified: "No valid skills found"), so the only reliable install is
 # a checkout, linked per directory.
 #
@@ -30,8 +30,11 @@ hotshot	bundle	./skills/hotshot	Apothic-AI/one-shot-genius exists but is empty (
 herdr	bundle	./herdr/skills/herdr	Fork of the skill `herdr --skill` ships: ~56 delta lines, mostly target-verification-before-delegation, which this orchestration setup depends on. Rebase onto the shipped file when herdr changes and send the delta upstream; becomes kind=shipped when herdr takes it.
 dagr-producer	dagr	herdr-dagr	Owned by the herdr-dagr plugin pinned in herdr/plugins.toml. Never bundle: `dagr --skill` is byte-identical to the plugin's own copy, so a bundled copy is a silent fork of a file the plugin already owns.
 unblock	repo	Apothic-AI/unblock	Owned by our fork, which ships skills/unblock/SKILL.md. The fork's copy is newer than any bundled copy (it documents queue-page sign-in), so bundling would freeze agents on a stale skill.
+mycord-skill	repo	Apothic-AI/mycord	Routing skill for the whole library: which medium exists, which are planned, and to install the medium's own skill before writing code. Install this one first; it is the index the comms agent reads to choose.
 mycord-discord-skill	repo	Apothic-AI/mycord	The comms space's Discord surface (discord.py-self REPL). User-account automation: violates Discord's ToS and can get the account banned - never initiate unprompted.
 mycord-telegram-skill	repo	Apothic-AI/mycord	The comms space's Telegram surface (Telethon REPL). Supports real user accounts; Telegram permits third-party clients.
+mycord-slack-skill	repo	Apothic-AI/mycord	The comms space's Slack surface: drives Slack as the signed-in human via an xoxc- client token plus the httpOnly `d` cookie, with no app registration.
 mycord-irc-skill	repo	Apothic-AI/mycord	The comms space's IRC surface (pydle REPL), TLS by default.
 mycord-email-skill	repo	Apothic-AI/mycord	The comms space's email surface: Himalaya CLI with a per-account wrapper config.
 google-voice-skill	repo	Apothic-AI/mycord	The comms space's SMS/voice surface (unofficial gvoice TS client). Reading works; sending SMS needs a captured exchange.
+ferdium-skill	repo	Apothic-AI/mycord	Drives a Ferdium install over CDP: launches it headless on a virtual display or headed, discovers per-service webviews, and reads or interacts with any of them. The catch-all for a service with no dedicated skill.

@@ -53,17 +53,17 @@ You are only permitted to use herdr to send commands to yourself in the followin
 		- Never rewrite a closed or superseded run — it is a dated historical record. Start a new run file and note the supersession in your progress record.
 	- you update your own dagr just before sending each handoff prompt and after receiving updates from agents.
 	- you always set the model and reasoning effort. Use the following to decide which:
-		- Planning: `gpt-6-sol` `high`
+		- Planning: `deepseek-v4.1-flash-1017` `max` (`pi` - this deepseek model should be the default model in pi)
 		- Development/integration work (any of): 
-			- `deepseek-v4.1-flash` `max` (`opencode`)
+			- `deepseek-v4.1-flash-1017` `max` (`pi`) - prefer this model
 			- `glm-5.3-flash` `max` (`droid`)
-			- `gemini-3.8-flash` `high` (antigravity/`agy`)
-		- Unresolved blocking issues needing escalation: `gpt-6-sol` `high` (Can escallate to `xhigh` and then `max` when absolutely necessary)
+			- `gemini-3.8-flash-high` `high` (`pi`)
+		- Unresolved blocking issues needing escalation: `deepseek-v4.1-flash-1017` `max`.
 	- If you yourself are a codex agent and you already know what work needs to be done:
 		- You have a /goal feature. Use herdr self-actuation to set a /goal on yourself via `/goal <instructions>` to delegate the task. This will prevent yourself from prematurely going idle before all work is complete.
 	- You remain mindful of the agent's context window utilization:
 		- Every agent's current context window usage is displayed in their UI, and you are able to read it.
-		- > 200k tokens is moderate. > 300k is moderate-high. > 400k is high. > 500k is very high.
+		- > 20% is moderate. > 30% is moderate-high. > 40% is high. > 50% is very high.
 		- Once an agent's context usage is high or very high (If it's close to finishing, you may let it complete its current tranche):
 			- Tell the agent that you need to reset its agent session, and instruct it to give you a detailed continuation prompt for you to paste back to it so it can pickup from where it left off.
 			- Send the `/new` command (Don't forget to send the ENTER key).
@@ -86,6 +86,10 @@ You are only permitted to use herdr to send commands to yourself in the followin
 - We use https://crates.io/crates/cargo-remote-3000 combined with fly.io build servers to prevent local disk pressure.
 - When using fly.io build servers, always check to make sure you're not racing another agent's build. Setup a separate
   user account or build space on the server if necessary.
+
+## disk pressure
+
+Always be mindful of potential disk pressure prior to taking an action that will occupy a lot of disk space. Check free space/usage first.
 
 ## Context/token awareness and conservation
 

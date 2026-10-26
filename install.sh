@@ -22,7 +22,8 @@ Stages (default: all, in this order):
   herdr      config.toml, plugins, pi integration, herdr skill, herdr-agy.sh
   pi         settings.json, models.json, extensions, packages
   skills     install every agent skill from the tree that owns it
-  overlord   ~/.overlord context dir + the `overlord` herdr workspace
+  agents     ~/AGENTS.md — the shared agent instructions
+  overlord   ~/.overlord + ~/.sysops dirs, the two herdr spaces and their tabs
   secrets    create empty ~/.pi/agent/secrets/<provider> files to fill in
   verify     report what is installed, outdated, or missing
 
@@ -38,14 +39,14 @@ while [ $# -gt 0 ]; do
     -y|--yes) ASSUME_YES=1 ;;
     -n|--dry-run) DRY_RUN=1 ;;
     -h|--help) usage; exit 0 ;;
-    herdr|pi|plugins|skills|overlord|secrets|verify) STAGES+=("$1") ;;
+    herdr|pi|plugins|skills|agents|overlord|secrets|verify) STAGES+=("$1") ;;
     *) err "unknown argument: $1"; usage; exit 2 ;;
   esac
   shift
 done
 
 if [ ${#STAGES[@]} -eq 0 ]; then
-  STAGES=(herdr pi skills overlord secrets verify)
+  STAGES=(herdr pi skills agents overlord secrets verify)
 fi
 
 want() {
@@ -204,6 +205,26 @@ install_skills() {
   fi
 }
 
+# ------------------------------------------------------------------ agents --
+install_agents() {
+  step "Agent instructions"
+  # pi (and other harnesses) load AGENTS.md from the agent directory and from the
+  # working directory's ancestors. This file is the shared instruction set, so it
+  # lives at $HOME: every project under $HOME inherits it.
+  #
+  # A local AGENTS.md is often hand-edited. Copy over it, but back it up first and
+  # say so — silently replacing someone's instructions is worse than a stale file.
+  local dest="$HOME/AGENTS.md"
+  if [ -f "$dest" ] && cmp -s "$REPO_ROOT/AGENTS.md" "$dest"; then
+    info "unchanged $(short "$dest")"
+    return 0
+  fi
+  if [ -f "$dest" ] && [ "$DRY_RUN" = 0 ]; then
+    info "existing $(short "$dest") differs from the repo — backing it up before replacing"
+  fi
+  install_file "$REPO_ROOT/AGENTS.md" "$dest"
+}
+
 # ---------------------------------------------------------------- overlord --
 install_overlord() {
   step "Overlord space"
@@ -281,6 +302,7 @@ install_verify() {
 want herdr   && install_herdr
 want pi      && install_pi
 want skills   && install_skills
+want agents   && install_agents
 want overlord && install_overlord
 want secrets && install_secrets
 if want verify; then

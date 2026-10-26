@@ -35,6 +35,7 @@ scripts/doctor.sh          # confirm it took
 | `pi/models.json` | provider routing — commands that read keys, never the keys |
 | `pi/extensions/` | hand-written pi extensions |
 | `overlord/` | instructions + index for the `overlord` orchestrator space |
+| `AGENTS.md` | shared agent instructions, installed to `~/AGENTS.md` |
 | `skills/` | agent skills, plus `skills.tsv` recording which tree owns each |
 | `scripts/` | `install` helpers, plugin sync, `doctor`, `upgrade`, `overlord` |
 | `test/` | Docker test environment for the installer |
@@ -55,9 +56,10 @@ conflict; both install from their own repositories, so this repo pins them
 instead of copying them. See [`docs/forks.md`](docs/forks.md).
 
 Both sides read `~/.agents/skills`, which is why skills are installed from the
-tree that owns each one rather than copied here. On top of both sits `overlord`:
-a herdr workspace whose cwd is `~/.overlord`, where a parent orchestrator reads
-its role and an index of the other spaces.
+tree that owns each one rather than copied here. On top of both sit two herdr
+spaces that are not projects: `overlord` (cwd `~/.overlord`, tabs `overlord` +
+`comms`) for coordinating project agents, and `sysops` (cwd `~/.sysops`, tab
+`sysop-leader`) for machine and service operations.
 
 ## Requirements
 

@@ -2,9 +2,19 @@
 # overlord.sh — set up the overlord space and its context directory.
 #
 #   overlord.sh install   create ~/.overlord, install AGENTS.md/README.md,
-#                         create the `overlord` herdr workspace if absent,
-#                         then ensure its two agent tabs: `overlord` and `comms`
-#   overlord.sh status    does the directory, the space, and both tabs exist
+#                         create the `overlord` and `sysops` herdr workspaces if
+#                         absent, then ensure their agent tabs
+#   overlord.sh status    does the directory, the spaces, and the tabs exist
+#
+# Two spaces ship by default:
+#
+#   overlord  tabs: overlay(pi, "overlord"), comms(pi, "comms")
+#             the parent orchestrator, cwd ~/.overlord
+#   sysops    tab:  "sysop-leader" (pi)
+#             machine and service operations, separate from project orchestration
+#
+# Each space is looked up by label before creation: `herdr workspace create` does
+# not deduplicate, and two spaces with the same name split attention silently.
 #
 # The overlord space is the parent-orchestrator surface: one herdr workspace
 # whose cwd is a directory of plain Markdown — the role instructions plus an
@@ -22,6 +32,14 @@ source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 OVERLORD_LABEL="${OVERLORD_WORKSPACE_LABEL:-overlord}"
 OVERLORD_DIR="${OVERLORD_DIR:-$HOME/.overlord}"
+
+# The second default space. `sysops` is deliberately separate from `overlord`:
+# machine operations (host config, disks, services, network) are a different job
+# from coordinating project agents, and mixing them puts ops noise in the
+# orchestrator's context.
+SYSOPS_LABEL="${SYSOPS_WORKSPACE_LABEL:-sysops}"
+SYSOPS_DIR="${SYSOPS_DIR:-$HOME/.sysops}"
+SYSOPS_TAB="${SYSOPS_TAB_LABEL:-sysop-leader}"
 SRC="$REPO_ROOT/overlord"
 
 # workspace ids + labels, one "id<TAB>label" per line
@@ -42,6 +60,10 @@ workspaces() {
 
 find_overlord_workspace() {
   workspaces 2>/dev/null | awk -F'\t' -v want="$OVERLORD_LABEL" '$2 == want { print $1; exit }'
+}
+
+find_sysops_workspace() {
+  workspaces 2>/dev/null | awk -F'\t' -v want="$SYSOPS_LABEL" '$2 == want { print $1; exit }'
 }
 
 # Tabs in the overlord workspace, as "tab_id<TAB>label".
@@ -85,17 +107,17 @@ panes_in_tab() {
 # starting a second agent in the same pane would replace the operator's session,
 # and `agent start` refuses a pane that is not at a shell prompt anyway.
 ensure_agent_tab() {
-  local ws="$1" label="$2" kind="$3" name="$4" tab_id panes pane agent
+  local ws="$1" label="$2" kind="$3" name="$4" cwd="${5:-$OVERLORD_DIR}" tab_id panes pane agent
 
   tab_id="$(find_tab "$ws" "$label")"
   if [ -z "$tab_id" ]; then
     if [ "${DRY_RUN:-0}" = 1 ]; then
-      dryrun "herdr tab create --workspace $ws --label $label --cwd $OVERLORD_DIR --no-focus"
+      dryrun "herdr tab create --workspace $ws --label $label --cwd $cwd --no-focus"
       dryrun "herdr agent start $name --kind $kind --pane <new pane>"
       return 0
     fi
     local out
-    out="$(herdr tab create --workspace "$ws" --label "$label" --cwd "$OVERLORD_DIR" --no-focus 2>&1)"
+    out="$(herdr tab create --workspace "$ws" --label "$label" --cwd "$cwd" --no-focus 2>&1)"
     tab_id="$(printf '%s' "$out" | node -e '
       let s = "";
       process.stdin.on("data", (d) => (s += d)).on("end", () => {
@@ -148,8 +170,7 @@ ensure_agent_tab() {
 }
 
 install_tabs() {
-  local ws="$1"
-  step "Overlord agent tabs"
+  step "Agent tabs"
   if ! have herdr; then
     warn "herdr not installed — skipping tabs"
     return 0
@@ -159,26 +180,27 @@ install_tabs() {
     info "  start one with: herdr        (then re-run: ./install.sh overlord)"
     return 0
   fi
-  if [ -z "$ws" ]; then
-    # Distinct from "the operator has no space yet": without a server there was
-    # nothing to look up, and install_workspace already explained that. Reporting
-    # a failure here would make a first install on a headless box look broken.
-    if ! needs_herdr_server; then
-      info "tabs: skipped (no herdr server)"
-      return 0
-    fi
-    warn "no overlord workspace — skipping tabs"
-    info "  re-run this stage once the workspace exists"
-    return 1
+
+  local failed=0 over sys
+
+  over="$(find_overlord_workspace || true)"
+  if [ -z "$over" ]; then
+    warn "no '$OVERLORD_LABEL' workspace — skipping its tabs"
+    failed=$((failed + 1))
+  else
+    # `overlord` hosts the orchestrator; `comms` hosts the operator-facing channel.
+    ensure_agent_tab "$over" overlord pi overlord "$OVERLORD_DIR" || failed=$((failed + 1))
+    ensure_agent_tab "$over" comms pi comms "$OVERLORD_DIR" || failed=$((failed + 1))
   fi
 
-  local failed=0
-  # `overlord` hosts the orchestrator: the agent that reads this directory's
-  # AGENTS.md and directs the other spaces.
-  ensure_agent_tab "$ws" overlord pi overlord || failed=$((failed + 1))
-  # `comms` hosts the operator-facing channel: Discord, Telegram, IRC, email and
-  # SMS, driven through the mycord skills.
-  ensure_agent_tab "$ws" comms pi comms || failed=$((failed + 1))
+  sys="$(find_sysops_workspace || true)"
+  if [ -z "$sys" ]; then
+    warn "no '$SYSOPS_LABEL' workspace — skipping its tab"
+    failed=$((failed + 1))
+  else
+    ensure_agent_tab "$sys" "$SYSOPS_TAB" pi "$SYSOPS_TAB" "$SYSOPS_DIR" || failed=$((failed + 1))
+  fi
+
   return $failed
 }
 
@@ -186,11 +208,11 @@ install_dir() {
   step "Overlord context directory"
 
   if [ "${DRY_RUN:-0}" = 1 ]; then
-    dryrun "mkdir -p $OVERLORD_DIR and install AGENTS.md, README.md"
+    dryrun "mkdir -p $OVERLORD_DIR $SYSOPS_DIR and install AGENTS.md, README.md"
     return 0
   fi
 
-  mkdir -p -- "$OVERLORD_DIR"
+  mkdir -p -- "$OVERLORD_DIR" "$SYSOPS_DIR"
   install_file "$SRC/AGENTS.md" "$OVERLORD_DIR/AGENTS.md"
   # README.md holds the live workspace index, which the operator updates as
   # spaces come and go. Never overwrite an existing one: it is the only map.
@@ -201,41 +223,42 @@ install_dir() {
   fi
 }
 
-install_workspace() {
-  step "Overlord herdr workspace"
+# ensure_workspace <label> <cwd> — create the workspace only when the label is
+# absent. `herdr workspace create` does not deduplicate by label or cwd (verified:
+# identical arguments produced two workspaces), so a blind create splits attention
+# between two spaces with the same name and no diagnostic.
+ensure_workspace() {
+  local label="$1" dir="$2"
 
   if ! have herdr; then
-    warn "herdr not installed — skipping workspace creation"
+    warn "herdr not installed — skipping workspace '$label'"
     info "  install it: curl -fsSL https://herdr.dev/install.sh | sh"
     return 0
   fi
   if ! needs_herdr_server; then
-    warn "no herdr server is running — cannot inspect or create workspaces"
+    warn "no herdr server is running — cannot inspect or create workspace '$label'"
     info "  start one with: herdr        (then re-run: ./install.sh overlord)"
-    info "  the context directory and its docs were still installed"
     return 0
   fi
 
   local existing
-  existing="$(find_overlord_workspace)"
+  existing="$(workspaces 2>/dev/null | awk -F'\t' -v want="$label" '$2 == want { print $1; exit }' || true)"
 
   if [ -n "$existing" ]; then
-    info "workspace '$OVERLORD_LABEL' already exists ($existing) — not creating another"
-    if [ "${DRY_RUN:-0}" = 0 ] && [ -d "$OVERLORD_DIR" ]; then
-      # Nudge the cwd only when it is plainly elsewhere; never rewrite a space
-      # the operator has deliberately pointed somewhere.
+    info "workspace '$label' already exists ($existing) — not creating another"
+    if [ -d "$dir" ]; then
       info "  its cwd is whatever the operator set; this script does not move it"
     fi
     return 0
   fi
 
   if [ "${DRY_RUN:-0}" = 1 ]; then
-    dryrun "herdr workspace create --cwd $OVERLORD_DIR --label $OVERLORD_LABEL --no-focus"
+    dryrun "herdr workspace create --cwd $dir --label $label --no-focus"
     return 0
   fi
 
   local out id
-  out="$(herdr workspace create --cwd "$OVERLORD_DIR" --label "$OVERLORD_LABEL" --no-focus 2>&1)"
+  out="$(herdr workspace create --cwd "$dir" --label "$label" --no-focus 2>&1)"
   id="$(printf '%s' "$out" | node -e '
     let s = "";
     process.stdin.on("data", (d) => (s += d)).on("end", () => {
@@ -244,73 +267,109 @@ install_workspace() {
   ' 2>/dev/null)"
 
   if [ -n "$id" ]; then
-    info "created workspace '$OVERLORD_LABEL' ($id) at $(short "$OVERLORD_DIR")"
+    info "created workspace '$label' ($id) at $(short "$dir")"
   else
-    warn "workspace create failed; run it by hand:"
-    info "  herdr workspace create --cwd $(short "$OVERLORD_DIR") --label $OVERLORD_LABEL"
+    warn "workspace create failed for '$label'; run it by hand:"
+    info "  herdr workspace create --cwd $(short "$dir") --label $label"
     printf '%s\n' "$out" | head -3 | sed 's/^/    /'
     return 1
   fi
 }
 
+install_workspace() {
+  step "Herdr spaces"
+  ensure_workspace "$OVERLORD_LABEL" "$OVERLORD_DIR"
+  ensure_workspace "$SYSOPS_LABEL" "$SYSOPS_DIR"
+  return 0
+}
+
 cmd_status() {
   local rc=0
 
-  if [ -d "$OVERLORD_DIR" ]; then
-    printf '%sok%s    %-24s present at %s\n' "$C_GREEN" "$C_RESET" "overlord-dir" "$(short "$OVERLORD_DIR")"
-    [ -f "$OVERLORD_DIR/AGENTS.md" ] \
-      && printf '%sok%s    %-24s present\n' "$C_GREEN" "$C_RESET" "overlord-AGENTS.md" \
-      || { printf '%smiss%s  %-24s missing\n' "$C_YELLOW" "$C_RESET" "overlord-AGENTS.md"; rc=1; }
-    [ -f "$OVERLORD_DIR/README.md" ] \
-      && printf '%sok%s    %-24s present\n' "$C_GREEN" "$C_RESET" "overlord-README.md" \
-      || { printf '%smiss%s  %-24s missing\n' "$C_YELLOW" "$C_RESET" "overlord-README.md"; rc=1; }
-    # A leftover from the pre-rename layout is worth naming, not hiding.
-    if [ -L "$HOME/.agent-context" ]; then
-      printf '%s--%s    %-24s legacy path is a symlink to %s\n' \
-        "$C_DIM" "$C_RESET" "overlord-legacy" "$(readlink -f "$HOME/.agent-context")"
-    fi
-  else
-    printf '%smiss%s  %-24s %s does not exist\n' "$C_YELLOW" "$C_RESET" "overlord-dir" "$(short "$OVERLORD_DIR")"
-    rc=1
-  fi
-
   if ! have herdr; then
-    printf '%s--%s    %-24s herdr not installed\n' "$C_DIM" "$C_RESET" "overlord-space"
-    return $rc
-  fi
-  if ! needs_herdr_server; then
-    printf '%s--%s    %-24s no herdr server running (cannot check the space or tabs)\n' \
-      "$C_DIM" "$C_RESET" "overlord-space"
-    return $rc
+    printf '%s--%s    %-24s herdr not installed\n' "$C_DIM" "$C_RESET" "spaces"
+  elif ! needs_herdr_server; then
+    printf '%s--%s    %-24s no herdr server running (cannot check spaces or tabs)\n' \
+      "$C_DIM" "$C_RESET" "spaces"
   fi
 
-  local id; id="$(find_overlord_workspace || true)"
-  if [ -n "$id" ]; then
-    printf '%sok%s    %-24s workspace '%s' = %s\n' "$C_GREEN" "$C_RESET" "overlord-space" "$OVERLORD_LABEL" "$id"
-  else
-    printf '%smiss%s  %-24s no workspace labelled '%s'\n' "$C_YELLOW" "$C_RESET" "overlord-space" "$OVERLORD_LABEL"
-    return 1
-  fi
+  # Both default spaces, each with the tabs it is supposed to host.
+  local spec name rest label dir tabs_csv wsid tab pane agent
+  for spec in "overlord:$OVERLORD_LABEL:$OVERLORD_DIR:overlord comms" \
+              "sysops:$SYSOPS_LABEL:$SYSOPS_DIR:$SYSOPS_TAB"; do
+    name="${spec%%:*}"
+    rest="${spec#*:}"
+    label="${rest%%:*}"
+    rest="${rest#*:}"
+    dir="${rest%%:*}"
+    tabs_csv="${rest#*:}"
 
-  # Two agent tabs are part of the design, not decoration: `overlord` is where
-  # the orchestrator runs, `comms` is the operator-facing channel.
-  local role label tab pane agent kind
-  for role in "overlord:overlord" "comms:comms"; do
-    label="${role#*:}"
-    tab="$(find_tab "$id" "$label")"
-    if [ -z "$tab" ]; then
-      printf '%smiss%s  %-24s no '%s' tab\n' "$C_YELLOW" "$C_RESET" "overlord-tab:$label" "$label"
+    if [ -d "$dir" ]; then
+      printf '%sok%s    %-24s present at %s\n' "$C_GREEN" "$C_RESET" "$name-dir" "$(short "$dir")"
+      if [ "$name" = overlord ] && [ -L "$HOME/.agent-context" ]; then
+        printf '%s--%s    %-24s legacy path is a symlink to %s\n' \
+          "$C_DIM" "$C_RESET" "overlord-legacy" "$(readlink -f "$HOME/.agent-context")"
+      fi
+    else
+      printf '%smiss%s  %-24s %s does not exist\n' "$C_YELLOW" "$C_RESET" "$name-dir" "$(short "$dir")"
+      rc=1
+    fi
+
+    wsid="$(workspaces 2>/dev/null | awk -F'\t' -v want="$label" '$2 == want { print $1; exit }' || true)"
+    if [ -z "$wsid" ]; then
+      printf '%smiss%s  %-24s no workspace labelled '%s'\n' "$C_YELLOW" "$C_RESET" "$name-space" "$label"
       rc=1
       continue
     fi
-    pane="$(panes_in_tab "$id" "$tab" | awk -F'\t' '$2 != "-" { print $1; exit }')"
-    agent="$(panes_in_tab "$id" "$tab" | awk -F'\t' '$2 != "-" { print $2; exit }')"
-    if [ -n "$agent" ]; then
-      printf '%sok%s    %-24s tab %s hosts a %s agent (%s)\n' "$C_GREEN" "$C_RESET" "overlord-tab:$label" "$tab" "$agent" "$pane"
-    else
-      printf '%swarn%s  %-24s tab %s has no agent\n' "$C_YELLOW" "$C_RESET" "overlord-tab:$label" "$tab"
-      rc=1
+    printf '%sok%s    %-24s workspace '%s' = %s\n' "$C_GREEN" "$C_RESET" "$name-space" "$label" "$wsid"
+
+    # Report every tab this script did not provision. A hand-made tab that is
+    # nearly the same name (sysop-lead beside sysop-leader) is how an operator
+    # ends up driving the wrong pane, and half-clever prefix matching misses
+    # it in either direction. Listing the extras is honest and catches both.
+    local known t extra=""
+    known="$(tabs_in "$wsid" | awk -F'\t' '{print $2}' | sort -u)"
+    while IFS= read -r t; do
+      [ -n "$t" ] || continue
+      case " $tabs_csv " in
+        *" $t "*) continue ;;
+      esac
+      extra="$extra${extra:+, }$t"
+    done <<< "$known"
+    if [ -n "$extra" ]; then
+      printf '%s--%s    %-24s other tabs present (not provisioned here): %s\n' \
+        "$C_DIM" "$C_RESET" "$name-extra" "$extra"
     fi
+
+    for t in $tabs_csv; do
+      other="$(printf '%s\n' "$known" | while IFS= read -r cand; do
+        case "$cand" in
+          "$t") : ;;
+          "$t"-*|"$t"s|"$t"-s) printf '%s\n' "$cand" ;;
+        esac
+      done | head -1)"
+      if [ -n "$other" ]; then
+        printf '%s--%s    %-24s also has a similar tab '%s' — not created by this script\n' \
+          "$C_DIM" "$C_RESET" "$name-extra" "$other"
+      fi
+    done
+
+    for t in $tabs_csv; do
+      tab="$(find_tab "$wsid" "$t" || true)"
+      if [ -z "$tab" ]; then
+        printf '%smiss%s  %-24s no '%s' tab in %s\n' "$C_YELLOW" "$C_RESET" "$name-tab:$t" "$t" "$label"
+        rc=1
+        continue
+      fi
+      agent="$(panes_in_tab "$wsid" "$tab" | awk -F'\t' '$2 != "-" { print $2; exit }')"
+      pane="$(panes_in_tab "$wsid" "$tab" | awk -F'\t' '$2 != "-" { print $1; exit }')"
+      if [ -n "$agent" ]; then
+        printf '%sok%s    %-24s tab %s hosts a %s agent (%s)\n' "$C_GREEN" "$C_RESET" "$name-tab:$t" "$tab" "$agent" "$pane"
+      else
+        printf '%swarn%s  %-24s tab %s has no agent\n' "$C_YELLOW" "$C_RESET" "$name-tab:$t" "$tab"
+        rc=1
+      fi
+    done
   done
   return $rc
 }
@@ -318,9 +377,7 @@ cmd_status() {
 cmd_install() {
   install_dir
   install_workspace
-  local ws
-  ws="$(find_overlord_workspace || true)"
-  install_tabs "$ws"
+  install_tabs
   return 0
 }
 

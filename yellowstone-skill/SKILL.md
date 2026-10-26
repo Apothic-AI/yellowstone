@@ -19,7 +19,9 @@ pi                       coding agent, extension host
   ├─ extensions/         hand-written extensions (retry classifier)
   └─ models.json         provider routing, one credential file per provider
 ~/.agents/skills         shared skills both harnesses read
+~/AGENTS.md              shared agent instructions, inherited by every project under $HOME
 ~/.overlord              the overlord space's cwd: role instructions + space index
+~/.sysops                the sysops space's cwd: machine and service operations
 scripts/                 install, upgrade, doctor, plugin sync
 ```
 
@@ -90,7 +92,8 @@ Stages, in the order they run:
 | `herdr` | writes `config.toml`, installs the pi integration, installs/links the plugins from `herdr/plugins.toml`, symlinks the herdr skill, installs `herdr-agy.sh` |
 | `pi` | merges owned keys into `settings.json`, merges providers into `models.json`, installs hand-written extensions, reconciles packages |
 | `skills` | installs every agent skill from the tree that owns it (`skills/skills.tsv`) |
-| `overlord` | creates `~/.overlord`, the `overlord` workspace, and its `overlord` + `comms` pi tabs |
+| `agents` | installs `~/AGENTS.md`, the shared agent instructions |
+| `overlord` | creates `~/.overlord` + `~/.sysops`, both spaces, and their agent tabs |
 | `secrets` | creates empty credential files for every provider `models.json` references |
 | `verify` | runs `scripts/doctor.sh` |
 
@@ -308,16 +311,27 @@ Adding a provider is two steps: append the block, then create the credential
 file. `scripts/doctor.sh` reports `pi-secrets` for any provider whose file is
 missing or empty, so the second step is not easy to forget.
 
-### The overlord space — `~/.overlord`
+### The two default spaces — `~/.overlord` and `~/.sysops`
 
-Yellowstone ships one herdr workspace that is not a project: **`overlord`**, the
-parent-orchestrator surface. Its cwd is a directory of plain Markdown, and it is
-what an orchestrating agent reads before it directs any other agent.
+Yellowstone ships two herdr workspaces that are not projects:
+
+| Space | cwd | Tabs (each hosts a pi agent of the same name) | Job |
+|---|---|---|---|
+| `overlord` | `~/.overlord` | `overlord`, `comms` | coordinate the coding-agent orchestrators in the other spaces |
+| `sysops` | `~/.sysops` | `sysop-leader` | machine and service operations: host config, disks, services, network |
+
+They are separate because they are different jobs. Mixing ops work into the
+orchestrator's context puts disk and service noise next to project coordination,
+and the orchestrator's own instructions are already long.
 
 ```bash
-scripts/overlord.sh install    # create the dir, install the docs, create the space
-scripts/overlord.sh status     # dir present? docs present? space exists?
+scripts/overlord.sh install    # dirs, docs, both spaces, all three tabs
+scripts/overlord.sh status     # dirs? docs? spaces? tabs? agents in them?
 ```
+
+`install.sh` runs this as its `overlord` stage. The `sysops` space is found by
+label like `overlord` is, so an existing one is never duplicated, and an existing
+`sysop-leader` agent is never restarted.
 
 The directory holds exactly two files:
 
@@ -344,13 +358,20 @@ installer should do.
 
 The `overlord` workspace has exactly two tabs, each hosting a **pi** agent:
 
-| Tab label | Agent name | Role |
-|---|---|---|
-| `overlord` | `overlord` | the parent orchestrator — reads this directory's `AGENTS.md` and directs the other spaces |
-| `comms` | `comms` | the operator-facing channel — Discord, Telegram, IRC, email and SMS through the mycord skills |
+| Space | Tab label | Agent name | Role |
+|---|---|---|---|
+| `overlord` | `overlord` | `overlord` | the parent orchestrator — reads `~/.overlord/AGENTS.md` and directs the other spaces |
+| `overlord` | `comms` | `comms` | the operator-facing channel — chat, email, SMS and voice through the mycord skills |
+| `sysops` | `sysop-leader` | `sysop-leader` | machine and service operations |
 
 `overlord.sh install` creates each tab if it is missing and starts a `pi` agent
-in it. Three rules keep this safe to re-run:
+in it. A tab that already exists but is labelled differently is **reported, not
+renamed**: `status` lists any tab the script did not provision
+(`sysops-extra ... other tabs present`), because an older hand-made `sysop-lead`
+beside `sysop-leader` is exactly how an operator drives the wrong pane. Renaming
+or closing someone's tab is their call.
+
+Three more rules keep this safe to re-run:
 
 - **A tab that already hosts an agent is left alone.** `herdr agent start`
   requires a pane at a shell prompt, and replacing an existing session would
@@ -376,11 +397,26 @@ channel:
 
 | Skill | Channel | Notes |
 |---|---|---|
+| `mycord-skill` | *(router)* | install this first: the index of every medium, which are planned, and which skill to install for the one you need |
 | `mycord-discord-skill` | Discord | `discord.py-self` REPL. **Selfbot automation violates Discord's ToS and can get the account banned** — the operator's risk to accept, never initiated unprompted |
 | `mycord-telegram-skill` | Telegram | Telethon REPL. Telegram permits third-party clients |
+| `mycord-slack-skill` | Slack | drives Slack as the signed-in human via an `xoxc-` client token plus the httpOnly `d` cookie, with no app registration |
 | `mycord-irc-skill` | IRC | pydle REPL, TLS by default |
 | `mycord-email-skill` | email | Himalaya CLI with a per-account wrapper config |
 | `google-voice-skill` | SMS / voice | unofficial `gvoice` TS client; reading works, sending SMS needs a captured exchange |
+| `ferdium-skill` | *(catch-all)* | drives a Ferdium install over CDP — for a service that has no dedicated skill |
+
+`mycord-skill` is a **router, not an implementation**: it tells the agent which
+medium exists and to install that medium's own skill before writing code. Install
+it first, because an agent handed only `mycord-skill` will otherwise try to
+improvise the medium instead of installing the skill that implements it.
+
+The repository grows — Slack and the router both appeared after email and IRC —
+so derive the list from the checkout rather than from this table:
+
+```bash
+ls -d ~/Code/mycord/*/ | while read d; do [ -f "$d/SKILL.md" ] && basename "$d"; done
+```
 
 They are declared in `skills/skills.tsv` as `repo` rows, so `install.sh skills`
 installs them like any other skill. Two things are specific to this repository:
