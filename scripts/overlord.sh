@@ -213,7 +213,22 @@ install_dir() {
   fi
 
   mkdir -p -- "$OVERLORD_DIR" "$SYSOPS_DIR"
-  install_file "$SRC/AGENTS.md" "$OVERLORD_DIR/AGENTS.md"
+
+  # The shipped AGENTS.md is a *template* of the role. An operator's live copy
+  # accretes state that must not be lost: reservations keyed to tab ids, tool
+  # paths, per-lane history. So install it once, and after that never overwrite
+  # it silently — report the drift and let the operator decide.
+  if [ -e "$OVERLORD_DIR/AGENTS.md" ]; then
+    if cmp -s "$SRC/AGENTS.md" "$OVERLORD_DIR/AGENTS.md"; then
+      info "unchanged $(short "$OVERLORD_DIR/AGENTS.md")"
+    else
+      info "kept $(short "$OVERLORD_DIR/AGENTS.md") — it has local edits the template does not"
+      info "  compare: diff $(short "$SRC/AGENTS.md") $(short "$OVERLORD_DIR/AGENTS.md")"
+      info "  replace it deliberately with: cp $SRC/AGENTS.md $OVERLORD_DIR/AGENTS.md"
+    fi
+  else
+    install_file "$SRC/AGENTS.md" "$OVERLORD_DIR/AGENTS.md"
+  fi
   # README.md holds the live workspace index, which the operator updates as
   # spaces come and go. Never overwrite an existing one: it is the only map.
   if [ -e "$OVERLORD_DIR/README.md" ]; then

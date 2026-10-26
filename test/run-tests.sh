@@ -184,6 +184,23 @@ suite_smoke() {
   check "mycord router skill declared" \
     awk -F'\t' '$1=="mycord-skill" && $2=="repo" && $3=="Apothic-AI/mycord"' "$REPO/skills/skills.tsv" | grep -q .
 
+  # The goal feature and its traps are documented, and the shipped orchestrator
+  # doc carries the sections an orchestrator actually needs.
+  check "skill documents pi-codex-goal" grep -q 'pi-codex-goal' "$REPO/yellowstone-skill/SKILL.md"
+  check "skill documents the Replace goal modal trap" \
+    grep -q 'Replace goal' "$REPO/yellowstone-skill/SKILL.md"
+  local sec
+  for sec in '## Intake' '### Goal-driven lanes' '### Reserved right now'; do
+    check "overlord doc carries '$sec'" grep -qF "$sec" "$REPO/overlord/AGENTS.md"
+  done
+  # Goal state is footer-only: the claim must stay true, or the doc is wrong.
+  if command -v herdr >/dev/null 2>&1 && herdr workspace list >/dev/null 2>&1; then
+    local any_pane goal_keys
+    any_pane="$(herdr agent list 2>/dev/null | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const a=JSON.parse(s).result.agents||[];if(a[0])process.stdout.write(a[0].pane_id)})')"
+    goal_keys="$(herdr agent get "$any_pane" 2>/dev/null | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const a=JSON.parse(s).result.agent;process.stdout.write(Object.keys(a).filter(k=>/goal/i.test(k)).join(","))}catch{}})')"
+    check_eq "herdr agent API still carries no goal fields" "" "$goal_keys"
+  fi
+
   # Plugin manifest.
   local n
   n="$(node "$REPO/scripts/plugins-manifest.js" ids "$REPO/herdr/plugins.toml" 2>/dev/null | wc -l)"

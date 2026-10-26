@@ -230,6 +230,23 @@ Judge the values by what they fix:
 - `"theme": "neon-noir"` comes from the `@spences10/pi-themes` package (11
   themes under `~/.pi/agent/npm/node_modules/@spences10/pi-themes/themes/`).
 
+Two packages are load-bearing enough to be worth naming here, because their
+failure modes are silent:
+
+- **`pi-codex-goal`** provides `/goal`, `/create-goal` and the `create_goal` /
+  `get_goal` / `update_goal` tools — the same completion contract codex has
+  natively. Three behaviours are easy to get wrong: typing `/goal <objective>` onto
+  a lane that already has an unfinished goal opens a `Replace goal?` **modal** (a
+  modal in an agent pane absorbs the next Enter, so the send reports success and no
+  turn runs); prompting a lane that is **working** on a goal pauses the goal itself
+  (`pauseForAbort`), not just the turn, so automatic continuation stops and the pane
+  looks like an ordinary stop until someone calls `/goal resume`; and `/new` does
+  not carry a goal across, because it is reconstructed from the session branch. Goal
+  state is only readable from a pane's **footer** — `herdr agent get` and `agent
+  list` carry no goal fields.
+- **`transient-error-retry`** (below) exists because pi's classifier does not cover
+  every gateway's dropped-stream phrasing.
+
 Packages are declared, not copied, and nothing points into this repository.
 Two entries are our forks:
 

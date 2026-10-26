@@ -29,9 +29,16 @@ You update your TODOs immediately after each item's task(s) are completed. You d
 
 In the same way that you are able to send messages and commands to other agents via herdr you can use herdr to send slash commands to yourself, effectively managing your own agent harness.
 You are only permitted to use herdr to send commands to yourself in the following manner:
-	- If you are a codex agent you may set your own /goal
+	- You may set your own /goal on any harness we run: codex natively, and pi through the
+	  `pi-codex-goal` extension (`/goal`, `/create-goal`, and the `create_goal` /
+	  `get_goal` / `update_goal` tools). Prefer the tool over typing `/goal <objective>`:
+	  an objective typed into a lane that already has an unfinished goal opens a
+	  `Replace goal?` confirm modal, and a modal in an agent pane absorbs the Enter.
 	- You may adjust your own reasoning effort to suit the difficulty of what you're working on. How this is done depends on which agent you are (codex, opencode, droid, pi, agy):
 		- If you are a codex agent it's `/model`, ENTER, then select the reasoning effort and send ENTER again.
+		- If you are a pi agent it's `/thinking <level>` (levels: off, minimal, low, medium, high, xhigh, max) to set the
+		  reasoning effort directly, and `/model <provider/model>` to set the model directly. Bare `/model` (or Ctrl+L)
+		  and bare `/thinking` (or shift+tab) open selectors instead, whose modals absorb an Enter you send next.
 		- If you are an opencode agent it's `/variant`, ENTER, then select the reasoning effort and send ENTER again.
 		- If you are uncertain how to set it, read the docs relating your agent harness.
 
@@ -59,8 +66,9 @@ You are only permitted to use herdr to send commands to yourself in the followin
 			- `glm-5.3-flash` `max` (`droid`)
 			- `gemini-3.8-flash-high` `high` (`pi`)
 		- Unresolved blocking issues needing escalation: `deepseek-v4.1-flash-1017` `max`.
-	- If you yourself are a codex agent and you already know what work needs to be done:
-		- You have a /goal feature. Use herdr self-actuation to set a /goal on yourself via `/goal <instructions>` to delegate the task. This will prevent yourself from prematurely going idle before all work is complete.
+	- If you already know what work needs to be done and it is more than one turn's worth:
+		- You have a /goal feature on every harness we run (codex native; `pi-codex-goal` on pi). Use herdr self-actuation to set a /goal on yourself via `/goal <instructions>`, or call `create_goal` / `/create-goal` if you have them, so the goal is a completion contract rather than a task summary. This will prevent yourself from prematurely going idle before all work is complete.
+		- Mark it complete only after an evidence-backed audit, and leave it blocked with the reason rather than claiming completion when work remains. `/goal resume` is the only thing that reactivates a blocked goal.
 	- You remain mindful of the agent's context window utilization:
 		- Every agent's current context window usage is displayed in their UI, and you are able to read it.
 		- > 20% is moderate. > 30% is moderate-high. > 40% is high. > 50% is very high.

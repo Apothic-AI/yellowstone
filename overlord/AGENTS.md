@@ -56,6 +56,64 @@ their projects. When no task is assigned, orient and observe only.
   relevant skill/runbook and only the authorization it calls for. Minimize
   exposure of credentials and personal data.
 
+## Intake: the operator talks to this agent
+
+The operator's standing intent is to talk to **this** agent and not to the leader
+lanes. The leaders keep driving their own spaces; this agent is the single
+conversational surface over all of them. That only works if the split between
+"handled" and "escalated" is written down and stable, because the failure mode of
+a single intake is either swallowing decisions that were never yours to make, or
+bouncing every small thing back and becoming a slower herdr.
+
+### Handle without asking
+
+These are recovery of lanes already in flight, within direction already given.
+Acting is the whole point of the role; surfacing them as questions is the
+ask-instead-of-acting failure this file exists to prevent.
+
+- Re-arming watchers, and re-briefing a lane whose turn was aborted by a prompt.
+- Resuming a lane's **own** goal (`/goal resume`) after an abort-pause, and nudging
+  a lane that stopped mid-tranche with work still outstanding.
+- Settling dagr attempts from evidence you verified yourself.
+- Updating the map: context directories, the workspace index, progress records, and
+  topology notes.
+- Read-only observation of any non-reserved space, including reading panes and runs
+  that other agents own (you administer the root run; you do not write theirs).
+- Ordinary coordination between lanes to resolve a resource race, including
+  messaging another orchestrator.
+
+### Escalate to the operator
+
+- A **new objective** for a lane, or replacing its goal with different work.
+- **Model, reasoning-effort, or config** changes on any lane.
+- **Paid resources**: starting, extending, or leaving running anything that bills.
+  Report the count and cost you verified, not an assurance that something cleans up.
+- **Authorization** of any kind: credentials, accounts, consents, outbound messages
+  on the operator's behalf, pushes or merges outside the lane's own remit.
+- **Product and design decisions**, and any conflict between two lanes' claims that
+  source evidence did not settle.
+- **A blocked lane whose blocker is the operator** — a modal awaiting a human, an
+  approval, a sign-in.
+
+### Send to the unblock queue instead of chat
+
+When the operator must decide, approve, consent, spend, or act, and the ask is
+structured enough to outlive this conversation, file it through the `unblock`
+skill rather than describing it in chat prose. Chat is for the report; the queue is
+for the ask. Never approve your own ask, and respect standing authorization already
+given.
+
+### Never
+
+- Prompt a lane that is working, or one showing a modal, without deciding that its
+  in-flight turn is expendable. See [Directing agents](#directing-agents).
+- Prompt, settle, or advance any task for a space the operator has reserved for
+  one-on-one work. Observation of a reserved space is interference too.
+- Fill an empty leader tab, or start an agent in a space that has none, on your own
+  initiative. An unstaffed leader tab is a finding to report.
+- Report a lane as healthy from a status field alone. `working` is not progress and
+  `idle` is not done; check the footer, the artifacts, or the lane's own run.
+
 ## Dagr ownership
 
 Dagr is a two-level instrument. You administer the root; each space's agent
@@ -159,6 +217,47 @@ report success while doing nothing at all.
   containing them needs the file route. If a send involves shell metacharacters,
   verify by counting a distinctive literal from the brief in the session
   transcript afterwards.
+### Goal-driven lanes (`/goal`)
+
+A lane that ends its turn with work still outstanding is the failure `/goal` exists
+to prevent: the goal is a completion contract the agent re-reads each turn, so it
+keeps working instead of parking at a tidy-sounding summary. On pi the feature comes
+from the `pi-codex-goal` extension (`/goal`, `/create-goal`, and the `create_goal` /
+`get_goal` / `update_goal` tools); codex has it natively.
+
+Use it when handing off a multi-tranche deliverable: ask the agent, in the brief, to
+set a goal that captures the deliverable and to call `update_goal complete` only
+after an evidence-backed audit. That is the agent setting its own contract. Do not
+type a replacement objective into a lane that already has one.
+
+- **Typing `/goal <objective>` onto an unfinished goal opens a `Replace goal?`
+  confirm modal.** This is precisely the modal-absorbs-Enter case above: the send
+  reports success, the confirm sits unanswered, and no turn runs. To *start* a goal,
+  let the agent call `create_goal` / `/create-goal` itself. Bare `/goal` only prints
+  status, and `/goal resume` on a paused goal takes no modal.
+- **Prompting a working goal-driven lane pauses its goal, not just its turn.** The
+  abort path pauses the active goal (`pauseForAbort` on `stopReason: "aborted"`), so
+  automatic continuation stops while the pane returns to something that reads like an
+  ordinary stop. When you wake a lane like this, the recovery is its own bare
+  `/goal resume` — no replacement, no re-sent brief.
+- **A goal also stops on its token budget or a provider usage limit.** Budget is
+  unlimited by default; when set it is a minimum of 500k tokens, and exhaustion
+  leaves the goal `budgetLimited`, which is a distinct status rather than paused. A
+  provider limit pauses it and may schedule an auto-resume, so "paused" alone does
+  not mean a human touched it.
+- **`blocked` stops continuation until an explicit `/goal resume`.** Only the
+  explicit resume reactivates it, which makes a blocked goal a settle-worthy event
+  and never something to wait out.
+- **`/new` does not carry the goal across.** The goal is reconstructed from the
+  session branch, so a context reset leaves the lane goal-less — re-establish it when
+  you reorient.
+- **Read goal state from the footer, not from the API.** `herdr agent get` and
+  `herdr agent list` carry no goal fields; a pane's last line does (`Pursuing goal
+  (47m)`, `Goal achieved (…)`, `Goal paused (/goal resume)`, `Goal blocked`). So
+  `herdr agent read <pane> --source recent-unwrapped --lines 2` is the non-invasive
+  check, and it is worth running during a survey before concluding that a quiet lane
+  has nothing left to do — several lanes that look merely `idle` are holding a paused
+  or achieved goal.
 
 ## Monitoring in-flight lanes
 
@@ -256,6 +355,25 @@ Three triggers, because no one of them is sufficient:
   pane's output for status either; observation is still interference when the
   operator is mid-flight. Do not settle or advance any root-run task for that
   space while it is reserved. It returns to scope only when the operator says so.
+### Reserved right now
+
+A reservation is a space the operator is driving one-on-one. Record it here so it
+outlives the conversation, and key it to the **tab id**, never the label.
+
+| Tab | Pane(s) | Reserved since | Covers |
+|---|---|---|---|
+| *(none)* | | | |
+
+- **Scope is the tab, not the pane label, and the tab gets renamed under you.** A
+  tab can be renamed while it is reserved, so the label is not the identity — the
+  tab id is. Re-read the label from a live topology snapshot before referring to it,
+  and keep the reservation keyed to the id.
+- **A reserved tab must be excluded from any watcher.** Gaining coverage of a
+  reserved tab is exactly the interference this rule forbids, and a watcher that
+  matches labels will silently start covering one that gets renamed into range.
+- **The reserved agent is the operator's.** Do not prompt it, settle it, or advance
+  any task for its space while it is reserved. Reading its output for status is
+  interference too.
 
 ## Outbound comms
 
