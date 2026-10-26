@@ -80,8 +80,36 @@ tabs_in() {
   '
 }
 
-find_tab() { # find_tab <workspace> <label>
+find_tab() { # find_tab <workspace> <label> — exact label match
   tabs_in "$1" 2>/dev/null | awk -F'\t' -v want="$2" '$2 == want { print $1; exit }'
+}
+
+# find_tab_lenient <workspace> <label>
+#
+# A tab's label belongs to the operator and gets renamed in practice:
+# `sysop-leader` became `sysops-leader`, `flyio-migration` became `cost-control`.
+# Reporting a healthy system as broken because a human renamed a tab is worse
+# than useless, so this matches labels loosely and lets the caller print the
+# label it actually found.
+#
+# The normalization lowercases, strips non-alphanumerics, and then drops every
+# "s", so `sysop-leader` == `sysops-leader` == `sysop_leader`, and `overlord` ==
+# `overlords`. Dropping all "s" is deliberately crude: this only ever *finds* an
+# existing tab (never creates, renames, or closes one) and prefers a tab that
+# hosts an agent, so a false match costs a misread status line, not a wrong
+# mutation.
+_norm_label() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:]' | tr -d 's'; }
+
+find_tab_lenient() {
+  local ws="$1" want_slug
+  want_slug="$(_norm_label "$2")"
+  local id label host
+  while IFS=$'\t' read -r id label; do
+    [ -n "$id" ] || continue
+    [ "$(_norm_label "$label")" = "$want_slug" ] || continue
+    host="$(panes_in_tab "$ws" "$id" | awk -F'\t' '$2 != "-"' | head -1)"
+    printf '%s\t%s\t%s\n' "$id" "$label" "${host:+yes}"
+  done < <(tabs_in "$ws") | sort -t$'\t' -k3,3r | head -1 | cut -f1
 }
 
 # Panes in a tab, with the agent kind hosted there ("-" when it is a bare shell).
@@ -109,7 +137,7 @@ panes_in_tab() {
 ensure_agent_tab() {
   local ws="$1" label="$2" kind="$3" name="$4" cwd="${5:-$OVERLORD_DIR}" tab_id panes pane agent
 
-  tab_id="$(find_tab "$ws" "$label")"
+  tab_id="$(find_tab_lenient "$ws" "$label" || true)"
   if [ -z "$tab_id" ]; then
     if [ "${DRY_RUN:-0}" = 1 ]; then
       dryrun "herdr tab create --workspace $ws --label $label --cwd $cwd --no-focus"
@@ -370,7 +398,7 @@ cmd_status() {
     done
 
     for t in $tabs_csv; do
-      tab="$(find_tab "$wsid" "$t" || true)"
+      tab="$(find_tab_lenient "$wsid" "$t" || true)"
       if [ -z "$tab" ]; then
         printf '%smiss%s  %-24s no '%s' tab in %s\n' "$C_YELLOW" "$C_RESET" "$name-tab:$t" "$t" "$label"
         rc=1
@@ -378,8 +406,9 @@ cmd_status() {
       fi
       agent="$(panes_in_tab "$wsid" "$tab" | awk -F'\t' '$2 != "-" { print $2; exit }')"
       pane="$(panes_in_tab "$wsid" "$tab" | awk -F'\t' '$2 != "-" { print $1; exit }')"
+      actual_label="$(tabs_in "$wsid" | awk -F'\t' -v id="$tab" '$1 == id { print $2; exit }')"
       if [ -n "$agent" ]; then
-        printf '%sok%s    %-24s tab %s hosts a %s agent (%s)\n' "$C_GREEN" "$C_RESET" "$name-tab:$t" "$tab" "$agent" "$pane"
+        printf '%sok%s    %-24s tab %s (%s) hosts a %s agent (%s)\n' "$C_GREEN" "$C_RESET" "$name-tab:$t" "$tab" "$actual_label" "$agent" "$pane"
       else
         printf '%swarn%s  %-24s tab %s has no agent\n' "$C_YELLOW" "$C_RESET" "$name-tab:$t" "$tab"
         rc=1

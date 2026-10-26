@@ -261,7 +261,24 @@ either package from a different source is left alone: the merge compares package
 names, not source strings, so you never end up with two copies of an extension
 that claims a tool name.
 
-#### Themes
+#### Where the run file lives, and why a closed run must move
+
+The dagr pane watches one path: `dagr view` resolves `.dagr/run.json` under the
+herdr context cwd, and the herdr plugin's pane uses the same default. Two
+consequences are easy to get wrong, and both make finished work look live:
+
+- **A settled run must not stay at `.dagr/run.json`.** Move it to
+  `.dagr/archive/<run-id>.json` and let `.dagr/run.json` hold the current one.
+  Re-rendering will not fix a stale file — that is a content problem, not a
+  viewer problem.
+- **Every `locator` in a run must name a pane that exists now.** A locator aimed
+  at a closed pane renders as `pane gone`, and a board of those is a historical
+  record wearing a live label. Re-read topology before publishing.
+
+Neither is a dagr bug: dagr renders what the file says, and the file is the
+producer's responsibility.
+
+### Themes
 
 Two theme systems, and it matters which one you are reading, because a
 `config.toml` can name one theme while displaying another.
@@ -449,6 +466,19 @@ installs them like any other skill. Two things are specific to this repository:
   ./scripts/skills-sync.sh install
   ```
 
+- **`-g` does not work for this repository.** Verified: `npx skills add
+  Apothic-AI/mycord --skill <component> -g` fails with `PromptScript does not
+  support global skill installation`. Drop `-g` and it writes into the *current*
+  project instead, which is not where a global agent reads from. Treat a command
+  that is documented but fails as undocumented: use the checkout.
+- **A fetch overwrites a link with a copy.** Running `npx skills add` for a skill
+  this installer already linked replaces the symlink with a real directory, and
+  the copy is then free to drift from the checkout it came from (it also loses
+  the siblings that only the checkout has — `Makefile`, `pyproject.toml`,
+  `.env.example`). `skills-sync.sh install` puts the link back and backs the copy
+  up; `skills-sync.sh status` reports it as `present` rather than `linked` in the
+  meantime.
+
 - **A checkout beats a hand-copied skill.** These skills ship `.env.example`,
   `pyproject.toml`, `Makefile` and `src/` beside `SKILL.md`; a copy of just the
   markdown loses the environment template and drifts. If you already keep copies
@@ -621,6 +651,7 @@ while you are working.
 | `doctor.sh` says a skill is elsewhere | `readlink -f ~/.agents/skills/<s>` | re-run `./install.sh skills`, or leave it if intentional |
 | `overlord` or `comms` tab has no agent | `scripts/overlord.sh status` | re-run `./install.sh overlord`; it starts a pi agent in an agentless tab and renames nothing |
 | `npx skills add Apothic-AI/mycord` finds no skills | the skills are at the repo root | clone the repo and run `./scripts/skills-sync.sh install` |
+| A test passes but the code you changed is not the code that ran | `./test/run.sh`, not a bare `docker run` | the image bakes the repo at build time; the wrapper mounts your work tree |
 | Two `overlord` workspaces exist | `herdr workspace list` | `overlord.sh install` should have prevented it; close the extra one, then re-run to confirm |
 | `~/.agent-context` still exists | `ls -ld ~/.agent-context` | it is probably the compatibility symlink from the rename to `~/.overlord`; remove it once no pane uses it |
 

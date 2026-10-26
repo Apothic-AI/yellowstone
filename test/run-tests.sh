@@ -109,6 +109,16 @@ suite_smoke() {
   done < <(find "$REPO" -name '*.json' -not -path '*/.git/*')
   [ "$bad_json" = 0 ] && ok "every JSON file parses"
 
+  # Headings must be preceded by a blank line, or they render as part of the
+  # previous paragraph. A doc is read by agents, so broken shape is a defect.
+  local badmd=0 f
+  while IFS= read -r f; do
+    if awk 'prev!="" && /^(##|###) /{found=1} {prev=$0} END{exit !found}' "$f"; then
+      badmd=1; bad "heading without a preceding blank line: $f"
+    fi
+  done < <(find "$REPO" -name '*.md' -not -path '*/.git/*')
+  [ "$badmd" = 0 ] && ok "every Markdown heading has a preceding blank line"
+
   # Every SKILL.md needs name + description, or hosts refuse to load it.
   local bad_skill=0
   while IFS= read -r f; do
@@ -200,6 +210,19 @@ suite_smoke() {
     goal_keys="$(herdr agent get "$any_pane" 2>/dev/null | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const a=JSON.parse(s).result.agent;process.stdout.write(Object.keys(a).filter(k=>/goal/i.test(k)).join(","))}catch{}})')"
     check_eq "herdr agent API still carries no goal fields" "" "$goal_keys"
   fi
+
+  # A tab the operator renamed must still be found: sysop-leader -> sysops-leader
+  # and flyio-migration -> cost-control both happened live, and a status command
+  # that calls a healthy system broken is worse than no status command.
+  check "tab matching tolerates a renamed label" \
+    bash -c 'grep -q "_norm_label" "'"$REPO"'/scripts/overlord.sh"'
+  check "tab matching prefers a tab with an agent" \
+    awk '/^find_tab_lenient/,/^}/' "$REPO/scripts/overlord.sh" | grep -q 'host'
+  # Dagr run-file hygiene is documented where an operator will look for it.
+  check "skill documents the closed-run archive rule" \
+    grep -q 'dagr/archive' "$REPO/yellowstone-skill/SKILL.md"
+  check "skill documents locator hygiene" \
+    grep -q 'pane gone' "$REPO/yellowstone-skill/SKILL.md"
 
   # Plugin manifest.
   local n

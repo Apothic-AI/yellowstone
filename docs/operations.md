@@ -129,6 +129,21 @@ scripts/doctor.sh          # confirm nothing drifted while the box was down
 Plugins with `[[startup]]` hooks (the `unblock` daemon, the jj sidebar sweep)
 run on server startup, so no manual step is needed for them.
 
+## Checking an orchestrated board
+
+If a space publishes a dagr run, two failures are invisible from the pane and both
+make finished work look live:
+
+```bash
+ls .dagr/                      # archive/<run-id>.json beside the current run.json
+dagr check .dagr/run.json --strict --json   # [] is the only clean result
+```
+
+A settled run left at `.dagr/run.json` is a stale *file*, not a stale viewer — the
+pane renders whatever that path holds. And every `locator` must name a pane that
+exists today; otherwise it renders `pane gone` and the board is history wearing a
+live label. Neither is fixed by refreshing the pane.
+
 ## Health signals worth watching
 
 | Signal | Where | Meaning when it moves |

@@ -137,6 +137,30 @@ can carry a fully closed run whose `run.orchestrator.pane` no longer exists,
 while the live work has moved elsewhere. Root ownership exists to catch exactly
 that.
 
+**Every leader lane is in the root run.** The root is the swarm's board, not a list
+of the overlord's own chores. Each `*-leader` tab gets a project and one task whose
+receipt carries what that space's own run reports — run id, `done`/`total`, the open
+task ids, and `generated_at`. Those numbers are read from the child run at publish
+time; the child's tasks are never copied in, because a copy is a second truth that
+drifts. A space with no run of its own is still listed, with that fact stated: a lane
+missing from the board is invisible to the operator.
+
+**Refresh the board on change, not on a calendar.** The operator reads this run to
+see the swarm, so republish before doing anything else after any of: a lane
+recovered, prompted or acknowledged; a leader tab appearing, vanishing or renamed; a
+child run changing its counts; a paid gate re-checked. A run whose content is older
+than its last event is worse than no run, because it is believed.
+
+**Every locator must point at something that exists today.** A `locator` naming a
+closed pane renders as `pane gone`, and a board full of those announces a historical
+run rather than a live one. Re-read topology before publishing, not from memory.
+
+**A closed run must not stay at `.dagr/run.json`.** That is the exact path the dagr
+pane watches (`dagr view` resolves `.dagr/run.json` under the context cwd), so a
+settled run left there renders finished work as the live board. That is a stale
+*file*, not a stale viewer, and re-rendering will not fix it. Move it to
+`.dagr/archive/<run-id>.json` and let `.dagr/run.json` hold the current run.
+
 **No task at both levels.** The root run records *what a space must deliver* and
 the gate you verify; the space run records *how it gets there*. The same task
 never appears in both — duplication is how a DAG drifts into two disagreeing
@@ -217,6 +241,7 @@ report success while doing nothing at all.
   containing them needs the file route. If a send involves shell metacharacters,
   verify by counting a distinctive literal from the brief in the session
   transcript afterwards.
+
 ### Goal-driven lanes (`/goal`)
 
 A lane that ends its turn with work still outstanding is the failure `/goal` exists
@@ -258,6 +283,48 @@ type a replacement objective into a lane that already has one.
   check, and it is worth running during a survey before concluding that a quiet lane
   has nothing left to do — several lanes that look merely `idle` are holding a paused
   or achieved goal.
+
+## Controlling the leader lanes
+
+When the operator asks you to run the leaders, "control" means owning the **roster
+and the escalation path** — not doing the leaders' jobs. It has a fixed shape, and
+the order matters: recover before asking, ask before reporting, verify before
+repeating.
+
+1. **Read the roster and classify every lane.** Safe to prompt (`idle`/`done`),
+   unsafe (`working` — prompting aborts its in-flight turn), unrecoverable
+   (`no-agent` — a leader tab with no agent at all), or goal-degraded
+   (`attention` / `paused` / `blocked`).
+2. **Recover goal-degraded lanes before asking anyone anything.** A footer reading
+   `Goal needs attention (non-retryable provider error)` does **not** mean the work
+   finished: it means the goal stopped continuing, and the work may be mid-tranche.
+   The footer itself names the fix, `/goal resume`. Verify recovery **from the
+   footer** — `/goal resume` reactivates without opening a turn, so an unchanged
+   agent status and an unchanged `state_change_seq` are both expected and prove
+   nothing either way.
+3. **Ask for status only from lanes that are safe to prompt, in one identical
+   shape.** Deliverable, verified-versus-intended, what is in flight, blockers and
+   who owns each, what they need from you, and what you have wrong. Require the
+   child run's real numbers with `generated_at`, and say plainly that a short "done,
+   nothing outstanding" beats padding. **A status request must not start new work** —
+   say so, or a status round becomes an instruction.
+4. **Verify claims against artifacts before repeating them upward.** A leader
+   reporting success is `reported`, not `verified`, until a file, a commit, a test
+   count or a live read confirms it. Reports that correct the orchestrator are the
+   most valuable ones; expect several and do not treat them as pushback.
+5. **Report to the operator as a decision list,** not a transcript: what is moving,
+   what is blocked and on whom, what is theirs to decide.
+
+Three anti-patterns, each of which looks like diligence:
+
+- **Never prompt a `working` lane to ask how it is doing.** The question costs it
+  the in-flight turn (and, on a goal-driven lane, pauses the goal). Wait for its
+  stop boundary; that is what the watcher is for.
+- **Never fill a `no-agent` leader tab.** An unstaffed leader tab is a finding to
+  report, not a gap to fill on your own initiative.
+- **Never treat a status report as licence to direct that lane's internal work.**
+  The leader owns its space. Owning the roster does not make you the author of every
+  space's plan.
 
 ## Monitoring in-flight lanes
 
@@ -355,6 +422,7 @@ Three triggers, because no one of them is sufficient:
   pane's output for status either; observation is still interference when the
   operator is mid-flight. Do not settle or advance any root-run task for that
   space while it is reserved. It returns to scope only when the operator says so.
+
 ### Reserved right now
 
 A reservation is a space the operator is driving one-on-one. Record it here so it

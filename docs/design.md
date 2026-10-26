@@ -123,6 +123,40 @@ keeping them separate means "what is wrong" and "what did the tool do about it"
 are different questions with different failure modes. The exit code makes it
 usable as a gate in a cron job or a provisioning step without parsing output.
 
+## What does not belong in this repo
+
+A component belongs here when it is **reproducible configuration for a fleet**:
+the same file should be right on a second machine. Something that encodes one
+operator's live state — reservations, per-lane history, a curated roster — is
+theirs, and copying it here makes the repo a second writer of a source of truth.
+
+The current case: two Python helpers under `~/.overlord/tools/` (`leader-board.py`,
+`watch-leaders.py`, ~530 lines together) render the leader roster and emit wake
+events. They are genuinely portable — only stdlib, no machine paths, and the
+"leader lane" rule is a single regex (`(^|-)leader$`) rather than a hardcoded
+list. They still should not be copied in, for three reasons:
+
+1. **They read live state, not configuration.** The board's value is the current
+   roster; shipping a copy here would mean two producers of the same answer.
+2. **The repo cannot test them.** They assert against herdr panes and real goal
+   footers; the container has no server and no goal-bearing lanes, so a vendored
+   copy would ship untested and the test suite would silently skip it.
+3. **Goal-state parsing is the fragile part.** `leader-board.py` recognizes footer
+   phrases (`Pursuing goal`, `Goal needs attention`, …) by regex. That knowledge
+   belongs with whoever maintains the panes — and the day the extension changes
+   its wording, a copy here would be confidently wrong.
+
+**What this repo should do instead** is what it does: document the durable rules
+that the tools encode — footer-only goal state, `working` is not health, recover
+goal-degraded lanes before asking, refresh the board on change not on a calendar,
+a closed run must move off `.dagr/run.json`. Those rules survive a rewrite of the
+tools; a copy of the tools would not survive a change to them.
+
+The one thing that *would* justify packaging: if a second operator ever needs this
+shape. Then it should become a herdr plugin (a `[[panes]]` entry plus actions, like
+`herdr-dagr`) so it is versioned, installable, and testable in the same way the
+plugins are — not a file copied between repos.
+
 ## How to add something
 
 1. **A herdr plugin** — add a `[[plugin]]` table to `herdr/plugins.toml` with a
@@ -132,10 +166,25 @@ usable as a gate in a cron job or a provisioning step without parsing output.
    in the git ref itself.
 3. **A pi extension you wrote** — drop it in `pi/extensions/` and add it to the
    installer's file list. Pin nothing: it moves with the repo.
-4. **A skill** — put it in `skills/<name>/SKILL.md` and add the name to the
-   `install_skills` loop and to `scripts/doctor.sh`.
+4. **A skill** — add one row to `skills/skills.tsv` and nothing else. The `kind`
+   decides where it installs from, and that file is the only thing that has to
+   change:
+   - `repo` when a repository owns it (usually our fork) — linked from a checkout
+     when one exists, so its updates are a `git pull`.
+   - `dagr` for a skill a pinned herdr plugin generates; `scripts/skills-sync.sh`
+     runs `dagr --skill` so the text always matches the binary that validates it.
+   - `bundle` only when no installable home exists — and then say in `why` what
+     would retire it, because a bundle is debt, not a design.
+   Never copy a skill another tree already ships: the copy drifts, and the
+   version an agent runs becomes invisible to the thing that owns it.
 5. **A fork** — record it in `docs/forks.md` with its upstream, the reason, and
    how it updates. A fork without a stated reason is a bug.
+6. **A default herdr space** — add it to `scripts/overlord.sh`'s space spec
+   (label, cwd, tabs) and to `overlord/README.md`. `herdr workspace create` does
+   not deduplicate, so the lookup-then-create path there is not optional.
 
 In every case: no credentials, no absolute home paths, and update
-`scripts/doctor.sh` so the next person finds out when it breaks.
+`scripts/doctor.sh` so the next person finds out when it breaks. Prefer a
+mechanically-derived list over a hand-maintained one — several `doctor` and test
+checks were later rewritten to count from `skills/skills.tsv` or
+`herdr/plugins.toml` after a hardcoded list went stale.

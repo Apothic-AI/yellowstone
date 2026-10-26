@@ -7,12 +7,30 @@ each write is a no-op" or "audit afterwards". Neither is a test.
 `test/` builds a container whose entire HOME is expendable. A mistake costs a
 rebuild, and the assertions run against a machine that has never been configured.
 
+Use the wrapper. It bind-mounts the current checkout, so both the scripts under
+test *and* the assertions themselves come from your work tree:
+
+```bash
+./test/run.sh              # all suites
+./test/run.sh smoke        # parsing and static checks only
+./test/run.sh install      # one suite
+```
+
+It builds the image on first use. To drive the image directly:
+
 ```bash
 docker build -f test/Dockerfile -t yellowstone-test .
-docker run --rm yellowstone-test              # all suites
-docker run --rm yellowstone-test smoke        # parsing and static checks only
-docker run --rm -v "$PWD:/repo:ro" yellowstone-test install   # test a work tree
+docker run --rm yellowstone-test              # bakes the repo in at build time
+docker run --rm -v "$PWD:/repo:ro" yellowstone-test install   # test the work tree
 ```
+
+**Prefer the wrapper, and if you run the image directly, rebuild it after any
+edit.** The image bakes a copy of the repo at build time, so a bare
+`docker run` tests whatever was committed when the image was built — silently,
+with a green result. This is not hypothetical: a stale baked copy kept reporting
+a message as missing from code that contained it, across three debugging rounds.
+The suite now reads itself from `/repo` and prints a warning when the mounted
+tree differs from the baked copy, but the wrapper is the reliable path.
 
 The image installs the **real** `herdr` and `pi` from their public installers
 rather than stubbing them, because half of what the tests assert about —
