@@ -1,0 +1,14 @@
+{
+  "toolVisibility": "after-first-goal",
+  "experimental": {
+    "goals": true,
+    "notices": false
+  },
+  "rpc": {
+    "enabled": true
+  },
+  "continuationLimits": {
+    "automaticTurns": null,
+    "noProgressTurns": null
+  }
+}

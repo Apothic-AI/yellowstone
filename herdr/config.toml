@@ -30,12 +30,14 @@ command = "unblock.open"
 description = "open unblock queue"
 
 # command bar: jump to any tab, pane, agent, repo or branch
+# command bar: jump to any tab, pane, agent, repo or branch
 [[keys.command]]
 key = "prefix+k"
 type = "plugin_action"
 command = "herdr-bar.open"
 description = "command bar"
 
+# plugin manager: install, update, browse plugins from a popup
 # plugin manager: install, update, browse plugins from a popup
 [[keys.command]]
 key = "prefix+p"
@@ -64,3 +66,23 @@ red = "#ff174f"
 blue = "#00eaff"
 teal = "#00eaff"
 peach = "#ffb000"
+
+# Added by abhishekrana.dictate setup.
+# dictate: speak into the focused pane (local STT; Linux + a microphone)
+[[keys.command]]
+key = "prefix+v"
+type = "plugin_action"
+command = "abhishekrana.dictate.toggle"
+description = "dictate: toggle"
+
+[[keys.command]]
+key = "prefix+shift+v"
+type = "plugin_action"
+command = "abhishekrana.dictate.toggle-send"
+description = "dictate: toggle and submit"
+
+[[keys.command]]
+key = "prefix+alt+v"
+type = "plugin_action"
+command = "abhishekrana.dictate.toggle-chunking"
+description = "dictate: toggle live typing"

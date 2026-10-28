@@ -49,6 +49,11 @@ if [ ${#STAGES[@]} -eq 0 ]; then
   STAGES=(herdr pi skills agents overlord secrets verify)
 fi
 
+# Where the pi-goal fork lives. It must be a checkout because the fork is a
+# package inside a Bun workspace with no Pi manifest at its root, so `pi` cannot
+# load it as a git package. Overridable for a different checkout location.
+PI_EXTENSIONS_APOTHIC="${PI_EXTENSIONS_APOTHIC:-$HOME/Code/pi-extensions-apothic}"
+
 want() {
   local s
   for s in "${STAGES[@]}"; do [ "$s" = "$1" ] && return 0; done
@@ -143,7 +148,8 @@ install_pi() {
         defaultTools theme terminal steeringMode transport retry \
         collapseChangelog enableInstallTelemetry defaultProjectTrust \
         enableSkillCommands autocompleteMaxVisible defaultThinkingLevel
-      json_edit merge-packages "$PI_DIR/settings.json" "$REPO_ROOT/pi/settings.json" "$REPO_ROOT"
+      json_edit merge-packages "$PI_DIR/settings.json" "$REPO_ROOT/pi/settings.json" \
+        "$REPO_ROOT" "$PI_EXTENSIONS_APOTHIC"
     fi
   fi
 
@@ -163,8 +169,17 @@ install_pi() {
   install_file "$REPO_ROOT/pi/extensions/nonblock.ts" \
                "$PI_DIR/extensions/nonblock.ts"
 
-  # cosmetic, non-functional state
+  # extension configs. These are config, not state: they decide how each
+  # extension behaves, so a fresh machine without them behaves differently.
   install_file "$REPO_ROOT/pi/pi-auto-compact.json" "$PI_DIR/pi-auto-compact.json"
+  install_file "$REPO_ROOT/pi/pi-goal.json"         "$PI_DIR/pi-goal.json"
+  install_file "$REPO_ROOT/pi/pretty-tui.json"      "$PI_DIR/pretty-tui.json"
+  # pi-persist holds the operator's own trailing reminders; install only when absent.
+  if [ ! -e "$PI_DIR/pi-persist.json" ]; then
+    install_file "$REPO_ROOT/pi/pi-persist.json" "$PI_DIR/pi-persist.json"
+  else
+    info "kept $(short "$PI_DIR/pi-persist.json") (holds your own reminders)"
+  fi
   if [ ! -e "$PI_DIR/model-picker.json" ]; then
     install_file "$REPO_ROOT/pi/model-picker.json" "$PI_DIR/model-picker.json"
   else

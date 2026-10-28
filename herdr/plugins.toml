@@ -8,6 +8,19 @@
 #   herdr plugin install <owner>/<repo>[/subdir...] [--ref REF] [--yes]
 #   herdr plugin link <path>          # local plugin, no copy
 
+# --- voice input --------------------------------------------------------------
+# Local speech-to-text: press a key, talk, and the words are typed into the focused
+# pane a sentence at a time. Needs Rust >= 1.88 at install time for its build, and a
+# microphone the host can reach (Linux only). Three binds, all added to config.toml
+# because the manifest ships no keys.
+[[plugin]]
+id        = "abhishekrana.dictate"
+source    = "abhishekrana/herdr-dictate"
+ref       = "5bb42cad719c8bec618e84d1f4e83dd74a940561"
+why       = "speak into any pane; local STT, useful when typing is the bottleneck"
+keybind   = "prefix+v -> abhishekrana.dictate.toggle, prefix+shift+v -> abhishekrana.dictate.toggle-send, prefix+alt+v -> abhishekrana.dictate.toggle-chunking"
+requires  = "rust >= 1.88 to build; a microphone; Linux"
+
 # --- the command bar ----------------------------------------------------------
 # Fuzzy "go anywhere" switcher: Cmd+K / prefix+k, matching tasks, tabs, panes,
 # agents, repos and branches. Also titles unnamed tabs from the agent's task
@@ -71,7 +84,7 @@ requires  = "jj on PATH (only needed for jj repos)"
 [[plugin]]
 id        = "herdr-context"
 source    = "Anthodev/herdr-context"
-ref       = "fc081452b5cedb6c7c12ab36d26fa1fb4791efb0"
+ref       = "ae16360c212926962b0476764c86aa9b0fd2f0ff"
 why       = "per-tab project context dock next to the terminal"
 build     = "cargo build --release --locked (plugin build step)"
 
@@ -79,14 +92,14 @@ build     = "cargo build --release --locked (plugin build step)"
 [[plugin]]
 id        = "wilbeibi.catchup"
 source    = "wilbeibi/herdr-catchup"
-ref       = "51f690964aa491447baa39c732c5333ed0de315a"
+ref       = "da82ca7ec300b0b4fb5ebf73dedc9e63b77c78ec"
 why       = "summarize / fork / hand a pane's session to another agent"
 
 # --- themes ------------------------------------------------------------------
 [[plugin]]
 id        = "herdr-theme-picker"
 source    = "qintmb/herdr-theme-picker"
-ref       = "36d117d55dca91013e0519c5778397f9764428b4"
+ref       = "847f7c88aaa2ae82d4945fce7dc89a4175a0543d"
 why       = "pick any terminalcolors.com theme; writes [theme.custom]"
 note       = "the keybind moved to prefix+t in the plugin manifest; our config.toml does not rebind it"
 
@@ -96,6 +109,6 @@ note       = "the keybind moved to prefix+t in the plugin manifest; our config.t
 [[plugin]]
 id        = "ezracerpac.jj-waltz"
 source    = "EzraCerpac/jj-waltz/plugins/herdr"
-ref       = "bafa126d73eda17d37b634530fc7ca58d9fc1abd"
+ref       = "cd7bb1eb6451b09c06853b0347f856b4203f7c89"
 why       = "jj workspace switching bound into Herdr"
 optional  = true

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "items": [
+    {
+      "id": "current_datetime",
+      "channel": "trailing",
+      "content": "{{datetime}}",
+      "priority": -100
+    },
+    {
+       	"id": "todo_reminder",
+       	"channel": "trailing",
+       	"content": "Update your TODOs before starting new tasks and immediately after completing each one."
+    }
+  ]
+}

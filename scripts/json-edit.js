@@ -24,6 +24,11 @@ const path = require('node:path');
 
 const PLACEHOLDER = '@YELLOWSTONE_REPO@';
 
+// A package that lives in an external checkout. The merge rewrites this to the
+// checkout's path, or drops the entry when no checkout is passed — better a
+// missing fork than a package entry pointing at a directory that does not exist.
+const EXTERNAL_PLACEHOLDER = '@PI_EXTENSIONS_APOTHIC@';
+
 function timestamp() {
   const d = new Date();
   const p = (n) => String(n).padStart(2, '0');
@@ -106,14 +111,19 @@ function packageNameOf(entry) {
   }
 }
 
-function renderSource(source, repoRoot) {
+function renderSource(source, repoRoot, externalRoot) {
   if (typeof source !== 'string') return source;
+  if (source.startsWith(EXTERNAL_PLACEHOLDER)) {
+    if (!externalRoot) return undefined;  // caller reports the missing fork
+    const suffix = source.slice(EXTERNAL_PLACEHOLDER.length).replace(/^\/+/, '');
+    return path.join(externalRoot, suffix);
+  }
   if (!source.startsWith(PLACEHOLDER)) return source;
   const suffix = source.slice(PLACEHOLDER.length).replace(/^\/+/, '');
   return path.join(repoRoot, suffix);
 }
 
-function mergePackages(settingsPath, templatePath, repoRoot) {
+function mergePackages(settingsPath, templatePath, repoRoot, externalRoot) {
   const settings = readJson(settingsPath, { tolerateCorrupt: true });
   const template = readJson(templatePath).value;
   const existing = Array.isArray(settings.value.packages) ? settings.value.packages : [];
@@ -125,8 +135,12 @@ function mergePackages(settingsPath, templatePath, repoRoot) {
   const added = [];
   for (const entry of template.packages || []) {
     const rendered = typeof entry === 'string'
-      ? renderSource(entry, repoRoot)
-      : { ...entry, source: renderSource(entry.source, repoRoot) };
+      ? renderSource(entry, repoRoot, externalRoot)
+      : { ...entry, source: renderSource(entry.source, repoRoot, externalRoot) };
+    if (rendered === undefined || (typeof rendered === 'object' && rendered.source === undefined)) {
+      process.stdout.write(`packages: skipped ${sourceOf(entry)} (no checkout given for ${EXTERNAL_PLACEHOLDER})\n`);
+      continue;
+    }
     const source = sourceOf(rendered);
     if (!source || presentSources.has(source)) continue;
     const name = packageNameOf(rendered);
@@ -199,9 +213,9 @@ function main(argv) {
   const [cmd, ...rest] = argv;
   switch (cmd) {
     case 'merge-packages': {
-      const [settings, template, repoRoot] = rest;
-      if (!settings || !template || !repoRoot) throw new Error('merge-packages needs <settings> <template> <repo-root>');
-      return mergePackages(settings, template, repoRoot);
+      const [settings, template, repoRoot, externalRoot] = rest;
+      if (!settings || !template || !repoRoot) throw new Error('merge-packages needs <settings> <template> <repo-root> [<external-root>]');
+      return mergePackages(settings, template, repoRoot, externalRoot);
     }
     case 'merge-models': {
       const [models, template] = rest;

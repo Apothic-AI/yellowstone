@@ -177,6 +177,17 @@ report_forks() {
     info "pi-cache-optimizer: not installed"
   fi
 
+  # Apothic git forks: pi-rooms, apothic-todo, pi-persist move with `pi update`.
+  local f
+  for f in pi-rooms apothic-todo pi-persist; do
+    local dir="$PI_DIR/git/github.com/Apothic-AI/$f"
+    if [ -d "$dir/.git" ]; then
+      info "$f @ $(git -C "$dir" log --oneline -1 2>/dev/null)"
+    else
+      info "$f: not installed (git:github.com/Apothic-AI/$f)"
+    fi
+  done
+
   # bizzy: git source, upstream patty-io/pi-patty-bg-tasks
   local bizzy="$PI_DIR/git/github.com/Apothic-AI/bizzy"
   if [ -d "$bizzy/.git" ]; then

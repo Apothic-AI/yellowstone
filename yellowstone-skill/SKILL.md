@@ -159,6 +159,7 @@ One `[[plugin]]` table per plugin, with a pinned `ref` and a `why` line:
 | `herdr-theme-picker` | theme browser writing `[theme.custom]` | — |
 | `herdr-bar` | command bar: `prefix+k` fuzzy-jumps to any tab, pane, agent, repo or branch; also titles unnamed tabs | — |
 | `ray.plugin-manager` | plugin popup: `prefix+p` to install, update, remove, toggle and browse plugins | — |
+| `abhishekrana.dictate` | local speech-to-text into the focused pane: `prefix+v` toggle, `prefix+shift+v` toggle-and-submit, `prefix+alt+v` live typing | Rust ≥ 1.88 to build, a microphone, Linux |
 | `ezracerpac.jj-waltz` | jj workspace switcher (optional) | `jj` |
 
 Apply the manifest:
@@ -258,27 +259,55 @@ Judge the values by what they fix:
 - `"theme": "neon-noir"` comes from the `@spences10/pi-themes` package (11
   themes under `~/.pi/agent/npm/node_modules/@spences10/pi-themes/themes/`).
 
-Two packages are load-bearing enough to be worth naming here, because their
-failure modes are silent:
+Several packages are load-bearing enough to be worth naming here, because their
+failure modes are silent.
 
-- **`pi-codex-goal`** provides `/goal`, `/create-goal` and the `create_goal` /
-  `get_goal` / `update_goal` tools — the same completion contract codex has
-  natively. Three behaviours are easy to get wrong: typing `/goal <objective>` onto
-  a lane that already has an unfinished goal opens a `Replace goal?` **modal** (a
-  modal in an agent pane absorbs the next Enter, so the send reports success and no
-  turn runs); prompting a lane that is **working** on a goal pauses the goal itself
-  (`pauseForAbort`), not just the turn, so automatic continuation stops and the pane
-  looks like an ordinary stop until someone calls `/goal resume`; and `/new` does
-  not carry a goal across, because it is reconstructed from the session branch. Goal
-  state is only readable from a pane's **footer** — `herdr agent get` and `agent
-  list` carry no goal fields.
-- **`transient-error-retry`** (below) exists because pi's classifier does not cover
-  every gateway's dropped-stream phrasing.
-- **`nonblock`** (see [Never block the session](#never-block-the-session)) refuses the
-  blocking form of a wait, so an intake-style agent stays reachable. It ships
-  **disabled**: it changes agent behaviour, and a machine that legitimately needs a
-  bounded wait should not lose it silently. Opt in with
-  `echo '{"enabled":true}' > ~/.pi/agent/nonblock.json` or `PI_NONBLOCK=1`.
+**`@signalridge/pi-goal`** — the goal extension, and it is **not** `pi-codex-goal`.
+It replaced that extension and is stricter; do not carry old instructions across.
+Verified against the installed source (`@signalridge/pi-goal` 1.4.8), not the README:
+
+- **Tool surface is three tools: `goal_complete`, `goal_blocked`, `goal_wait`.**
+  There is no `create_goal`, `get_goal` or `update_goal` — so on pi **an agent cannot
+  create or change its own goal objective**. Only a `/goal` slash command does that.
+  Tools are hidden until a goal exists (`toolVisibility: after-first-goal`), so a
+  fresh session will not see them.
+- **`/goal <objective>` REPLACES the active goal and wipes the whole queue**, behind a
+  `Replace goal?` confirm modal. A modal in an agent pane absorbs the next Enter, so
+  the send reports success and no turn runs. Prefer, in order: `/goal edit <obj>`
+  (in place, no modal, keeps counters), `/goal add <obj>` (appends; starts
+  immediately when no goal is active), and only then a bare `/goal <obj>` with a
+  human at the modal.
+- **The queue advances itself** at the settled boundary after `goal_complete`.
+  Verbs: `pause`, `resume`, `clear`, `edit`, `add`, `prioritize`, `drop-last`,
+  `skip`, `status`. `add` to build a backlog and let the agent walk it.
+- **Prompting a lane that is working pauses the goal**, not just the turn
+  (`pauseForAbort`), so automatic continuation stops and the pane looks like an
+  ordinary stop. Recovery is that lane's own bare `/goal resume`.
+- A goal also stops on `budgetLimited` (a distinct status, not paused) and stays
+  stopped on `blocked` until an explicit `/goal resume`. `/new` does not carry a goal
+  across. **Goal state is only readable from a pane footer** — `herdr agent get` and
+  `agent list` carry no goal fields.
+
+**`pi-rooms`** — rooms, DMs and reply-all between pi sessions. File-based, no
+daemon, state under `~/.pi/agent/rooms`. Identity is a name registered per session;
+set `PI_ROOMS_NAME` per lane or a name is derived from cwd + pid and does not survive
+a restart.
+
+**`pi-persist`** — a cached prompt section plus a per-request trailing message that
+other extensions append to. Configured by `pi/pi-persist.json` (trailing reminders).
+Installed only when absent: it accumulates the operator's own reminders.
+
+**`apothic-todo`** (`@arhen/pi-core-todo`) and **`pi-core-tps-stats`** — todos and
+live tokens-per-second stats. Small, no config.
+
+**`transient-error-retry`** (below) exists because pi's classifier does not cover
+every gateway's dropped-stream phrasing.
+
+**`nonblock`** (see [Never block the session](#never-block-the-session)) refuses the
+blocking form of a wait, so an intake-style agent stays reachable. It ships
+**disabled**: it changes agent behaviour, and a machine that legitimately needs a
+bounded wait should not lose it silently. Opt in with
+`echo '{"enabled":true}' > ~/.pi/agent/nonblock.json` or `PI_NONBLOCK=1`.
 
 Packages are declared, not copied, and nothing points into this repository.
 Two entries are our forks:
@@ -382,6 +411,17 @@ The general lesson is worth more than the specific case: **when the right action
 available but the wrong one is more discoverable, fix the affordance rather than
 writing the rule again.** An invariant that depends on an agent remembering it is
 followed by luck; one enforced at the call site is followed by construction.
+
+### Extension configs
+
+Four small files decide how the packages behave. They are config, not state:
+
+| File | Controls |
+|---|---|
+| `pi/pi-goal.json` | goal extension: `toolVisibility: after-first-goal`, `experimental.goals`, `rpc.enabled`, and **`continuationLimits` — both `automaticTurns` and `noProgressTurns` are `null`**, i.e. no automatic ceiling. Do not set `--tokens` on a goal: a budget stops it at `budgetLimited` and revives it only with a new goal. |
+| `pi/pretty-tui.json` | `{"mode": "clean"}` — the three TUI modes are clean/compact/full, and clean is what the shipped theme is tuned for |
+| `pi/pi-auto-compact.json` | compaction threshold and alignment |
+| `pi/pi-persist.json` | trailing reminders appended to every request (installed only when absent — it accumulates the operator's own) |
 
 ### pi — `pi/models.json`
 
@@ -673,7 +713,11 @@ Then it prints the state of the forks, which do not move with a blanket update:
 |---|---|---|
 | `pi-cache-optimizer` | `git:github.com/bitnom/pi-cache-optimizer` | `pi update` reconciles; upstream is `jiangge/pi-cache-optimizer` |
 | `bizzy` | `git:github.com/Apothic-AI/bizzy` | `pi update`; upstream is `patty-io/pi-patty-bg-tasks` |
-| `pi-pretty-tui` | `git:github.com/Apothic-AI/pi-pretty-tui` | `pi update`; upstream is `ykn0309/pi-pretty-tui` |
+| `pi-pretty-tui` | `git:github.com/Apothic-AI/pi-pretty-tui@apothic` | `pi update`; upstream is `ykn0309/pi-pretty-tui` |
+| `pi-rooms` | `git:github.com/Apothic-AI/pi-rooms@master` | `pi update` |
+| `apothic-todo` | `git:github.com/Apothic-AI/apothic-todo@main` | `pi update` (replaces `@arhen/pi-core-todo`) |
+| `pi-persist` | `git:github.com/Apothic-AI/pi-persist@main` | `pi update` |
+| `pi-goal` | local path into `$PI_EXTENSIONS_APOTHIC` | **not** `pi update` — it is a path, not a git package; see `docs/forks.md` |
 | `unblock` | a local checkout, linked | `git pull` there, then `npm link` if the CLI changed |
 | `herdr-dagr` | a herdr plugin | `scripts/herdr-plugins.sh update`, or bump `ref` first |
 
@@ -749,6 +793,9 @@ herdr/
   skills/herdr/SKILL.md    how agents drive herdr
 pi/
   settings.json            owned keys + package declarations
+  pi-goal.json             goal extension: tool visibility, no automatic ceiling
+  pretty-tui.json          {"mode": "clean"}
+  pi-persist.json          trailing reminders (installed once)
   models.json              provider routing (no secrets; key commands only)
   model-picker.json        picker defaults (installed once, then personal)
   web-search.json          browser-cookie search defaults

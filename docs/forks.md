@@ -19,7 +19,7 @@ Two rules apply to all of them:
 | Upstream | [`ykn0309/pi-pretty-tui`](https://github.com/ykn0309/pi-pretty-tui) 0.3.0 |
 | Our fork | `Apothic-AI/pi-pretty-tui` |
 | License | MIT, © 2026 Kainan Yang (kept in the fork's `LICENSE`) |
-| Installed as | `git:github.com/Apothic-AI/pi-pretty-tui` in `pi/settings.json` |
+| Installed as | `git:github.com/Apothic-AI/pi-pretty-tui@apothic` in `pi/settings.json` |
 | Delta notes | the fork's `LOCAL-PATCHES.md` |
 
 **Why a fork.** pi allows exactly one owner per tool name, and the check runs
@@ -28,7 +28,21 @@ after every extension loads — so the losing extension fails as a whole and a
 a `bash` tool in order to render it; `bizzy` owns `bash`. Installing both from
 npm breaks one of them.
 
-**The delta is about twenty lines.** Every built-in tool pretty-tui renders is
+**The delta has grown past the original twenty lines.** It now carries, on
+`apothic`:
+
+- render-only tool registration (the original patch, still the reason it exists);
+- **selection excludes frame chrome** — copied multi-line selections no longer
+  carry `╭ │ ╰`, the fix for upstream issue
+  [#2](https://github.com/ykn0309/pi-pretty-tui/issues/2) that this repo filed;
+- bubble chrome rebuilt per render instead of memoized, so a resize does not
+  leave stale borders.
+
+The selection fix is worth offering upstream: the issue is open and uncommented,
+and it is the part of the delta with no fork-specific reason to exist. The
+render-only registration is not — that one is structural.
+
+**The original delta is about twenty lines.** Every built-in tool pretty-tui renders is
 now render-only: registrations go through `pi.registerToolRenderer`, which
 composes across extensions, so resolvers run in load order and chain to whichever
 extension owns the tool. Claiming a tool name changes only how it draws; the
@@ -109,7 +123,7 @@ checkout supplies the binary.
 | Upstream | [`signalridge/pi-extensions`](https://github.com/signalridge/pi-extensions), `packages/pi-goal` |
 | Our fork | `Apothic-AI/pi-extensions`, branch `apothic` |
 | Upstream PR | [signalridge/pi-extensions#77](https://github.com/signalridge/pi-extensions/pull/77) |
-| Installed as | the local path `/home/bitnom/Code/pi-extensions-apothic/packages/pi-goal` in `pi/settings.json` |
+| Installed as | a local path: `$PI_EXTENSIONS_APOTHIC/packages/pi-goal` (default `~/Code/pi-extensions-apothic/packages/pi-goal`). `pi/settings.json` carries the `@PI_EXTENSIONS_APOTHIC@` placeholder and `install.sh` resolves it. |
 | Delta | one setting, `experimental.notices` |
 
 **Why a fork.** Enabling the experimental ordered-goal queue emits a warning on
@@ -144,6 +158,42 @@ valid in the unmodified package once the release lands.
 by npm, so `pi update` silently reverts any in-place edit of it, and a local
 edit leaves the version `pi list` reports describing code that is not running.
 A fork costs one checkout and survives updates.
+
+## pi-rooms — fork
+
+| | |
+|---|---|
+| Upstream | `signalridge/pi-extensions`, `packages/pi-rooms` (rooms/DM extension) |
+| Our fork | `Apothic-AI/pi-rooms`, branch `master` |
+| Installed as | `git:github.com/Apothic-AI/pi-rooms@master` |
+
+Rooms, DMs and reply-all between pi sessions, file-based with no daemon. State
+lives under `~/.pi/agent/rooms`. Identity is the one thing to pin: a session
+registers a name, and without `PI_ROOMS_NAME` the name is derived from cwd plus
+pid — so three lanes in one directory are indistinguishable and none of them
+survive a restart under the same name.
+
+## apothic-todo — fork
+
+| | |
+|---|---|
+| Upstream | `@arhen/pi-core-todo` (flat/nested todos with statuses and dependencies) |
+| Our fork | `Apothic-AI/apothic-todo`, branch `main` |
+| Installed as | `git:github.com/Apothic-AI/apothic-todo@main` |
+| Package name | still `@arhen/pi-core-todo`, so it replaces the npm package rather than sitting beside it |
+
+## pi-persist — fork
+
+| | |
+|---|---|
+| Upstream | `signalridge/pi-extensions`, `packages/pi-persist` |
+| Our fork | `Apothic-AI/pi-persist`, branch `main` |
+| Installed as | `git:github.com/Apothic-AI/pi-persist@main` |
+| Config | `pi/pi-persist.json` — the trailing reminders it appends to every request |
+
+A cached prompt section plus a per-request trailing message that other extensions
+append to. This is how a reminder reaches the model without editing `AGENTS.md`:
+the file is installed only when absent, because it accumulates the operator's own.
 
 ## herdr plugins — pinned upstream, not forked
 

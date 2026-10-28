@@ -196,7 +196,8 @@ suite_smoke() {
 
   # The goal feature and its traps are documented, and the shipped orchestrator
   # doc carries the sections an orchestrator actually needs.
-  check "skill documents pi-codex-goal" grep -q 'pi-codex-goal' "$REPO/yellowstone-skill/SKILL.md"
+  check "skill documents pi-goal" grep -q '@signalridge/pi-goal' "$REPO/yellowstone-skill/SKILL.md"
+  check "skill warns it is NOT pi-codex-goal" grep -q 'not.*pi-codex-goal' "$REPO/yellowstone-skill/SKILL.md"
   check "skill documents the Replace goal modal trap" \
     grep -q 'Replace goal' "$REPO/yellowstone-skill/SKILL.md"
   local sec
@@ -242,10 +243,16 @@ suite_smoke() {
     # read the bind recorded in the manifest's keybind field, if any
     bind="$(node "$REPO/scripts/plugins-manifest.js" get "$REPO/herdr/plugins.toml" "$id" keybind)"
     [ -n "$bind" ] || continue
-    action="${bind#*-> }"
-    action="${action%% *}"
-    grep -q "command = \"$action\"" "$REPO/herdr/config.toml" \
-      || missing_bind="$missing_bind$id($action) "
+    # A plugin may declare several binds in one field, comma-separated
+    # ("prefix+v -> dictate.toggle, prefix+shift+v -> dictate.toggle-send").
+    while IFS= read -r one; do
+      [ -n "$one" ] || continue
+      action="${one#*-> }"
+      action="${action%% *}"
+      [ -n "$action" ] || continue
+      grep -q "command = \"$action\"" "$REPO/herdr/config.toml" \
+        || missing_bind="$missing_bind$id($action) "
+    done < <(printf '%s' "$bind" | tr ',' '\n')
   done < <(node "$REPO/scripts/plugins-manifest.js" rows "$REPO/herdr/plugins.toml")
   check_eq "every declared keybind is present in config.toml" "" "$missing_bind"
 
@@ -304,14 +311,21 @@ suite_install() {
   # Packages: all declared, and the fork is present as a git source.
   local npkg
   npkg="$(node -e 'const s=require(process.argv[1]);console.log(s.packages.length)' "$home/.pi/agent/settings.json")"
-  check_eq "all 14 packages declared" 14 "$npkg"
+  # Counts are derived from the repo, not asserted at a literal: they change
+  # whenever a package is added, and a literal turns that into a test failure
+  # that says nothing about correctness.
+  local want_pkg
+  want_pkg="$(node -e 'console.log(require(process.argv[1]).packages.length)' "$REPO/pi/settings.json")"
+  check_eq "all $want_pkg declared packages present" "$want_pkg" "$npkg"
   check "pi-pretty-tui installed from its fork repo" \
     grep -q 'Apothic-AI/pi-pretty-tui' "$home/.pi/agent/settings.json"
 
   # Providers, and no secret values in models.json.
   local nprov
   nprov="$(node -e 'const m=require(process.argv[1]);console.log(Object.keys(m.providers).length)' "$home/.pi/agent/models.json")"
-  check_eq "7 providers merged" 7 "$nprov"
+  local want_prov
+  want_prov="$(node -e 'console.log(Object.keys(require(process.argv[1]).providers).length)' "$REPO/pi/models.json")"
+  check_eq "$want_prov providers merged" "$want_prov" "$nprov"
   check "apiKey values are commands, not literals" \
     bash -c "! grep -qE '\"apiKey\": *\"(sk-|pk-)' '$home/.pi/agent/models.json'"
 
@@ -440,7 +454,7 @@ JSON
 
   # But new packages still arrive.
   check "new packages still added" bash -c \
-    "node -e 'const s=require(\"$home/.pi/agent/settings.json\");process.exit(s.packages.some(p=>String(p).includes(\"pi-codex-goal\"))?0:1)'"
+    "node -e 'const s=require(\"$home/.pi/agent/settings.json\");process.exit(s.packages.some(p=>String(p).includes(\"pi-rooms\"))?0:1)'"
 
   # A hand-edited ~/AGENTS.md must be backed up before the repo's version lands.
   printf '# my own instructions\ncustom rule\n' > "$home/AGENTS.md"

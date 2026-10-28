@@ -1,21 +1,16 @@
 {
-  "$schema": "https://pi.dev/schemas/settings.schema.json",
-  "defaultProvider": "relayfast",
-  "defaultModel": "gpt-6-sol",
+  "defaultProvider": "subrouter",
+  "defaultModel": "deepseek-v4.1-flash-1017",
   "modelThinkingLevels": {
+    "subrouter/deepseek-v4.1-flash-1017": "max",
+    "openrouter/xiaomi/mimo-v2.6-flash:nitro": "high",
     "relayfast/gpt-6-sol": "high",
     "relayfast/gpt-6.1-sol": "medium",
     "relayfast/gpt-6-luna": "max",
-    "relayfast/deepseek-v4.1-flash": "max",
-    "relayfast/gemini-3.8-flash": "high",
     "relayfast/kimi-k3": "high",
-    "subrouter/deepseek-v4.1-flash-1017": "max",
-    "openrouter/xiaomi/mimo-v2.6-flash:nitro": "high",
     "openrouter/xiaomi/mimo-v2.6-pro": "high",
     "opencode/minimax-m3.1-flash-free": "max",
-    "opencode-go/minimax-m3.1-flash": "max",
-    "subtoken-gemini/gemini-3.8-flash-high": "high",
-    "subtoken-gemini/gemini-4-argon-high": "high"
+    "opencode-go/minimax-m3.1-flash": "max"
   },
   "lastChangelogVersion": "1.4.0",
   "theme": "neon-noir",
@@ -23,7 +18,6 @@
     "+codemode"
   ],
   "packages": [
-    "npm:pi-codex-goal",
     "npm:@howaboua/pi-subdir-agents",
     "git:github.com/Apothic-AI/bizzy",
     {
@@ -35,13 +29,17 @@
     "npm:pi-web-access",
     "npm:pi-auto-compact",
     "npm:@spences10/pi-themes",
-    "npm:@arhen/pi-core-todo",
     "npm:pi-nested-skills",
     "npm:@narumitw/pi-btw",
-    "git:github.com/bitnom/pi-cache-optimizer",
-    "git:github.com/Apothic-AI/pi-pretty-tui",
+    "git:github.com/bitnom/pi-cache-optimizer@feat/opencode-cache-stats",
+    "git:github.com/Apothic-AI/pi-pretty-tui@apothic",
     "npm:pi-copy-message",
-    "npm:@timmyjl12/pi-model-picker"
+    "npm:@timmyjl12/pi-model-picker",
+    "npm:@arhen/pi-core-tps-stats",
+    "@PI_EXTENSIONS_APOTHIC@/packages/pi-goal",
+    "git:github.com/Apothic-AI/pi-rooms@master",
+    "git:github.com/Apothic-AI/apothic-todo@main",
+    "git:github.com/Apothic-AI/pi-persist@main"
   ],
   "enabledModels": [
     "openrouter/xiaomi/mimo-v2.6-flash:nitro",
@@ -53,7 +51,8 @@
     "relayfast/*",
     "subrouter/*",
     "subtoken-gemini/*",
-    "inception/*"
+    "inception/*",
+    "experiential/*"
   ],
   "enableSkillCommands": false,
   "autocompleteMaxVisible": 10,
@@ -72,5 +71,30 @@
   "collapseChangelog": true,
   "enableInstallTelemetry": false,
   "defaultProjectTrust": "always",
-  "defaultThinkingLevel": "max"
+  "skills": [
+    "-skills/cmux/SKILL.md",
+    "-skills/cmux-architecture/SKILL.md",
+    "-skills/cmux-backend/SKILL.md",
+    "-skills/cmux-billing/SKILL.md",
+    "-skills/cmux-browser/SKILL.md",
+    "-skills/cmux-cua/SKILL.md",
+    "-skills/cmux-custom-sidebar/SKILL.md",
+    "-skills/cmux-customization/SKILL.md",
+    "-skills/cmux-debugging/SKILL.md",
+    "-skills/cmux-dev-workflow/SKILL.md",
+    "-skills/cmux-diagnostics/SKILL.md",
+    "-skills/cmux-ghostty/SKILL.md",
+    "-skills/cmux-keyboard-shortcuts/SKILL.md",
+    "-skills/cmux-markdown/SKILL.md",
+    "-skills/cmux-release/SKILL.md",
+    "-skills/cmux-settings/SKILL.md",
+    "-skills/cmux-localization/SKILL.md",
+    "-skills/cmux-shared-behavior/SKILL.md",
+    "-skills/cmux-socket-policy/SKILL.md",
+    "-skills/cmux-testing/SKILL.md",
+    "-skills/cmux-workspace/SKILL.md"
+  ],
+  "defaultThinkingLevel": "max",
+  "hideThinkingBlock": false,
+  "$schema": "https://pi.dev/schemas/settings.schema.json"
 }

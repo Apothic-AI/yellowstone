@@ -26,16 +26,16 @@ scripts/doctor.sh          # confirm it took
 | Path | What it is |
 |---|---|
 | `yellowstone-skill/` | the install/configure/upgrade/repair guide, as an agent skill |
-| `AGENTS.md` | the shared agent instructions this setup is built around |
-| `herdr/config.toml` | theme, sidebar rows, keybindings |
+| `AGENTS.md` | the shared agent instructions, installed to `~/AGENTS.md` |
+| `herdr/config.toml` | theme, sidebar rows, keybindings (incl. dictate/bar/manager) |
 | `herdr/plugins.toml` | the plugin manifest, with pinned refs |
 | `herdr/skills/herdr/` | skill: how an agent drives herdr panes |
 | `herdr/scripts/herdr-agy.sh` | reliable agent waits for `agy`/`grok` panes |
 | `pi/settings.json` | pi settings and the package list |
 | `pi/models.json` | provider routing — commands that read keys, never the keys |
-| `pi/extensions/` | hand-written pi extensions |
+| `pi/extensions/` | hand-written pi extensions (`transient-error-retry`, `nonblock`) |
+| `pi/*.json` | extension configs: goal, pretty-tui, persist, auto-compact |
 | `overlord/` | instructions + index for the `overlord` orchestrator space |
-| `AGENTS.md` | shared agent instructions, installed to `~/AGENTS.md` |
 | `skills/` | agent skills, plus `skills.tsv` recording which tree owns each |
 | `scripts/` | `install` helpers, plugin sync, `doctor`, `upgrade`, `overlord` |
 | `test/` | Docker test environment for the installer |

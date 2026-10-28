@@ -1,1070 +1,2474 @@
 {
- "providers": {
-  "relayfast": {
-   "compat": {
-    "sendSessionAffinityHeaders": true
-   },
-   "baseUrl": "https://relay.fast/v1",
-   "api": "openai-completions",
-   "apiKey": "!cat ${HOME}/.pi/agent/secrets/relayfast",
-   "models": [
-    {
-     "id": "gpt-6-astra",
-     "name": "gpt-6-astra",
-     "api": "openai-responses",
-     "reasoning": true,
-     "input": [
-      "text",
-      "image"
-     ],
-     "contextWindow": 1050000,
-     "maxTokens": 128000,
-     "samplingParamsByThinkingLevel": {
-      "off": {
-       "reasoningEffort": "none"
+  "providers": {
+    "relayfast": {
+      "compat": {
+        "sendSessionAffinityHeaders": true
       },
-      "low": {
-       "reasoningEffort": "low"
+      "baseUrl": "https://relay.fast/v1",
+      "api": "openai-completions",
+      "apiKey": "!cat ${HOME}/.pi/agent/secrets/relayfast",
+      "models": [
+        {
+          "id": "gpt-6-astra",
+          "name": "gpt-6-astra",
+          "api": "openai-responses",
+          "reasoning": true,
+          "input": [
+            "text",
+            "image"
+          ],
+          "contextWindow": 1050000,
+          "maxTokens": 128000,
+          "samplingParamsByThinkingLevel": {
+            "off": {
+              "reasoningEffort": "none"
+            },
+            "low": {
+              "reasoningEffort": "low"
+            },
+            "medium": {
+              "reasoningEffort": "medium"
+            },
+            "high": {
+              "reasoningEffort": "high"
+            },
+            "xhigh": {
+              "reasoningEffort": "xhigh"
+            },
+            "max": {
+              "reasoningEffort": "max"
+            }
+          },
+          "samplingParams": {
+            "reasoningEffort": "medium"
+          }
+        },
+        {
+          "id": "gpt-6-sol",
+          "name": "gpt-6-sol",
+          "api": "openai-responses",
+          "reasoning": true,
+          "input": [
+            "text",
+            "image"
+          ],
+          "contextWindow": 1050000,
+          "maxTokens": 128000,
+          "samplingParamsByThinkingLevel": {
+            "off": {
+              "reasoningEffort": "none"
+            },
+            "low": {
+              "reasoningEffort": "low"
+            },
+            "medium": {
+              "reasoningEffort": "medium"
+            },
+            "high": {
+              "reasoningEffort": "high"
+            },
+            "xhigh": {
+              "reasoningEffort": "xhigh"
+            },
+            "max": {
+              "reasoningEffort": "max"
+            }
+          },
+          "samplingParams": {
+            "reasoningEffort": "medium"
+          }
+        },
+        {
+          "id": "gpt-6.1-sol",
+          "name": "gpt-6.1-sol",
+          "api": "openai-responses",
+          "reasoning": true,
+          "input": [
+            "text",
+            "image"
+          ],
+          "contextWindow": 1050000,
+          "maxTokens": 128000,
+          "samplingParamsByThinkingLevel": {
+            "off": {
+              "reasoningEffort": "none"
+            },
+            "low": {
+              "reasoningEffort": "low"
+            },
+            "medium": {
+              "reasoningEffort": "medium"
+            },
+            "high": {
+              "reasoningEffort": "high"
+            },
+            "xhigh": {
+              "reasoningEffort": "xhigh"
+            },
+            "max": {
+              "reasoningEffort": "max"
+            }
+          },
+          "samplingParams": {
+            "reasoningEffort": "medium"
+          }
+        },
+        {
+          "id": "gpt-6-luna",
+          "name": "gpt-6-luna",
+          "api": "openai-completions",
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": "none",
+            "minimal": "low",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "xhigh",
+            "max": "max"
+          },
+          "input": [
+            "text",
+            "image"
+          ],
+          "contextWindow": 1050000,
+          "maxTokens": 128000,
+          "samplingParamsByThinkingLevel": {
+            "off": {
+              "reasoningEffort": "none"
+            },
+            "low": {
+              "reasoningEffort": "low"
+            },
+            "medium": {
+              "reasoningEffort": "medium"
+            },
+            "high": {
+              "reasoningEffort": "high"
+            },
+            "xhigh": {
+              "reasoningEffort": "xhigh"
+            },
+            "max": {
+              "reasoningEffort": "max"
+            }
+          },
+          "samplingParams": {
+            "reasoningEffort": "medium"
+          }
+        },
+        {
+          "id": "claude-haiku-4-5",
+          "name": "claude-haiku-4-5",
+          "api": "anthropic-messages",
+          "baseUrl": "https://relay.fast",
+          "input": [
+            "text",
+            "image"
+          ],
+          "contextWindow": 200000,
+          "maxTokens": 128000
+        },
+        {
+          "id": "claude-sonnet-5-5",
+          "name": "claude-sonnet-5-5",
+          "api": "anthropic-messages",
+          "baseUrl": "https://relay.fast",
+          "reasoning": true,
+          "input": [
+            "text",
+            "image"
+          ],
+          "contextWindow": 1000000,
+          "maxTokens": 128000
+        },
+        {
+          "id": "grok-4.6",
+          "name": "grok-4.6",
+          "reasoning": true,
+          "input": [
+            "text",
+            "image"
+          ],
+          "contextWindow": 500000,
+          "maxTokens": 128000,
+          "samplingParamsByThinkingLevel": {
+            "low": {
+              "reasoningEffort": "low"
+            },
+            "medium": {
+              "reasoningEffort": "medium"
+            },
+            "high": {
+              "reasoningEffort": "high"
+            },
+            "xhigh": {
+              "reasoningEffort": "xhigh"
+            }
+          },
+          "samplingParams": {
+            "reasoningEffort": "high"
+          }
+        },
+        {
+          "id": "grok-4.5",
+          "name": "grok-4.5",
+          "reasoning": true,
+          "input": [
+            "text",
+            "image"
+          ],
+          "contextWindow": 500000,
+          "maxTokens": 128000,
+          "samplingParamsByThinkingLevel": {
+            "low": {
+              "reasoningEffort": "low"
+            },
+            "medium": {
+              "reasoningEffort": "medium"
+            },
+            "high": {
+              "reasoningEffort": "high"
+            }
+          },
+          "samplingParams": {
+            "reasoningEffort": "high"
+          }
+        },
+        {
+          "id": "grok-4.7",
+          "name": "grok-4.7",
+          "reasoning": true,
+          "input": [
+            "text",
+            "image"
+          ],
+          "contextWindow": 500000,
+          "maxTokens": 128000,
+          "samplingParamsByThinkingLevel": {
+            "low": {
+              "reasoningEffort": "low"
+            },
+            "medium": {
+              "reasoningEffort": "medium"
+            },
+            "high": {
+              "reasoningEffort": "high"
+            },
+            "xhigh": {
+              "reasoningEffort": "xhigh"
+            }
+          },
+          "samplingParams": {
+            "reasoningEffort": "high"
+          }
+        },
+        {
+          "id": "deepseek-v4-pro-0813",
+          "name": "deepseek-v4-pro-0813",
+          "reasoning": true,
+          "input": [
+            "text",
+            "image"
+          ],
+          "contextWindow": 1000000,
+          "maxTokens": 128000,
+          "samplingParamsByThinkingLevel": {
+            "low": {
+              "reasoningEffort": "low"
+            },
+            "medium": {
+              "reasoningEffort": "medium"
+            },
+            "high": {
+              "reasoningEffort": "high"
+            },
+            "xhigh": {
+              "reasoningEffort": "xhigh"
+            }
+          },
+          "samplingParams": {
+            "reasoningEffort": "medium"
+          }
+        },
+        {
+          "id": "deepseek-v4-flash-0731",
+          "name": "deepseek-v4-flash-0731",
+          "reasoning": true,
+          "contextWindow": 1000000,
+          "maxTokens": 128000,
+          "samplingParamsByThinkingLevel": {
+            "low": {
+              "reasoningEffort": "low"
+            },
+            "medium": {
+              "reasoningEffort": "medium"
+            },
+            "high": {
+              "reasoningEffort": "high"
+            },
+            "xhigh": {
+              "reasoningEffort": "xhigh"
+            }
+          },
+          "samplingParams": {
+            "reasoningEffort": "medium"
+          }
+        },
+        {
+          "id": "deepseek-v4.1-flash",
+          "name": "deepseek-v4.1-flash",
+          "reasoning": true,
+          "input": [
+            "text",
+            "image"
+          ],
+          "contextWindow": 1000000,
+          "maxTokens": 128000,
+          "samplingParamsByThinkingLevel": {
+            "low": {
+              "reasoningEffort": "low"
+            },
+            "medium": {
+              "reasoningEffort": "medium"
+            },
+            "high": {
+              "reasoningEffort": "high"
+            },
+            "xhigh": {
+              "reasoningEffort": "xhigh"
+            },
+            "max": {
+              "reasoningEffort": "max"
+            }
+          },
+          "samplingParams": {
+            "reasoningEffort": "max"
+          }
+        },
+        {
+          "id": "deepseek-v4-pro",
+          "name": "deepseek-v4-pro",
+          "reasoning": true,
+          "input": [
+            "text",
+            "image"
+          ],
+          "contextWindow": 1000000,
+          "maxTokens": 128000,
+          "samplingParamsByThinkingLevel": {
+            "low": {
+              "reasoningEffort": "low"
+            },
+            "medium": {
+              "reasoningEffort": "medium"
+            },
+            "high": {
+              "reasoningEffort": "high"
+            },
+            "xhigh": {
+              "reasoningEffort": "xhigh"
+            }
+          },
+          "samplingParams": {
+            "reasoningEffort": "medium"
+          }
+        },
+        {
+          "id": "deepseek-v4-flash-vision-exp",
+          "name": "deepseek-v4-flash-vision-exp",
+          "reasoning": true,
+          "input": [
+            "text",
+            "image"
+          ],
+          "contextWindow": 1000000,
+          "maxTokens": 128000,
+          "samplingParamsByThinkingLevel": {
+            "low": {
+              "reasoningEffort": "low"
+            },
+            "medium": {
+              "reasoningEffort": "medium"
+            },
+            "high": {
+              "reasoningEffort": "high"
+            },
+            "xhigh": {
+              "reasoningEffort": "xhigh"
+            }
+          },
+          "samplingParams": {
+            "reasoningEffort": "medium"
+          }
+        },
+        {
+          "id": "deepseek-v4-flash",
+          "name": "deepseek-v4-flash",
+          "reasoning": true,
+          "input": [
+            "text",
+            "image"
+          ],
+          "contextWindow": 1000000,
+          "maxTokens": 128000,
+          "samplingParamsByThinkingLevel": {
+            "low": {
+              "reasoningEffort": "low"
+            },
+            "medium": {
+              "reasoningEffort": "medium"
+            },
+            "high": {
+              "reasoningEffort": "high"
+            },
+            "xhigh": {
+              "reasoningEffort": "xhigh"
+            }
+          },
+          "samplingParams": {
+            "reasoningEffort": "medium"
+          }
+        },
+        {
+          "id": "glm-5.3-flash",
+          "name": "glm-5.3-flash",
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": null,
+            "minimal": null,
+            "low": "low",
+            "medium": null,
+            "high": "high",
+            "xhigh": null,
+            "max": "max"
+          },
+          "input": [
+            "text",
+            "image"
+          ],
+          "contextWindow": 1000000,
+          "maxTokens": 128000,
+          "samplingParamsByThinkingLevel": {
+            "low": {
+              "reasoningEffort": "low"
+            },
+            "high": {
+              "reasoningEffort": "high"
+            },
+            "max": {
+              "reasoningEffort": "max"
+            }
+          }
+        },
+        {
+          "id": "glm-5.3",
+          "name": "glm-5.3",
+          "reasoning": true,
+          "contextWindow": 1000000,
+          "maxTokens": 128000,
+          "samplingParamsByThinkingLevel": {
+            "low": {
+              "reasoningEffort": "low"
+            },
+            "medium": {
+              "reasoningEffort": "medium"
+            },
+            "high": {
+              "reasoningEffort": "high"
+            }
+          },
+          "samplingParams": {
+            "reasoningEffort": "medium"
+          }
+        },
+        {
+          "id": "glm-5.3-flashx",
+          "name": "glm-5.3-flashx",
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": null,
+            "minimal": null,
+            "low": "low",
+            "medium": null,
+            "high": "high",
+            "xhigh": null,
+            "max": "max"
+          },
+          "input": [
+            "text",
+            "image"
+          ],
+          "contextWindow": 1000000,
+          "maxTokens": 131072,
+          "cost": {
+            "input": 0.00925,
+            "output": 0.03125,
+            "cacheRead": 0.001875,
+            "cacheWrite": 0
+          }
+        },
+        {
+          "id": "kimi-k3",
+          "name": "kimi-k3",
+          "reasoning": true,
+          "input": [
+            "text",
+            "image"
+          ],
+          "contextWindow": 1048576,
+          "maxTokens": 128000,
+          "samplingParamsByThinkingLevel": {
+            "low": {
+              "reasoningEffort": "low"
+            },
+            "high": {
+              "reasoningEffort": "high"
+            },
+            "max": {
+              "reasoningEffort": "max"
+            }
+          },
+          "samplingParams": {
+            "reasoningEffort": "max"
+          }
+        },
+        {
+          "id": "hy4",
+          "name": "hy4",
+          "input": [
+            "text",
+            "image"
+          ],
+          "contextWindow": 256000,
+          "maxTokens": 128000
+        },
+        {
+          "id": "hy3",
+          "name": "hy3",
+          "contextWindow": 256000,
+          "maxTokens": 128000
+        },
+        {
+          "id": "mimo-v2.5-pro",
+          "name": "mimo-v2.5-pro",
+          "contextWindow": 1000000,
+          "maxTokens": 128000
+        },
+        {
+          "id": "minimax-m3",
+          "name": "minimax-m3",
+          "reasoning": true,
+          "input": [
+            "text",
+            "image"
+          ],
+          "contextWindow": 1000000,
+          "maxTokens": 128000
+        },
+        {
+          "id": "gemini-3.8-flash",
+          "name": "gemini-3.8-flash",
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": null,
+            "minimal": null,
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": null,
+            "max": null
+          },
+          "input": [
+            "text",
+            "image"
+          ],
+          "contextWindow": 1048576,
+          "maxTokens": 65536,
+          "cost": {
+            "input": 0.09375,
+            "output": 0.46875,
+            "cacheRead": 0.009375,
+            "cacheWrite": 0
+          }
+        },
+        {
+          "id": "qwen3.8-flash",
+          "name": "qwen3.8-flash",
+          "reasoning": true,
+          "input": [
+            "text",
+            "image"
+          ],
+          "contextWindow": 1000000,
+          "maxTokens": 131072,
+          "cost": {
+            "input": 0.0075,
+            "output": 0.0235,
+            "cacheRead": 0.0008,
+            "cacheWrite": 0.01
+          }
+        },
+        {
+          "id": "qwen3.8-max",
+          "name": "qwen3.8-max",
+          "reasoning": true,
+          "input": [
+            "text",
+            "image"
+          ],
+          "contextWindow": 1000000,
+          "maxTokens": 131072,
+          "cost": {
+            "input": 0.0666667,
+            "output": 0.2,
+            "cacheRead": 0.0083333,
+            "cacheWrite": 0.0833333
+          }
+        }
+      ]
+    },
+    "subrouter": {
+      "compat": {
+        "sendSessionAffinityHeaders": true
       },
-      "medium": {
-       "reasoningEffort": "medium"
+      "baseUrl": "https://usaeast.up.railway.app/v1",
+      "api": "openai-completions",
+      "apiKey": "!cat ${HOME}/.pi/agent/secrets/subrouter",
+      "models": [
+        {
+          "id": "deepseek-v4.1-flash",
+          "name": "deepseek-v4.1-flash",
+          "reasoning": true,
+          "input": [
+            "text",
+            "image"
+          ],
+          "contextWindow": 1000000,
+          "maxTokens": 128000,
+          "samplingParamsByThinkingLevel": {
+            "low": {
+              "reasoningEffort": "low"
+            },
+            "medium": {
+              "reasoningEffort": "medium"
+            },
+            "high": {
+              "reasoningEffort": "high"
+            },
+            "xhigh": {
+              "reasoningEffort": "xhigh"
+            },
+            "max": {
+              "reasoningEffort": "max"
+            }
+          },
+          "samplingParams": {
+            "reasoningEffort": "medium"
+          }
+        },
+        {
+          "id": "deepseek-v4.1-flash-1017",
+          "name": "deepseek-v4.1-flash-1017",
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": null,
+            "minimal": null,
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "xhigh",
+            "max": "max"
+          },
+          "input": [
+            "text",
+            "image"
+          ],
+          "contextWindow": 1000000,
+          "maxTokens": 128000,
+          "samplingParamsByThinkingLevel": {
+            "low": {
+              "reasoningEffort": "low"
+            },
+            "medium": {
+              "reasoningEffort": "medium"
+            },
+            "high": {
+              "reasoningEffort": "high"
+            },
+            "xhigh": {
+              "reasoningEffort": "xhigh"
+            },
+            "max": {
+              "reasoningEffort": "max"
+            }
+          },
+          "samplingParams": {
+            "reasoningEffort": "medium"
+          }
+        },
+        {
+          "id": "deepseek-v4-pro",
+          "name": "deepseek-v4-pro",
+          "reasoning": true,
+          "input": [
+            "text",
+            "image"
+          ],
+          "contextWindow": 1000000,
+          "maxTokens": 128000,
+          "samplingParamsByThinkingLevel": {
+            "low": {
+              "reasoningEffort": "low"
+            },
+            "medium": {
+              "reasoningEffort": "medium"
+            },
+            "high": {
+              "reasoningEffort": "high"
+            },
+            "xhigh": {
+              "reasoningEffort": "xhigh"
+            }
+          },
+          "samplingParams": {
+            "reasoningEffort": "medium"
+          }
+        },
+        {
+          "id": "kimi-k3",
+          "name": "kimi-k3",
+          "reasoning": true,
+          "input": [
+            "text",
+            "image"
+          ],
+          "contextWindow": 1048576,
+          "maxTokens": 128000,
+          "samplingParamsByThinkingLevel": {
+            "low": {
+              "reasoningEffort": "low"
+            },
+            "high": {
+              "reasoningEffort": "high"
+            },
+            "max": {
+              "reasoningEffort": "max"
+            }
+          },
+          "samplingParams": {
+            "reasoningEffort": "max"
+          }
+        },
+        {
+          "id": "mimo-v2.6-flash",
+          "name": "mimo-v2.6-flash",
+          "reasoning": true,
+          "input": [
+            "text",
+            "image"
+          ],
+          "contextWindow": 1048576,
+          "maxTokens": 131072,
+          "samplingParamsByThinkingLevel": {
+            "off": {
+              "reasoningEffort": "none"
+            },
+            "low": {
+              "reasoningEffort": "low"
+            },
+            "medium": {
+              "reasoningEffort": "medium"
+            },
+            "high": {
+              "reasoningEffort": "high"
+            }
+          },
+          "samplingParams": {
+            "reasoningEffort": "medium"
+          }
+        },
+        {
+          "id": "mimo-v2.6-pro",
+          "name": "mimo-v2.6-pro",
+          "reasoning": true,
+          "input": [
+            "text",
+            "image"
+          ],
+          "contextWindow": 1048576,
+          "maxTokens": 131072,
+          "samplingParamsByThinkingLevel": {
+            "off": {
+              "reasoningEffort": "none"
+            },
+            "low": {
+              "reasoningEffort": "low"
+            },
+            "medium": {
+              "reasoningEffort": "medium"
+            },
+            "high": {
+              "reasoningEffort": "high"
+            }
+          },
+          "samplingParams": {
+            "reasoningEffort": "medium"
+          }
+        }
+      ]
+    },
+    "openrouter": {
+      "modelOverrides": {
+        "openai/gpt-6-luna": {
+          "compat": {
+            "openAICompletions": {
+              "openRouterRouting": {
+                "only": [
+                  "azure/eu"
+                ],
+                "allow_fallbacks": false
+              }
+            }
+          },
+          "contextWindow": 1050000,
+          "maxTokens": 128000,
+          "reasoning": true
+        },
+        "xiaomi/mimo-v2.6-flash": {
+          "compat": {
+            "openAICompletions": {
+              "openRouterRouting": {
+                "only": [
+                  "xiaomi/fp8"
+                ],
+                "allow_fallbacks": false
+              }
+            }
+          },
+          "contextWindow": 1048576,
+          "maxTokens": 131072,
+          "reasoning": true
+        },
+        "xiaomi/mimo-v2.6-pro": {
+          "compat": {
+            "openAICompletions": {
+              "openRouterRouting": {
+                "only": [
+                  "xiaomi/fp8"
+                ],
+                "allow_fallbacks": false
+              }
+            }
+          },
+          "contextWindow": 1048576,
+          "maxTokens": 131072,
+          "reasoning": true
+        },
+        "meta/muse-spark-1.3": {
+          "compat": {
+            "openAICompletions": {
+              "openRouterRouting": {
+                "only": [
+                  "meta"
+                ],
+                "allow_fallbacks": false
+              }
+            }
+          },
+          "contextWindow": 1048576,
+          "maxTokens": 943718,
+          "reasoning": true
+        }
       },
-      "high": {
-       "reasoningEffort": "high"
-      },
-      "xhigh": {
-       "reasoningEffort": "xhigh"
-      },
-      "max": {
-       "reasoningEffort": "max"
+      "models": [
+        {
+          "id": "xiaomi/mimo-v2.6-flash:nitro",
+          "name": "MiMo V2.6 Flash (Nitro)",
+          "reasoning": true,
+          "input": [
+            "text"
+          ],
+          "contextWindow": 1048576,
+          "maxTokens": 131072
+        }
+      ]
+    },
+    "opencode": {
+      "modelOverrides": {
+        "minimax-m3.1-flash-free": {
+          "name": "MiniMax-M3.1-Flash-Free (deprecated, use opencode-go/minimax-m3.1-flash)",
+          "compat": {
+            "sendSessionAffinityHeaders": true
+          }
+        }
       }
-     },
-     "samplingParams": {
-      "reasoningEffort": "medium"
-     }
     },
-    {
-     "id": "gpt-6-sol",
-     "name": "gpt-6-sol",
-     "api": "openai-responses",
-     "reasoning": true,
-     "input": [
-      "text",
-      "image"
-     ],
-     "contextWindow": 1050000,
-     "maxTokens": 128000,
-     "samplingParamsByThinkingLevel": {
-      "off": {
-       "reasoningEffort": "none"
+    "opencode-go": {
+      "compat": {
+        "sendSessionAffinityHeaders": true
       },
-      "low": {
-       "reasoningEffort": "low"
-      },
-      "medium": {
-       "reasoningEffort": "medium"
-      },
-      "high": {
-       "reasoningEffort": "high"
-      },
-      "xhigh": {
-       "reasoningEffort": "xhigh"
-      },
-      "max": {
-       "reasoningEffort": "max"
+      "apiKey": "!cat ${HOME}/.pi/agent/secrets/opencode",
+      "models": [
+        {
+          "id": "minimax-m3.1-flash",
+          "name": "MiniMax-M3.1-Flash",
+          "api": "openai-completions",
+          "baseUrl": "https://opencode.ai/inference/go/v1",
+          "reasoning": true,
+          "input": [
+            "text",
+            "image"
+          ],
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          },
+          "compat": {
+            "supportsStore": false,
+            "supportsDeveloperRole": false,
+            "supportsStrictMode": true,
+            "maxTokensField": "max_tokens",
+            "sendSessionAffinityHeaders": true
+          },
+          "contextWindow": 1000000,
+          "maxTokens": 512000,
+          "thinkingLevelMap": {
+            "off": null,
+            "minimal": null,
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "xhigh",
+            "max": "max"
+          },
+          "inputLimits": {
+            "images": {
+              "resize": {
+                "maxWidth": 2000,
+                "maxHeight": 2000,
+                "maxBytes": 4718592,
+                "jpegQuality": 80
+              }
+            }
+          }
+        }
+      ],
+      "modelOverrides": {
+        "minimax-m3.1-flash-free": {
+          "name": "MiniMax-M3.1-Flash-Free (deprecated, use MiniMax-M3.1-Flash)"
+        }
       }
-     },
-     "samplingParams": {
-      "reasoningEffort": "medium"
-     }
     },
-    {
-     "id": "gpt-6.1-sol",
-     "name": "gpt-6.1-sol",
-     "api": "openai-responses",
-     "reasoning": true,
-     "input": [
-      "text",
-      "image"
-     ],
-     "contextWindow": 1050000,
-     "maxTokens": 128000,
-     "samplingParamsByThinkingLevel": {
-      "off": {
-       "reasoningEffort": "none"
-      },
-      "low": {
-       "reasoningEffort": "low"
-      },
-      "medium": {
-       "reasoningEffort": "medium"
-      },
-      "high": {
-       "reasoningEffort": "high"
-      },
-      "xhigh": {
-       "reasoningEffort": "xhigh"
-      },
-      "max": {
-       "reasoningEffort": "max"
-      }
-     },
-     "samplingParams": {
-      "reasoningEffort": "medium"
-     }
+    "subtoken-gemini": {
+      "baseUrl": "https://subtoken.net/v1",
+      "api": "openai-completions",
+      "apiKey": "!cat ${HOME}/.pi/agent/secrets/subtoken-gemini",
+      "models": [
+        {
+          "id": "gemini-3.8-flash-high",
+          "name": "Gemini 3.8 Flash (High)",
+          "reasoning": true,
+          "input": [
+            "text",
+            "image"
+          ],
+          "contextWindow": 1048576,
+          "maxTokens": 65536,
+          "cost": {
+            "input": 0.75,
+            "output": 3.75,
+            "cacheRead": 0.075,
+            "cacheWrite": 0.041667
+          }
+        },
+        {
+          "id": "gemini-4-argon-high",
+          "name": "Gemini 4 Argon (High)",
+          "reasoning": true,
+          "input": [
+            "text",
+            "image"
+          ],
+          "contextWindow": 1048576,
+          "maxTokens": 65536,
+          "cost": {
+            "input": 2,
+            "output": 10,
+            "cacheRead": 0.1,
+            "cacheWrite": 0
+          }
+        }
+      ]
     },
-    {
-     "id": "gpt-6-luna",
-     "name": "gpt-6-luna",
-     "api": "openai-completions",
-     "reasoning": true,
-     "thinkingLevelMap": {
-      "off": "none",
-      "minimal": "low",
-      "low": "low",
-      "medium": "medium",
-      "high": "high",
-      "xhigh": "xhigh",
-      "max": "max"
-     },
-     "input": [
-      "text",
-      "image"
-     ],
-     "contextWindow": 1050000,
-     "maxTokens": 128000,
-     "samplingParamsByThinkingLevel": {
-      "off": {
-       "reasoningEffort": "none"
-      },
-      "low": {
-       "reasoningEffort": "low"
-      },
-      "medium": {
-       "reasoningEffort": "medium"
-      },
-      "high": {
-       "reasoningEffort": "high"
-      },
-      "xhigh": {
-       "reasoningEffort": "xhigh"
-      },
-      "max": {
-       "reasoningEffort": "max"
-      }
-     },
-     "samplingParams": {
-      "reasoningEffort": "medium"
-     }
+    "inception": {
+      "baseUrl": "https://api.inceptionlabs.ai/v1",
+      "api": "openai-completions",
+      "apiKey": "!cat ${HOME}/.pi/agent/secrets/inception",
+      "models": [
+        {
+          "id": "mercury-2",
+          "name": "Mercury 2",
+          "input": [
+            "text"
+          ],
+          "contextWindow": 128000,
+          "maxTokens": 50000,
+          "cost": {
+            "input": 0.25,
+            "output": 0.75,
+            "cacheRead": 0.025,
+            "cacheWrite": 0
+          },
+          "reasoning": true,
+          "compat": {
+            "supportsReasoningEffort": true
+          },
+          "thinkingLevelMap": {
+            "off": "instant",
+            "minimal": "instant",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "high",
+            "max": "high"
+          }
+        },
+        {
+          "id": "mercury-2.5",
+          "name": "Mercury 2.5",
+          "input": [
+            "text"
+          ],
+          "contextWindow": 260000,
+          "maxTokens": 65536,
+          "cost": {
+            "input": 0.04,
+            "output": 0.15,
+            "cacheRead": 0.004,
+            "cacheWrite": 0
+          },
+          "reasoning": true,
+          "compat": {
+            "supportsReasoningEffort": true
+          },
+          "thinkingLevelMap": {
+            "off": "instant",
+            "minimal": "instant",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "high",
+            "max": "high"
+          }
+        }
+      ]
     },
-    {
-     "id": "claude-haiku-4-5",
-     "name": "claude-haiku-4-5",
-     "api": "anthropic-messages",
-     "baseUrl": "https://relay.fast",
-     "input": [
-      "text",
-      "image"
-     ],
-     "contextWindow": 200000,
-     "maxTokens": 128000
-    },
-    {
-     "id": "claude-sonnet-5-5",
-     "name": "claude-sonnet-5-5",
-     "api": "anthropic-messages",
-     "baseUrl": "https://relay.fast",
-     "reasoning": true,
-     "input": [
-      "text",
-      "image"
-     ],
-     "contextWindow": 1000000,
-     "maxTokens": 128000
-    },
-    {
-     "id": "grok-4.6",
-     "name": "grok-4.6",
-     "reasoning": true,
-     "input": [
-      "text",
-      "image"
-     ],
-     "contextWindow": 500000,
-     "maxTokens": 128000,
-     "samplingParamsByThinkingLevel": {
-      "low": {
-       "reasoningEffort": "low"
-      },
-      "medium": {
-       "reasoningEffort": "medium"
-      },
-      "high": {
-       "reasoningEffort": "high"
-      },
-      "xhigh": {
-       "reasoningEffort": "xhigh"
-      }
-     },
-     "samplingParams": {
-      "reasoningEffort": "high"
-     }
-    },
-    {
-     "id": "grok-4.5",
-     "name": "grok-4.5",
-     "reasoning": true,
-     "input": [
-      "text",
-      "image"
-     ],
-     "contextWindow": 500000,
-     "maxTokens": 128000,
-     "samplingParamsByThinkingLevel": {
-      "low": {
-       "reasoningEffort": "low"
-      },
-      "medium": {
-       "reasoningEffort": "medium"
-      },
-      "high": {
-       "reasoningEffort": "high"
-      }
-     },
-     "samplingParams": {
-      "reasoningEffort": "high"
-     }
-    },
-    {
-     "id": "grok-4.7",
-     "name": "grok-4.7",
-     "reasoning": true,
-     "input": [
-      "text",
-      "image"
-     ],
-     "contextWindow": 500000,
-     "maxTokens": 128000,
-     "samplingParamsByThinkingLevel": {
-      "low": {
-       "reasoningEffort": "low"
-      },
-      "medium": {
-       "reasoningEffort": "medium"
-      },
-      "high": {
-       "reasoningEffort": "high"
-      },
-      "xhigh": {
-       "reasoningEffort": "xhigh"
-      }
-     },
-     "samplingParams": {
-      "reasoningEffort": "high"
-     }
-    },
-    {
-     "id": "deepseek-v4-pro-0813",
-     "name": "deepseek-v4-pro-0813",
-     "reasoning": true,
-     "input": [
-      "text",
-      "image"
-     ],
-     "contextWindow": 1000000,
-     "maxTokens": 128000,
-     "samplingParamsByThinkingLevel": {
-      "low": {
-       "reasoningEffort": "low"
-      },
-      "medium": {
-       "reasoningEffort": "medium"
-      },
-      "high": {
-       "reasoningEffort": "high"
-      },
-      "xhigh": {
-       "reasoningEffort": "xhigh"
-      }
-     },
-     "samplingParams": {
-      "reasoningEffort": "medium"
-     }
-    },
-    {
-     "id": "deepseek-v4-flash-0731",
-     "name": "deepseek-v4-flash-0731",
-     "reasoning": true,
-     "contextWindow": 1000000,
-     "maxTokens": 128000,
-     "samplingParamsByThinkingLevel": {
-      "low": {
-       "reasoningEffort": "low"
-      },
-      "medium": {
-       "reasoningEffort": "medium"
-      },
-      "high": {
-       "reasoningEffort": "high"
-      },
-      "xhigh": {
-       "reasoningEffort": "xhigh"
-      }
-     },
-     "samplingParams": {
-      "reasoningEffort": "medium"
-     }
-    },
-    {
-     "id": "deepseek-v4.1-flash",
-     "name": "deepseek-v4.1-flash",
-     "reasoning": true,
-     "input": [
-      "text",
-      "image"
-     ],
-     "contextWindow": 1000000,
-     "maxTokens": 128000,
-     "samplingParamsByThinkingLevel": {
-      "low": {
-       "reasoningEffort": "low"
-      },
-      "medium": {
-       "reasoningEffort": "medium"
-      },
-      "high": {
-       "reasoningEffort": "high"
-      },
-      "xhigh": {
-       "reasoningEffort": "xhigh"
-      },
-      "max": {
-       "reasoningEffort": "max"
-      }
-     },
-     "samplingParams": {
-      "reasoningEffort": "max"
-     }
-    },
-    {
-     "id": "deepseek-v4-pro",
-     "name": "deepseek-v4-pro",
-     "reasoning": true,
-     "input": [
-      "text",
-      "image"
-     ],
-     "contextWindow": 1000000,
-     "maxTokens": 128000,
-     "samplingParamsByThinkingLevel": {
-      "low": {
-       "reasoningEffort": "low"
-      },
-      "medium": {
-       "reasoningEffort": "medium"
-      },
-      "high": {
-       "reasoningEffort": "high"
-      },
-      "xhigh": {
-       "reasoningEffort": "xhigh"
-      }
-     },
-     "samplingParams": {
-      "reasoningEffort": "medium"
-     }
-    },
-    {
-     "id": "deepseek-v4-flash-vision-exp",
-     "name": "deepseek-v4-flash-vision-exp",
-     "reasoning": true,
-     "input": [
-      "text",
-      "image"
-     ],
-     "contextWindow": 1000000,
-     "maxTokens": 128000,
-     "samplingParamsByThinkingLevel": {
-      "low": {
-       "reasoningEffort": "low"
-      },
-      "medium": {
-       "reasoningEffort": "medium"
-      },
-      "high": {
-       "reasoningEffort": "high"
-      },
-      "xhigh": {
-       "reasoningEffort": "xhigh"
-      }
-     },
-     "samplingParams": {
-      "reasoningEffort": "medium"
-     }
-    },
-    {
-     "id": "deepseek-v4-flash",
-     "name": "deepseek-v4-flash",
-     "reasoning": true,
-     "input": [
-      "text",
-      "image"
-     ],
-     "contextWindow": 1000000,
-     "maxTokens": 128000,
-     "samplingParamsByThinkingLevel": {
-      "low": {
-       "reasoningEffort": "low"
-      },
-      "medium": {
-       "reasoningEffort": "medium"
-      },
-      "high": {
-       "reasoningEffort": "high"
-      },
-      "xhigh": {
-       "reasoningEffort": "xhigh"
-      }
-     },
-     "samplingParams": {
-      "reasoningEffort": "medium"
-     }
-    },
-    {
-     "id": "glm-5.3-flash",
-     "name": "glm-5.3-flash",
-     "reasoning": true,
-     "thinkingLevelMap": {
-      "off": null,
-      "minimal": null,
-      "low": "low",
-      "medium": null,
-      "high": "high",
-      "xhigh": null,
-      "max": "max"
-     },
-     "input": [
-      "text",
-      "image"
-     ],
-     "contextWindow": 1000000,
-     "maxTokens": 128000,
-     "samplingParamsByThinkingLevel": {
-      "low": {
-       "reasoningEffort": "low"
-      },
-      "high": {
-       "reasoningEffort": "high"
-      },
-      "max": {
-       "reasoningEffort": "max"
-      }
-     }
-    },
-    {
-     "id": "glm-5.3",
-     "name": "glm-5.3",
-     "reasoning": true,
-     "contextWindow": 1000000,
-     "maxTokens": 128000,
-     "samplingParamsByThinkingLevel": {
-      "low": {
-       "reasoningEffort": "low"
-      },
-      "medium": {
-       "reasoningEffort": "medium"
-      },
-      "high": {
-       "reasoningEffort": "high"
-      }
-     },
-     "samplingParams": {
-      "reasoningEffort": "medium"
-     }
-    },
-    {
-     "id": "glm-5.3-flashx",
-     "name": "glm-5.3-flashx",
-     "reasoning": true,
-     "thinkingLevelMap": {
-      "off": null,
-      "minimal": null,
-      "low": "low",
-      "medium": null,
-      "high": "high",
-      "xhigh": null,
-      "max": "max"
-     },
-     "input": [
-      "text",
-      "image"
-     ],
-     "contextWindow": 1000000,
-     "maxTokens": 131072,
-     "cost": {
-      "input": 0.00925,
-      "output": 0.03125,
-      "cacheRead": 0.001875,
-      "cacheWrite": 0
-     }
-    },
-    {
-     "id": "kimi-k3",
-     "name": "kimi-k3",
-     "reasoning": true,
-     "input": [
-      "text",
-      "image"
-     ],
-     "contextWindow": 1048576,
-     "maxTokens": 128000,
-     "samplingParamsByThinkingLevel": {
-      "low": {
-       "reasoningEffort": "low"
-      },
-      "high": {
-       "reasoningEffort": "high"
-      },
-      "max": {
-       "reasoningEffort": "max"
-      }
-     },
-     "samplingParams": {
-      "reasoningEffort": "max"
-     }
-    },
-    {
-     "id": "hy4",
-     "name": "hy4",
-     "input": [
-      "text",
-      "image"
-     ],
-     "contextWindow": 256000,
-     "maxTokens": 128000
-    },
-    {
-     "id": "hy3",
-     "name": "hy3",
-     "contextWindow": 256000,
-     "maxTokens": 128000
-    },
-    {
-     "id": "mimo-v2.5-pro",
-     "name": "mimo-v2.5-pro",
-     "contextWindow": 1000000,
-     "maxTokens": 128000
-    },
-    {
-     "id": "minimax-m3",
-     "name": "minimax-m3",
-     "reasoning": true,
-     "input": [
-      "text",
-      "image"
-     ],
-     "contextWindow": 1000000,
-     "maxTokens": 128000
-    },
-    {
-     "id": "gemini-3.8-flash",
-     "name": "gemini-3.8-flash",
-     "reasoning": true,
-     "thinkingLevelMap": {
-      "off": null,
-      "minimal": null,
-      "low": "low",
-      "medium": "medium",
-      "high": "high",
-      "xhigh": null,
-      "max": null
-     },
-     "input": [
-      "text",
-      "image"
-     ],
-     "contextWindow": 1048576,
-     "maxTokens": 65536,
-     "cost": {
-      "input": 0.09375,
-      "output": 0.46875,
-      "cacheRead": 0.009375,
-      "cacheWrite": 0
-     }
-    },
-    {
-     "id": "qwen3.8-flash",
-     "name": "qwen3.8-flash",
-     "reasoning": true,
-     "input": [
-      "text",
-      "image"
-     ],
-     "contextWindow": 1000000,
-     "maxTokens": 131072,
-     "cost": {
-      "input": 0.0075,
-      "output": 0.0235,
-      "cacheRead": 0.0008,
-      "cacheWrite": 0.01
-     }
-    },
-    {
-     "id": "qwen3.8-max",
-     "name": "qwen3.8-max",
-     "reasoning": true,
-     "input": [
-      "text",
-      "image"
-     ],
-     "contextWindow": 1000000,
-     "maxTokens": 131072,
-     "cost": {
-      "input": 0.0666667,
-      "output": 0.2,
-      "cacheRead": 0.0083333,
-      "cacheWrite": 0.0833333
-     }
+    "experiential": {
+      "baseUrl": "https://api.experientiallabs.ai/v1",
+      "api": "openai-completions",
+      "apiKey": "!cat ${HOME}/.pi/agent/secrets/explabs",
+      "models": [
+        {
+          "id": "claude-opus-5.5",
+          "name": "claude-opus-5.5",
+          "cost": {
+            "input": 4.0,
+            "output": 20.0,
+            "cacheRead": 0.2,
+            "cacheWrite": 5.0
+          },
+          "input": [
+            "text"
+          ],
+          "contextWindow": 1000000,
+          "maxTokens": 128000,
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": "low",
+            "minimal": "low",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "xhigh",
+            "max": "max"
+          },
+          "compat": {
+            "supportsReasoningEffort": true
+          }
+        },
+        {
+          "id": "claude-sonnet-5.5",
+          "name": "claude-sonnet-5.5",
+          "cost": {
+            "input": 2.0,
+            "output": 10.0,
+            "cacheRead": 0.1,
+            "cacheWrite": 2.5
+          },
+          "input": [
+            "text"
+          ],
+          "contextWindow": 1000000,
+          "maxTokens": 128000,
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": "low",
+            "minimal": "low",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "xhigh",
+            "max": "max"
+          },
+          "compat": {
+            "supportsReasoningEffort": true
+          }
+        },
+        {
+          "id": "claude-haiku-5.5",
+          "name": "claude-haiku-5.5",
+          "cost": {
+            "input": 0.1,
+            "output": 0.5,
+            "cacheRead": 0.01,
+            "cacheWrite": 0.125
+          },
+          "input": [
+            "text"
+          ],
+          "contextWindow": 1000000,
+          "maxTokens": 128000,
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": "low",
+            "minimal": "low",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "high",
+            "max": "high"
+          },
+          "compat": {
+            "supportsReasoningEffort": true
+          }
+        },
+        {
+          "id": "gpt-6-astra",
+          "name": "gpt-6-astra",
+          "cost": {
+            "input": 10.0,
+            "output": 50.0,
+            "cacheRead": 1.0,
+            "cacheWrite": 12.5
+          },
+          "input": [
+            "text"
+          ],
+          "contextWindow": 1050000,
+          "maxTokens": 128000,
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": "low",
+            "minimal": "low",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "xhigh",
+            "max": "max"
+          },
+          "compat": {
+            "supportsReasoningEffort": true
+          }
+        },
+        {
+          "id": "gpt-6-sol",
+          "name": "gpt-6-sol",
+          "cost": {
+            "input": 2.0,
+            "output": 10.0,
+            "cacheRead": 0.2,
+            "cacheWrite": 2.5
+          },
+          "input": [
+            "text"
+          ],
+          "contextWindow": 1050000,
+          "maxTokens": 128000,
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": "none",
+            "minimal": "none",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "xhigh",
+            "max": "max"
+          },
+          "compat": {
+            "supportsReasoningEffort": true
+          }
+        },
+        {
+          "id": "gpt-6-luna",
+          "name": "gpt-6-luna",
+          "cost": {
+            "input": 0.1,
+            "output": 0.5,
+            "cacheRead": 0.01,
+            "cacheWrite": 0.125
+          },
+          "input": [
+            "text"
+          ],
+          "contextWindow": 1050000,
+          "maxTokens": 128000,
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": "none",
+            "minimal": "none",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "xhigh",
+            "max": "max"
+          },
+          "compat": {
+            "supportsReasoningEffort": true
+          }
+        },
+        {
+          "id": "gpt-5.6-terra",
+          "name": "gpt-5.6-terra",
+          "cost": {
+            "input": 2.0,
+            "output": 12.0,
+            "cacheRead": 0.2,
+            "cacheWrite": 2.5
+          },
+          "input": [
+            "text"
+          ],
+          "contextWindow": 1050000,
+          "maxTokens": 128000,
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": "none",
+            "minimal": "minimal",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "xhigh",
+            "max": "max"
+          },
+          "compat": {
+            "supportsReasoningEffort": true
+          }
+        },
+        {
+          "id": "gpt-5.5",
+          "name": "gpt-5.5",
+          "cost": {
+            "input": 5.0,
+            "output": 30.0,
+            "cacheRead": 0.5,
+            "cacheWrite": 6.25
+          },
+          "input": [
+            "text"
+          ],
+          "contextWindow": 1050000,
+          "maxTokens": 128000,
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": "low",
+            "minimal": "low",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "xhigh",
+            "max": "xhigh"
+          },
+          "compat": {
+            "supportsReasoningEffort": true
+          }
+        },
+        {
+          "id": "gpt-5.4",
+          "name": "gpt-5.4",
+          "cost": {
+            "input": 2.5,
+            "output": 15.0,
+            "cacheRead": 0.25,
+            "cacheWrite": 3.125
+          },
+          "input": [
+            "text"
+          ],
+          "contextWindow": 1050000,
+          "maxTokens": 128000,
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": "low",
+            "minimal": "low",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "xhigh",
+            "max": "xhigh"
+          },
+          "compat": {
+            "supportsReasoningEffort": true
+          }
+        },
+        {
+          "id": "gpt-5.1-codex-max",
+          "name": "gpt-5.1-codex-max",
+          "cost": {
+            "input": 1.25,
+            "output": 10.0,
+            "cacheRead": 0.125,
+            "cacheWrite": 0
+          },
+          "input": [
+            "text"
+          ],
+          "contextWindow": 400000,
+          "maxTokens": 128000,
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": "low",
+            "minimal": "low",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "xhigh",
+            "max": "xhigh"
+          },
+          "compat": {
+            "supportsReasoningEffort": true
+          }
+        },
+        {
+          "id": "o3",
+          "name": "o3",
+          "cost": {
+            "input": 2.0,
+            "output": 8.0,
+            "cacheRead": 0.5,
+            "cacheWrite": 2.5
+          },
+          "input": [
+            "text"
+          ],
+          "contextWindow": 200000,
+          "maxTokens": 100000,
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": "low",
+            "minimal": "low",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "high",
+            "max": "high"
+          },
+          "compat": {
+            "supportsReasoningEffort": true
+          }
+        },
+        {
+          "id": "o4-mini",
+          "name": "o4-mini",
+          "cost": {
+            "input": 1.1,
+            "output": 4.4,
+            "cacheRead": 0.275,
+            "cacheWrite": 1.375
+          },
+          "input": [
+            "text"
+          ],
+          "contextWindow": 200000,
+          "maxTokens": 100000,
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": "low",
+            "minimal": "low",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "high",
+            "max": "high"
+          },
+          "compat": {
+            "supportsReasoningEffort": true
+          }
+        },
+        {
+          "id": "gpt-oss-120b",
+          "name": "gpt-oss-120b",
+          "cost": {
+            "input": 0.15,
+            "output": 0.6,
+            "cacheRead": 0.15,
+            "cacheWrite": 0
+          },
+          "input": [
+            "text"
+          ],
+          "contextWindow": 131072,
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": "low",
+            "minimal": "low",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "xhigh",
+            "max": "xhigh"
+          },
+          "compat": {
+            "supportsReasoningEffort": true
+          },
+          "maxTokens": 16384
+        },
+        {
+          "id": "gemini-3.8-flash",
+          "name": "gemini-3.8-flash",
+          "cost": {
+            "input": 0.75,
+            "output": 3.75,
+            "cacheRead": 0.075,
+            "cacheWrite": 0.116667
+          },
+          "input": [
+            "text"
+          ],
+          "contextWindow": 1048576,
+          "maxTokens": 65536,
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": null,
+            "minimal": "high",
+            "low": "high",
+            "medium": "high",
+            "high": "high",
+            "xhigh": "high",
+            "max": "high"
+          },
+          "compat": {
+            "supportsReasoningEffort": true
+          }
+        },
+        {
+          "id": "gemini-3.7-flash",
+          "name": "gemini-3.7-flash",
+          "cost": {
+            "input": 0.75,
+            "output": 3.75,
+            "cacheRead": 0.075,
+            "cacheWrite": 0.116667
+          },
+          "input": [
+            "text"
+          ],
+          "contextWindow": 1048576,
+          "maxTokens": 65536,
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": "low",
+            "minimal": "low",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "high",
+            "max": "high"
+          },
+          "compat": {
+            "supportsReasoningEffort": true
+          }
+        },
+        {
+          "id": "gemini-3.1-pro-preview",
+          "name": "gemini-3.1-pro-preview",
+          "cost": {
+            "input": 2.0,
+            "output": 12.0,
+            "cacheRead": 0.2,
+            "cacheWrite": 0.575
+          },
+          "input": [
+            "text"
+          ],
+          "contextWindow": 1048576,
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": "low",
+            "minimal": "low",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "high",
+            "max": "high"
+          },
+          "compat": {
+            "supportsReasoningEffort": true
+          },
+          "maxTokens": 16384
+        },
+        {
+          "id": "gemini-2.5-pro",
+          "name": "gemini-2.5-pro",
+          "cost": {
+            "input": 1.25,
+            "output": 10.0,
+            "cacheRead": 0.125,
+            "cacheWrite": 0.125
+          },
+          "input": [
+            "text"
+          ],
+          "contextWindow": 1048576,
+          "maxTokens": 65536,
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": "low",
+            "minimal": "low",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "high",
+            "max": "high"
+          },
+          "compat": {
+            "supportsReasoningEffort": true
+          }
+        },
+        {
+          "id": "gemini-3.1-flash-lite",
+          "name": "gemini-3.1-flash-lite",
+          "cost": {
+            "input": 0.25,
+            "output": 1.5,
+            "cacheRead": 0.025,
+            "cacheWrite": 0.108333
+          },
+          "input": [
+            "text"
+          ],
+          "contextWindow": 1048576,
+          "maxTokens": 65536,
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": "minimal",
+            "minimal": "minimal",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "high",
+            "max": "high"
+          },
+          "compat": {
+            "supportsReasoningEffort": true
+          }
+        },
+        {
+          "id": "deepseek-v4.1-flash-1017",
+          "name": "deepseek-v4.1-flash-1017",
+          "cost": {
+            "input": 0.3,
+            "output": 1.2,
+            "cacheRead": 0.006,
+            "cacheWrite": 0.3
+          },
+          "input": [
+            "text"
+          ],
+          "contextWindow": 1048576,
+          "maxTokens": 393216,
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": "none",
+            "minimal": "minimal",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "xhigh",
+            "max": "max"
+          },
+          "compat": {
+            "supportsReasoningEffort": true
+          }
+        },
+        {
+          "id": "deepseek-v4-pro",
+          "name": "deepseek-v4-pro",
+          "cost": {
+            "input": 1.74,
+            "output": 3.48,
+            "cacheRead": 0.145,
+            "cacheWrite": 0
+          },
+          "input": [
+            "text"
+          ],
+          "contextWindow": 1048576,
+          "maxTokens": 393216,
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": "none",
+            "minimal": "none",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "xhigh",
+            "max": "max"
+          },
+          "compat": {
+            "supportsReasoningEffort": true
+          }
+        },
+        {
+          "id": "deepseek-v3.2",
+          "name": "deepseek-v3.2",
+          "cost": {
+            "input": 0.58,
+            "output": 1.68,
+            "cacheRead": 0.58,
+            "cacheWrite": 0
+          },
+          "input": [
+            "text"
+          ],
+          "contextWindow": 163840,
+          "maxTokens": 163840,
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": "none",
+            "minimal": "minimal",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "xhigh",
+            "max": "max"
+          },
+          "compat": {
+            "supportsReasoningEffort": true
+          }
+        },
+        {
+          "id": "glm-5.3",
+          "name": "glm-5.3",
+          "cost": {
+            "input": 1.4,
+            "output": 4.4,
+            "cacheRead": 0.26,
+            "cacheWrite": 0
+          },
+          "input": [
+            "text"
+          ],
+          "contextWindow": 1048576,
+          "maxTokens": 131072,
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": "none",
+            "minimal": "minimal",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "xhigh",
+            "max": "max"
+          },
+          "compat": {
+            "supportsReasoningEffort": true
+          }
+        },
+        {
+          "id": "glm-5.3-flash",
+          "name": "glm-5.3-flash",
+          "cost": {
+            "input": 0.15,
+            "output": 0.5,
+            "cacheRead": 0.03,
+            "cacheWrite": 0
+          },
+          "input": [
+            "text"
+          ],
+          "contextWindow": 1048576,
+          "maxTokens": 131072,
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": "low",
+            "minimal": "low",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "xhigh",
+            "max": "max"
+          },
+          "compat": {
+            "supportsReasoningEffort": true
+          }
+        },
+        {
+          "id": "glm-5.2",
+          "name": "glm-5.2",
+          "cost": {
+            "input": 1.54,
+            "output": 4.84,
+            "cacheRead": 0.15,
+            "cacheWrite": 0
+          },
+          "input": [
+            "text"
+          ],
+          "contextWindow": 1048576,
+          "maxTokens": 131072
+        },
+        {
+          "id": "kimi-k3",
+          "name": "kimi-k3",
+          "cost": {
+            "input": 3.0,
+            "output": 15.0,
+            "cacheRead": 0.23,
+            "cacheWrite": 0
+          },
+          "input": [
+            "text"
+          ],
+          "contextWindow": 1048576,
+          "maxTokens": 262144,
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": "none",
+            "minimal": "minimal",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "xhigh",
+            "max": "max"
+          },
+          "compat": {
+            "supportsReasoningEffort": true
+          }
+        },
+        {
+          "id": "kimi-k2.6",
+          "name": "kimi-k2.6",
+          "cost": {
+            "input": 0.95,
+            "output": 4.0,
+            "cacheRead": 0.16,
+            "cacheWrite": 0
+          },
+          "input": [
+            "text"
+          ],
+          "contextWindow": 262144,
+          "maxTokens": 262144
+        },
+        {
+          "id": "kimi-k2.7-code",
+          "name": "kimi-k2.7-code",
+          "cost": {
+            "input": 0.95,
+            "output": 4.0,
+            "cacheRead": 0.19,
+            "cacheWrite": 0
+          },
+          "input": [
+            "text"
+          ],
+          "contextWindow": 262144,
+          "maxTokens": 262144
+        },
+        {
+          "id": "qwen3.8-max",
+          "name": "qwen3.8-max",
+          "cost": {
+            "input": 2.0,
+            "output": 6.0,
+            "cacheRead": 0.25,
+            "cacheWrite": 0
+          },
+          "input": [
+            "text"
+          ],
+          "contextWindow": 1000000,
+          "maxTokens": 131072,
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": "none",
+            "minimal": "minimal",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "xhigh",
+            "max": "max"
+          },
+          "compat": {
+            "maxTokensField": "max_completion_tokens",
+            "supportsReasoningEffort": true
+          }
+        },
+        {
+          "id": "qwen3.8-flash",
+          "name": "qwen3.8-flash",
+          "cost": {
+            "input": 0.15,
+            "output": 0.47,
+            "cacheRead": 0.016,
+            "cacheWrite": 0
+          },
+          "input": [
+            "text"
+          ],
+          "contextWindow": 1000000,
+          "maxTokens": 131072,
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": "none",
+            "minimal": "minimal",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "xhigh",
+            "max": "max"
+          },
+          "compat": {
+            "maxTokensField": "max_completion_tokens",
+            "supportsReasoningEffort": true
+          }
+        },
+        {
+          "id": "qwen3-coder-flash",
+          "name": "qwen3-coder-flash",
+          "cost": {
+            "input": 0.195,
+            "output": 0.975,
+            "cacheRead": 0.039,
+            "cacheWrite": 0
+          },
+          "input": [
+            "text"
+          ],
+          "contextWindow": 1000000,
+          "maxTokens": 65536
+        },
+        {
+          "id": "qwen3.8-27b",
+          "name": "qwen3.8-27b",
+          "cost": {
+            "input": 0.32,
+            "output": 2.4,
+            "cacheRead": 0.04,
+            "cacheWrite": 0
+          },
+          "input": [
+            "text"
+          ],
+          "contextWindow": 1000000,
+          "maxTokens": 131072,
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": "none",
+            "minimal": "minimal",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "xhigh",
+            "max": "max"
+          },
+          "compat": {
+            "maxTokensField": "max_completion_tokens",
+            "supportsReasoningEffort": true
+          }
+        },
+        {
+          "id": "minimax-m3",
+          "name": "minimax-m3",
+          "cost": {
+            "input": 0.33,
+            "output": 1.32,
+            "cacheRead": 0.066,
+            "cacheWrite": 0
+          },
+          "input": [
+            "text"
+          ],
+          "contextWindow": 1000000,
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": "none",
+            "minimal": "none",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "xhigh",
+            "max": "max"
+          },
+          "compat": {
+            "supportsReasoningEffort": true
+          },
+          "maxTokens": 16384
+        },
+        {
+          "id": "minimax-m2.5",
+          "name": "minimax-m2.5",
+          "cost": {
+            "input": 0.27,
+            "output": 1.08,
+            "cacheRead": 0.03,
+            "cacheWrite": 0
+          },
+          "input": [
+            "text"
+          ],
+          "contextWindow": 196608,
+          "maxTokens": 131072,
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": null,
+            "minimal": "medium",
+            "low": "medium",
+            "medium": "medium",
+            "high": "medium",
+            "xhigh": "medium",
+            "max": "medium"
+          },
+          "compat": {
+            "supportsReasoningEffort": true
+          }
+        },
+        {
+          "id": "grok-4.7",
+          "name": "grok-4.7",
+          "cost": {
+            "input": 2.0,
+            "output": 6.0,
+            "cacheRead": 0.5,
+            "cacheWrite": 0
+          },
+          "input": [
+            "text"
+          ],
+          "contextWindow": 500000,
+          "maxTokens": 128000,
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": "low",
+            "minimal": "low",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "xhigh",
+            "max": "xhigh"
+          },
+          "compat": {
+            "supportsReasoningEffort": true
+          }
+        },
+        {
+          "id": "grok-4.6",
+          "name": "grok-4.6",
+          "cost": {
+            "input": 2.0,
+            "output": 6.0,
+            "cacheRead": 0.5,
+            "cacheWrite": 0
+          },
+          "input": [
+            "text"
+          ],
+          "contextWindow": 500000,
+          "maxTokens": 128000,
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": "low",
+            "minimal": "low",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "high",
+            "max": "high"
+          },
+          "compat": {
+            "supportsReasoningEffort": true
+          }
+        },
+        {
+          "id": "grok-code-fast-1",
+          "name": "grok-code-fast-1",
+          "cost": {
+            "input": 0.2,
+            "output": 1.5,
+            "cacheRead": 0.2,
+            "cacheWrite": 0
+          },
+          "input": [
+            "text"
+          ],
+          "contextWindow": 256000,
+          "maxTokens": 10000
+        },
+        {
+          "id": "mistral-large-4",
+          "name": "mistral-large-4",
+          "cost": {
+            "input": 0.68,
+            "output": 2.09,
+            "cacheRead": 0.07,
+            "cacheWrite": 0
+          },
+          "input": [
+            "text"
+          ],
+          "contextWindow": 524288,
+          "maxTokens": 209715,
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": "none",
+            "minimal": "none",
+            "low": "none",
+            "medium": "none",
+            "high": "high",
+            "xhigh": "high",
+            "max": "high"
+          },
+          "compat": {
+            "supportsReasoningEffort": true
+          }
+        },
+        {
+          "id": "mistral-small-2603",
+          "name": "mistral-small-2603",
+          "cost": {
+            "input": 0.15,
+            "output": 0.6,
+            "cacheRead": 0.15,
+            "cacheWrite": 0
+          },
+          "input": [
+            "text"
+          ],
+          "contextWindow": 262144,
+          "maxTokens": 209715,
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": "none",
+            "minimal": "none",
+            "low": "none",
+            "medium": "none",
+            "high": "high",
+            "xhigh": "high",
+            "max": "high"
+          },
+          "compat": {
+            "supportsReasoningEffort": true
+          }
+        },
+        {
+          "id": "mercury-3",
+          "name": "mercury-3",
+          "cost": {
+            "input": 0.2,
+            "output": 0.7,
+            "cacheRead": 0.02,
+            "cacheWrite": 0.2
+          },
+          "input": [
+            "text"
+          ],
+          "contextWindow": 1000000,
+          "maxTokens": 131072,
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": "low",
+            "minimal": "low",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "high",
+            "max": "high"
+          },
+          "compat": {
+            "maxTokensField": "max_completion_tokens",
+            "supportsReasoningEffort": true
+          }
+        },
+        {
+          "id": "inkling",
+          "name": "inkling",
+          "cost": {
+            "input": 1.1,
+            "output": 4.46,
+            "cacheRead": 0.19,
+            "cacheWrite": 0
+          },
+          "input": [
+            "text"
+          ],
+          "contextWindow": 524288,
+          "maxTokens": 262144,
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": "none",
+            "minimal": "none",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "xhigh",
+            "max": "max"
+          },
+          "compat": {
+            "supportsReasoningEffort": true
+          }
+        },
+        {
+          "id": "fugu-ultra-v2",
+          "name": "fugu-ultra-v2",
+          "cost": {
+            "input": 5.0,
+            "output": 30.0,
+            "cacheRead": 0.5,
+            "cacheWrite": 0
+          },
+          "input": [
+            "text"
+          ],
+          "contextWindow": 1000000,
+          "maxTokens": 128000,
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": null,
+            "minimal": "high",
+            "low": "high",
+            "medium": "high",
+            "high": "high",
+            "xhigh": "xhigh",
+            "max": "max"
+          },
+          "compat": {
+            "supportsReasoningEffort": true
+          }
+        },
+        {
+          "id": "laguna-s-2.1",
+          "name": "laguna-s-2.1",
+          "cost": {
+            "input": 0.09,
+            "output": 0.18,
+            "cacheRead": 0.009,
+            "cacheWrite": 0
+          },
+          "input": [
+            "text"
+          ],
+          "contextWindow": 1048576,
+          "maxTokens": 131072,
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": null,
+            "minimal": "medium",
+            "low": "medium",
+            "medium": "medium",
+            "high": "medium",
+            "xhigh": "medium",
+            "max": "medium"
+          },
+          "compat": {
+            "supportsReasoningEffort": true
+          }
+        },
+        {
+          "id": "seed-2.0-code",
+          "name": "seed-2.0-code",
+          "cost": {
+            "input": 0.5,
+            "output": 3.0,
+            "cacheRead": 0.5,
+            "cacheWrite": 0
+          },
+          "input": [
+            "text"
+          ],
+          "contextWindow": 262144,
+          "maxTokens": 131072,
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": "none",
+            "minimal": "none",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "high",
+            "max": "high"
+          },
+          "compat": {
+            "supportsReasoningEffort": true
+          }
+        },
+        {
+          "id": "step-3.5-flash",
+          "name": "step-3.5-flash",
+          "cost": {
+            "input": 0.1,
+            "output": 0.3,
+            "cacheRead": 0.1,
+            "cacheWrite": 0
+          },
+          "input": [
+            "text"
+          ],
+          "contextWindow": 262144,
+          "maxTokens": 65536,
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": null,
+            "minimal": "medium",
+            "low": "medium",
+            "medium": "medium",
+            "high": "medium",
+            "xhigh": "medium",
+            "max": "medium"
+          },
+          "compat": {
+            "supportsReasoningEffort": true
+          }
+        },
+        {
+          "id": "solar-pro4",
+          "name": "solar-pro4",
+          "cost": {
+            "input": 0.15,
+            "output": 0.6,
+            "cacheRead": 0.03,
+            "cacheWrite": 0
+          },
+          "input": [
+            "text"
+          ],
+          "contextWindow": 524288,
+          "maxTokens": 131072,
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": "none",
+            "minimal": "minimal",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "xhigh",
+            "max": "max"
+          },
+          "compat": {
+            "supportsReasoningEffort": true
+          }
+        },
+        {
+          "id": "muse-spark-1.3",
+          "name": "muse-spark-1.3",
+          "cost": {
+            "input": 1.25,
+            "output": 4.25,
+            "cacheRead": 0.15,
+            "cacheWrite": 0
+          },
+          "input": [
+            "text"
+          ],
+          "contextWindow": 1048576,
+          "maxTokens": 1048576,
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": "minimal",
+            "minimal": "minimal",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "xhigh",
+            "max": "xhigh"
+          },
+          "compat": {
+            "supportsReasoningEffort": true
+          }
+        },
+        {
+          "id": "hy3",
+          "name": "hy3",
+          "cost": {
+            "input": 0.132,
+            "output": 0.528,
+            "cacheRead": 0.033,
+            "cacheWrite": 0
+          },
+          "input": [
+            "text"
+          ],
+          "contextWindow": 262144,
+          "maxTokens": 65536,
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": "none",
+            "minimal": "minimal",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "xhigh",
+            "max": "max"
+          },
+          "compat": {
+            "supportsReasoningEffort": true
+          }
+        },
+        {
+          "id": "aion-3.0",
+          "name": "aion-3.0",
+          "cost": {
+            "input": 3.0,
+            "output": 6.0,
+            "cacheRead": 0.75,
+            "cacheWrite": 0
+          },
+          "input": [
+            "text"
+          ],
+          "contextWindow": 131072,
+          "maxTokens": 32768,
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": null,
+            "minimal": "medium",
+            "low": "medium",
+            "medium": "medium",
+            "high": "medium",
+            "xhigh": "medium",
+            "max": "medium"
+          },
+          "compat": {
+            "supportsReasoningEffort": true
+          }
+        },
+        {
+          "id": "ling-3.0-flash",
+          "name": "ling-3.0-flash",
+          "cost": {
+            "input": 0.021,
+            "output": 0.063,
+            "cacheRead": 0.0042,
+            "cacheWrite": 0
+          },
+          "input": [
+            "text"
+          ],
+          "contextWindow": 262144,
+          "maxTokens": 32768,
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": "none",
+            "minimal": "minimal",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "xhigh",
+            "max": "max"
+          },
+          "compat": {
+            "supportsReasoningEffort": true
+          }
+        },
+        {
+          "id": "mimo-v2.6-pro",
+          "name": "mimo-v2.6-pro",
+          "cost": {
+            "input": 0.435,
+            "output": 0.87,
+            "cacheRead": 0.0036,
+            "cacheWrite": 0
+          },
+          "input": [
+            "text"
+          ],
+          "contextWindow": 1048576,
+          "maxTokens": 131072,
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": "none",
+            "minimal": "minimal",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "xhigh",
+            "max": "max"
+          },
+          "compat": {
+            "supportsReasoningEffort": true
+          }
+        },
+        {
+          "id": "nova-premier-v1",
+          "name": "nova-premier-v1",
+          "cost": {
+            "input": 2.5,
+            "output": 12.5,
+            "cacheRead": 0.625,
+            "cacheWrite": 0
+          },
+          "input": [
+            "text"
+          ],
+          "contextWindow": 1000000,
+          "maxTokens": 32000
+        },
+        {
+          "id": "longcat-2.0",
+          "name": "longcat-2.0",
+          "cost": {
+            "input": 0.3,
+            "output": 1.2,
+            "cacheRead": 0.006,
+            "cacheWrite": 0
+          },
+          "input": [
+            "text"
+          ],
+          "contextWindow": 1048576,
+          "maxTokens": 262144,
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": null,
+            "minimal": "medium",
+            "low": "medium",
+            "medium": "medium",
+            "high": "medium",
+            "xhigh": "medium",
+            "max": "medium"
+          },
+          "compat": {
+            "supportsReasoningEffort": true
+          }
+        },
+        {
+          "id": "command-a",
+          "name": "command-a",
+          "cost": {
+            "input": 2.5,
+            "output": 10.0,
+            "cacheRead": 2.5,
+            "cacheWrite": 0
+          },
+          "input": [
+            "text"
+          ],
+          "contextWindow": 256000,
+          "maxTokens": 8192
+        }
+      ]
     }
-   ]
-  },
-  "subrouter": {
-   "compat": {
-    "sendSessionAffinityHeaders": true
-   },
-   "baseUrl": "https://usaeast.up.railway.app/v1",
-   "api": "openai-completions",
-   "apiKey": "!cat ${HOME}/.pi/agent/secrets/subrouter",
-   "models": [
-    {
-     "id": "deepseek-v4.1-flash",
-     "name": "deepseek-v4.1-flash",
-     "reasoning": true,
-     "input": [
-      "text",
-      "image"
-     ],
-     "contextWindow": 1000000,
-     "maxTokens": 128000,
-     "samplingParamsByThinkingLevel": {
-      "low": {
-       "reasoningEffort": "low"
-      },
-      "medium": {
-       "reasoningEffort": "medium"
-      },
-      "high": {
-       "reasoningEffort": "high"
-      },
-      "xhigh": {
-       "reasoningEffort": "xhigh"
-      },
-      "max": {
-       "reasoningEffort": "max"
-      }
-     },
-     "samplingParams": {
-      "reasoningEffort": "medium"
-     }
-    },
-    {
-     "id": "deepseek-v4.1-flash-1017",
-     "name": "deepseek-v4.1-flash-1017",
-     "reasoning": true,
-     "thinkingLevelMap": {
-      "off": null,
-      "minimal": null,
-      "low": "low",
-      "medium": "medium",
-      "high": "high",
-      "xhigh": "xhigh",
-      "max": "max"
-     },
-     "input": [
-      "text",
-      "image"
-     ],
-     "contextWindow": 1000000,
-     "maxTokens": 128000,
-     "samplingParamsByThinkingLevel": {
-      "low": {
-       "reasoningEffort": "low"
-      },
-      "medium": {
-       "reasoningEffort": "medium"
-      },
-      "high": {
-       "reasoningEffort": "high"
-      },
-      "xhigh": {
-       "reasoningEffort": "xhigh"
-      },
-      "max": {
-       "reasoningEffort": "max"
-      }
-     },
-     "samplingParams": {
-      "reasoningEffort": "medium"
-     }
-    },
-    {
-     "id": "deepseek-v4-pro",
-     "name": "deepseek-v4-pro",
-     "reasoning": true,
-     "input": [
-      "text",
-      "image"
-     ],
-     "contextWindow": 1000000,
-     "maxTokens": 128000,
-     "samplingParamsByThinkingLevel": {
-      "low": {
-       "reasoningEffort": "low"
-      },
-      "medium": {
-       "reasoningEffort": "medium"
-      },
-      "high": {
-       "reasoningEffort": "high"
-      },
-      "xhigh": {
-       "reasoningEffort": "xhigh"
-      }
-     },
-     "samplingParams": {
-      "reasoningEffort": "medium"
-     }
-    },
-    {
-     "id": "kimi-k3",
-     "name": "kimi-k3",
-     "reasoning": true,
-     "input": [
-      "text",
-      "image"
-     ],
-     "contextWindow": 1048576,
-     "maxTokens": 128000,
-     "samplingParamsByThinkingLevel": {
-      "low": {
-       "reasoningEffort": "low"
-      },
-      "high": {
-       "reasoningEffort": "high"
-      },
-      "max": {
-       "reasoningEffort": "max"
-      }
-     },
-     "samplingParams": {
-      "reasoningEffort": "max"
-     }
-    },
-    {
-     "id": "mimo-v2.6-flash",
-     "name": "mimo-v2.6-flash",
-     "reasoning": true,
-     "input": [
-      "text",
-      "image"
-     ],
-     "contextWindow": 1048576,
-     "maxTokens": 131072,
-     "samplingParamsByThinkingLevel": {
-      "off": {
-       "reasoningEffort": "none"
-      },
-      "low": {
-       "reasoningEffort": "low"
-      },
-      "medium": {
-       "reasoningEffort": "medium"
-      },
-      "high": {
-       "reasoningEffort": "high"
-      }
-     },
-     "samplingParams": {
-      "reasoningEffort": "medium"
-     }
-    },
-    {
-     "id": "mimo-v2.6-pro",
-     "name": "mimo-v2.6-pro",
-     "reasoning": true,
-     "input": [
-      "text",
-      "image"
-     ],
-     "contextWindow": 1048576,
-     "maxTokens": 131072,
-     "samplingParamsByThinkingLevel": {
-      "off": {
-       "reasoningEffort": "none"
-      },
-      "low": {
-       "reasoningEffort": "low"
-      },
-      "medium": {
-       "reasoningEffort": "medium"
-      },
-      "high": {
-       "reasoningEffort": "high"
-      }
-     },
-     "samplingParams": {
-      "reasoningEffort": "medium"
-     }
-    }
-   ]
-  },
-  "openrouter": {
-   "modelOverrides": {
-    "openai/gpt-6-luna": {
-     "compat": {
-      "openAICompletions": {
-       "openRouterRouting": {
-        "only": [
-         "azure/eu"
-        ],
-        "allow_fallbacks": false
-       }
-      }
-     },
-     "contextWindow": 1050000,
-     "maxTokens": 128000,
-     "reasoning": true
-    },
-    "xiaomi/mimo-v2.6-flash": {
-     "compat": {
-      "openAICompletions": {
-       "openRouterRouting": {
-        "only": [
-         "xiaomi/fp8"
-        ],
-        "allow_fallbacks": false
-       }
-      }
-     },
-     "contextWindow": 1048576,
-     "maxTokens": 131072,
-     "reasoning": true
-    },
-    "xiaomi/mimo-v2.6-pro": {
-     "compat": {
-      "openAICompletions": {
-       "openRouterRouting": {
-        "only": [
-         "xiaomi/fp8"
-        ],
-        "allow_fallbacks": false
-       }
-      }
-     },
-     "contextWindow": 1048576,
-     "maxTokens": 131072,
-     "reasoning": true
-    },
-    "meta/muse-spark-1.3": {
-     "compat": {
-      "openAICompletions": {
-       "openRouterRouting": {
-        "only": [
-         "meta"
-        ],
-        "allow_fallbacks": false
-       }
-      }
-     },
-     "contextWindow": 1048576,
-     "maxTokens": 943718,
-     "reasoning": true
-    }
-   },
-   "models": [
-    {
-     "id": "xiaomi/mimo-v2.6-flash:nitro",
-     "name": "MiMo V2.6 Flash (Nitro)",
-     "reasoning": true,
-     "input": [
-      "text"
-     ],
-     "contextWindow": 1048576,
-     "maxTokens": 131072
-    }
-   ]
-  },
-  "opencode": {
-   "modelOverrides": {
-    "minimax-m3.1-flash-free": {
-     "name": "MiniMax-M3.1-Flash-Free (deprecated, use opencode-go/minimax-m3.1-flash)",
-     "compat": {
-      "sendSessionAffinityHeaders": true
-     }
-    }
-   }
-  },
-  "opencode-go": {
-   "compat": {
-    "sendSessionAffinityHeaders": true
-   },
-   "apiKey": "!cat ${HOME}/.pi/agent/secrets/opencode",
-   "models": [
-    {
-     "id": "minimax-m3.1-flash",
-     "name": "MiniMax-M3.1-Flash",
-     "api": "openai-completions",
-     "baseUrl": "https://opencode.ai/inference/go/v1",
-     "reasoning": true,
-     "input": [
-      "text",
-      "image"
-     ],
-     "cost": {
-      "input": 0,
-      "output": 0,
-      "cacheRead": 0,
-      "cacheWrite": 0
-     },
-     "compat": {
-      "supportsStore": false,
-      "supportsDeveloperRole": false,
-      "supportsStrictMode": true,
-      "maxTokensField": "max_tokens",
-      "sendSessionAffinityHeaders": true
-     },
-     "contextWindow": 1000000,
-     "maxTokens": 512000,
-     "thinkingLevelMap": {
-      "off": null,
-      "minimal": null,
-      "low": "low",
-      "medium": "medium",
-      "high": "high",
-      "xhigh": "xhigh",
-      "max": "max"
-     },
-     "inputLimits": {
-      "images": {
-       "resize": {
-        "maxWidth": 2000,
-        "maxHeight": 2000,
-        "maxBytes": 4718592,
-        "jpegQuality": 80
-       }
-      }
-     }
-    }
-   ],
-   "modelOverrides": {
-    "minimax-m3.1-flash-free": {
-     "name": "MiniMax-M3.1-Flash-Free (deprecated, use MiniMax-M3.1-Flash)"
-    }
-   }
-  },
-  "subtoken-gemini": {
-   "baseUrl": "https://subtoken.net/v1",
-   "api": "openai-completions",
-   "apiKey": "!cat ${HOME}/.pi/agent/secrets/subtoken-gemini",
-   "models": [
-    {
-     "id": "gemini-3.8-flash-high",
-     "name": "Gemini 3.8 Flash (High)",
-     "reasoning": true,
-     "input": [
-      "text",
-      "image"
-     ],
-     "contextWindow": 1048576,
-     "maxTokens": 65536,
-     "cost": {
-      "input": 0.75,
-      "output": 3.75,
-      "cacheRead": 0.075,
-      "cacheWrite": 0.041667
-     }
-    },
-    {
-     "id": "gemini-4-argon-high",
-     "name": "Gemini 4 Argon (High)",
-     "reasoning": true,
-     "input": [
-      "text",
-      "image"
-     ],
-     "contextWindow": 1048576,
-     "maxTokens": 65536,
-     "cost": {
-      "input": 2,
-      "output": 10,
-      "cacheRead": 0.1,
-      "cacheWrite": 0
-     }
-    }
-   ]
-  },
-  "inception": {
-   "baseUrl": "https://api.inceptionlabs.ai/v1",
-   "api": "openai-completions",
-   "apiKey": "!cat ${HOME}/.pi/agent/secrets/inception",
-   "models": [
-    {
-     "id": "mercury-2",
-     "name": "Mercury 2",
-     "input": [
-      "text"
-     ],
-     "contextWindow": 128000,
-     "maxTokens": 50000,
-     "cost": {
-      "input": 0.25,
-      "output": 0.75,
-      "cacheRead": 0.025,
-      "cacheWrite": 0
-     },
-     "reasoning": true,
-     "compat": {
-      "supportsReasoningEffort": true
-     },
-     "thinkingLevelMap": {
-      "off": "instant",
-      "minimal": "instant",
-      "low": "low",
-      "medium": "medium",
-      "high": "high",
-      "xhigh": "high",
-      "max": "high"
-     }
-    },
-    {
-     "id": "mercury-2.5",
-     "name": "Mercury 2.5",
-     "input": [
-      "text"
-     ],
-     "contextWindow": 260000,
-     "maxTokens": 65536,
-     "cost": {
-      "input": 0.04,
-      "output": 0.15,
-      "cacheRead": 0.004,
-      "cacheWrite": 0
-     },
-     "reasoning": true,
-     "compat": {
-      "supportsReasoningEffort": true
-     },
-     "thinkingLevelMap": {
-      "off": "instant",
-      "minimal": "instant",
-      "low": "low",
-      "medium": "medium",
-      "high": "high",
-      "xhigh": "high",
-      "max": "high"
-     }
-    }
-   ]
   }
- }
 }

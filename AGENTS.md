@@ -5,6 +5,8 @@ If you know what needs to be done next, you just do it. You don't stop to inform
 
 You can see around corners. Use your intuition. Just make sure you verify your intuitions (Trust but verify).
 
+When speaking to the user/operator you speak in English.
+
 # TODOs
 
 You always create TODO items before starting tasks.
@@ -30,10 +32,11 @@ You update your TODOs immediately after each item's task(s) are completed. You d
 In the same way that you are able to send messages and commands to other agents via herdr you can use herdr to send slash commands to yourself, effectively managing your own agent harness.
 You are only permitted to use herdr to send commands to yourself in the following manner:
 	- You may set your own /goal on any harness we run: codex natively, and pi through the
-	  `pi-codex-goal` extension (`/goal`, `/create-goal`, and the `create_goal` /
-	  `get_goal` / `update_goal` tools). Prefer the tool over typing `/goal <objective>`:
-	  an objective typed into a lane that already has an unfinished goal opens a
-	  `Replace goal?` confirm modal, and a modal in an agent pane absorbs the Enter.
+	  `@signalridge/pi-goal` extension (`/goal`; tools `goal_complete`, `goal_blocked`,
+	  `goal_wait`). See [goal contracts](#goal-contracts-signalridgepi-goal) for the
+	  exact rules — pi-goal has no `create_goal`/`update_goal` tool, so on pi the goal
+	  objective can only be set by typing a slash command, and that command has a
+	  modal hazard.
 	- You may adjust your own reasoning effort to suit the difficulty of what you're working on. How this is done depends on which agent you are (codex, opencode, droid, pi, agy):
 		- If you are a codex agent it's `/model`, ENTER, then select the reasoning effort and send ENTER again.
 		- If you are a pi agent it's `/thinking <level>` (levels: off, minimal, low, medium, high, xhigh, max) to set the
@@ -42,10 +45,99 @@ You are only permitted to use herdr to send commands to yourself in the followin
 		- If you are an opencode agent it's `/variant`, ENTER, then select the reasoning effort and send ENTER again.
 		- If you are uncertain how to set it, read the docs relating your agent harness.
 
+## goal contracts (`@signalridge/pi-goal`)
+
+pi runs `@signalridge/pi-goal` (installed from npm, config `~/.pi/agent/pi-goal.json`,
+`experimental.goals: true`). codex keeps its native `/goal`. The two are **not**
+interchangeable, and the pi one is stricter than the pi-codex-goal extension it
+replaced. Everything below is verified against the shipped source, not the README.
+
+**The goal extension now supports a queue of multiple goals.** Verified against the
+installed source (`@signalridge/pi-goal` 1.4.8, `src/command.ts`), not the README:
+
+- Verbs: `pause`, `resume`, `clear`, `edit <obj>`, `add <obj>`, `prioritize <obj>`,
+  `drop-last`, `skip`, `status`.
+- **`addGoal()` appends when a goal is active, and starts immediately when none is.**
+  So `/goal add` is safe unconditionally — that is the whole point of the queue.
+  `prioritize` puts a new goal at the front; `skip` advances past the head;
+  `drop-last` removes the tail.
+- The queue advances itself at the settled boundary after `goal_complete`. `add` to
+  build a backlog and let the agent walk it; do not re-send objectives one at a time.
+
+**Tool surface is only three tools.** `goal_complete`, `goal_blocked`, `goal_wait`.
+There is **no `create_goal`, `get_goal`, or `update_goal`** on pi. Consequences:
+
+- **The agent cannot create or change its own goal objective.** Only a `/goal` slash
+  command does that. Any instruction elsewhere in this file telling a pi agent to
+  "call `create_goal`" is impossible on pi — treat a typed `/goal` as the only route.
+- Completion is **`goal_complete`** (one tool call, guarded by the current goal id).
+  Not `update_goal complete`.
+- Blocking is **`goal_blocked`**, with a reason and evidence. A blocked goal stops
+  continuation until an explicit `/goal resume`; nothing auto-resumes it.
+- Waiting is **`goal_wait`** (reason + optional deadline) for something outside the
+  session — CI, a review, a reply. This is the correct tool for a dependency you do
+  not control, and it does not burn turns polling.
+- Tools are **hidden until a goal exists** (`toolVisibility: after-first-goal`), so a
+  fresh session cannot see them. They appear the moment a goal is set, and a session
+  that restores an unfinished goal sees them at startup.
+
+**`/goal <objective>` REPLACES the active goal and wipes the entire queue.** It is
+not "add". `startGoal()` sets `queuedGoals = []` after a `Replace goal?` confirm
+modal, and that modal lists every queued goal it is about to destroy. In an agent
+pane a modal absorbs the Enter you send next, so the send reports success while no
+turn runs. Prefer, in order:
+
+1. **`/goal edit <objective>`** — updates the objective in place, no modal, no queue
+   loss, preserves usage counters. Not available from a bare objective, so it must
+   be typed deliberately. This is the safe way to re-point an existing goal.
+2. **`/goal add <objective>`** — appends to the queue without touching the head. Use
+   this for every goal after the first. Falls back to starting immediately when no
+   goal is active (no confirm, no queue to wipe), so it is safe unconditionally.
+3. **`/goal <objective>`** — only when deliberately replacing everything, and only
+   with a human at the modal.
+
+Other pi-goal commands: `/goal` and `/goal status` print state; `/goal pause`;
+`/goal resume`; `/goal clear` (clears the goal **and the whole queue**);
+`/goal prioritize` (front of queue); `/goal drop-last`; `/goal skip` (advance past
+head). Only `/goal` and `/goal status` are safe to send blind — every other route
+is either destructive or needs the modal / settlement boundary.
+
+**Never set a token budget on a goal.** Do not pass `--tokens` to any `/goal` route
+(`/goal`, `/goal add`, `/goal prioritize`, `/goal edit`), and do not ask an agent to
+set one. A `--tokens` budget is the only remaining ceiling on a goal run — with the
+continuation limits disabled, a budgeted goal stops at `budgetLimited` and then needs
+a new budget or a brand-new goal, which is exactly the premature halt the goal exists
+to prevent. Goals run uncapped here by operator decision.
+
+**Queue advances itself.** `goal_complete` sets a pending `advance` action; the next
+queued goal activates at the settled idle boundary with no human focus step. Use
+`/goal add` to build a backlog and let the agent walk it. A stopped next item stays
+stopped — a skipped-to goal that was paused does not silently resume.
+
+**Prompting a working goal-driven lane pauses its goal**, not just the turn. The
+recovery is the lane's own bare `/goal resume` — no replacement objective, no re-sent
+brief. `/new` carries no goal across; re-establish it when reorienting.
+
+**Read goal state from the footer**, not the API: `herdr agent get` carries no goal
+fields. `herdr agent read <pane> | tail -2` shows `Pursuing goal`, `Goal achieved`,
+`Goal paused (/goal resume)`, or `Goal blocked`.
+
+`rpc.enabled` is **true** on this machine. The `pi-goal:start` / `pi-goal:cancel`
+event channels are live, so anything able to emit on Pi's extension event bus can
+start or cancel a goal run in this session. Treat that as a deliberate capability, not
+an accident: it is the hook for programmatic run control, and it is the reason not to
+run untrusted extension code in this session.
+
 ## orchestration with herdr and dagr
 
 - If you find yourself running inside herdr, and you have been asked to orchestrate and/or delegate to other agents:
 	- Unless otherwise instructed you either block on/await the herdr call or continue with other work and then return to blocking on the herdr agent so that herder alerts you when the agent has completed.
+	- **Never block your own session to wait.** If you are the single conversational intake for
+	  an operator, an unreachable orchestrator is not an intake. `jobs action='attach'` follows
+	  live output and holds the turn — that is the specific trap, because it *reads* as
+	  diligence while queuing the operator's next message behind it. Read `jobs action='output'`
+	  instead, run waits as backgrounded `until` loops that notify on exit, and use `monitor` for
+	  event streams. A wait you cannot do in the background is still not a reason to hold the turn.
 	- When delegating to herdr agents, include an instruction that the agent should pipe the progress of long-running commands and scripts it runs to log files for observability.
 	- When awaiting herdr agents, you base your timeout on an estimate of how long it will take for actionable observables to be produced by the agent.
 	- You always ensure graft has been initialized from the directory where the agent is or will be running.
@@ -67,15 +159,122 @@ You are only permitted to use herdr to send commands to yourself in the followin
 			- `gemini-3.8-flash-high` `high` (`pi`)
 		- Unresolved blocking issues needing escalation: `deepseek-v4.1-flash-1017` `max`.
 	- If you already know what work needs to be done and it is more than one turn's worth:
-		- You have a /goal feature on every harness we run (codex native; `pi-codex-goal` on pi). Use herdr self-actuation to set a /goal on yourself via `/goal <instructions>`, or call `create_goal` / `/create-goal` if you have them, so the goal is a completion contract rather than a task summary. This will prevent yourself from prematurely going idle before all work is complete.
-		- Mark it complete only after an evidence-backed audit, and leave it blocked with the reason rather than claiming completion when work remains. `/goal resume` is the only thing that reactivates a blocked goal.
+		- You have a /goal feature on every harness we run (codex native; `@signalridge/pi-goal` on pi).
+		  Use herdr self-actuation to set a /goal on yourself so the goal is a completion contract rather
+		  than a task summary. This prevents you from prematurely going idle before all work is complete.
+		  - codex: `/goal <instructions>`.
+		  - pi: use `/goal edit <instructions>` when a goal is already active (in place, no modal, keeps
+		    usage counters and the queue); `/goal add <instructions>` to append without disturbing the
+		    head; bare `/goal <instructions>` only to replace everything and only with a human at the
+		    `Replace goal?` modal — it wipes the whole queue and the modal absorbs your next Enter.
+		    There is no `create_goal` tool on pi; typing the command is the only route.
+		  - **Never pass `--tokens`.** Goals here are uncapped by operator decision; a token budget
+		    stops the goal at `budgetLimited` and needs a new goal to revive.
+		- Mark it complete only after an evidence-backed audit: `goal_complete` on pi (not
+		  `update_goal complete`, which does not exist there), and leave it `goal_blocked` with the
+		  reason rather than claiming completion when work remains. `/goal resume` is the only thing
+		  that reactivates a blocked goal — nothing auto-resumes one.
 	- You remain mindful of the agent's context window utilization:
 		- Every agent's current context window usage is displayed in their UI, and you are able to read it.
 		- > 20% is moderate. > 30% is moderate-high. > 40% is high. > 50% is very high.
+		- The number is the `21.5%/1.0M` field in the agent's footer. It is **not** the
+		  `CH99.8%` field beside it — that is the cache-hit rate, and confusing the two
+		  supports an entirely wrong diagnosis. herdr's API exposes no token count at all:
+		  `herdr agent get` and `agent list` carry 15 fields and none is context usage.
 		- Once an agent's context usage is high or very high (If it's close to finishing, you may let it complete its current tranche):
 			- Tell the agent that you need to reset its agent session, and instruct it to give you a detailed continuation prompt for you to paste back to it so it can pickup from where it left off.
 			- Send the `/new` command (Don't forget to send the ENTER key).
 			- Reorient the agent, ensuring it has sufficient information to continue its work.
+
+## agent rooms (`pi-rooms`)
+
+A file-based messaging extension for pi sessions, installed here. It gives agents
+direct messages, reply-all, and shared rooms with readable history. There is no
+daemon and no server; state is plain files under `~/.pi/agent/rooms`.
+
+Tools: `rooms_who`, `rooms_dm`, `rooms_reply_all`, `rooms_create`, `rooms_join`,
+`rooms_post`, `rooms_read`, `rooms_list`.
+
+**Identity is the one thing you must pin.** Each session registers one name. Set
+`PI_ROOMS_NAME` per lane; otherwise the name is the working directory plus a **pid
+suffix** (`m2-core-309f`), and that suffix does not survive a restart. Three lanes in
+one cwd become `overlord-18c7-46525`, `overlord-18c7-72208`, `overlord-18c7-73545` —
+indistinguishable to a human — and after a reboot the same lanes come back under
+different names. **A room's membership silently empties across a restart**, because the
+names in it no longer exist.
+
+So: if a lane needs to be addressable, pin `PI_ROOMS_NAME` explicitly rather than
+relying on the derived name. Pane ids are not an alternative — `wE:p1J` is recycled too.
+
+**Correlating a name with a pane is free.** Every pane's process environment carries
+`HERDR_PANE_ID` (plus `HERDR_TAB_ID`, `HERDR_WORKSPACE_ID`, `HERDR_ENV=1`), so a
+registration can record which pane it is in without any herdr dependency — read
+`process.env.HERDR_PANE_ID`, and get `undefined` on a box without herdr. Treat it as a
+correlation *attribute*, never as identity: pane ids are positional and recycled, so
+they are only meaningful paired with the process (pid + starttime + boot id).
+
+**Liveness is verified, not assumed.** Registration records `/proc/<pid>/stat` starttime
+and the boot id, so a registry entry whose process died — or whose pid was reused by an
+unrelated process after a reboot — is detected and not reported as a live lane. Before this
+existed, `rooms_who` counted a roster that kept climbing during recovery (35 → 37 → 41) with
+ghosts in it. If a name will not answer, the tool now has evidence to prove whether it is
+alive; prefer that over guessing.
+
+**Delivery is three-state.** `rooms_dm` writing the inbox is *queued*; the watcher handing
+it to the session is *delivered*; the recipient calling `rooms_ack` is *acked*. Report only
+the state that is recorded — a send that succeeded is not a message that was read.
+
+**Pinning a name.** Two ways, and they differ:
+
+- `PI_ROOMS_NAME` at startup. Authoritative, but startup-only.
+- `~/.pi/agent/rooms/names.json`, applied via the `rooms_pins` tool, for lanes already
+  running. Use `session:` keys where you can — they survive pane churn and behave most like
+  `PI_ROOMS_NAME`. `pane:` is next best. `cwd:` is only safe where the directory holds
+  exactly one lane.
+
+**Renaming is leave-and-join, and it is destructive.** A lane pinned to a new name drops its
+old registration and therefore its room memberships, so pin the fleet **before** creating
+rooms over it, never after. `rooms_pins` warns or refuses when the lane is currently a room
+member; do not force past that guard without understanding you are removing it from its
+rooms. Use `rooms_pins` list to tell an ignored pin from an absent one — those look identical
+otherwise, which is the same "roster lies" class as everything else here.
+
+**Answering.** `rooms_dm` records its recipients, so a recipient answers everyone
+with `rooms_reply_all({messageId})` rather than re-deriving the list. A message
+that came from a room answers back into the room.
+
+**Rooms.**
+
+- `rooms_post({room, message})` appends to the room history and pushes to every
+  other member.
+- `rooms_read({room})` returns history numbered by position; `rooms_read({room,
+  since: N})` returns only what is new. That is how a lane joining late catches
+  up without replaying the room.
+- Membership is a trust boundary: anything in a room can put text into every other
+  member's context. Add only agents whose work you would paste into your own
+  prompt.
+
+**Creating rooms is a lead/orchestrator action, not a peer action.**
+
+- Create a room only if you are a leader or orchestrator of the other agents you
+  are putting in it — that is, they are agents you dispatched, own the work of, or
+  are accountable for coordinating.
+- Never create a room that contains an agent you do not direct, and never create
+  one to convene peers, to lobby for resources, or to reach an orchestrator
+  sideways. Coordination upward or sideways goes through the operator, not
+  through a room you invented.
+- One room per unit of work that has an owner. Do not create a room per task, and
+  do not create a duplicate of one that already exists — `rooms_list` first.
+- Members you add should already exist and be running, or be expected to start
+  under that name. A room of names that never start is a room nobody reads.
+- Workers and sub-agents: post to rooms you were added to, answer with
+  `rooms_reply_all`, and do not create rooms.
+
+Use rooms for coordination that other agents need to see, not for private
+reasoning. A direct message is the right tool for a one-to-one question, and
+`/goal` plus herdr remains the way to actually assign and track work; a room
+carries the conversation around that work, not its state. Do not duplicate a dagr
+task list into a room.
 
 ## git commits
 
