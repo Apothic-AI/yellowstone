@@ -245,6 +245,24 @@ else
   fi
 fi
 
+# ----------------------------------------------------- local package patches
+section "Local package patches"
+
+# A package installed from npm is replaced by `pi update`, so the text patches
+# in scripts/pi-patches.js only survive because upgrade.sh re-applies them after
+# it updates packages. Drift belongs here, not in a surprise at session start.
+if [ -f "$REPO_ROOT/scripts/pi-patches.js" ]; then
+  patch_report="$(node "$REPO_ROOT/scripts/pi-patches.js" --check 2>&1 || true)"
+  missing="$(printf '%s\n' "$patch_report" | sed -n 's/^ *MISSING \([^:]*\):.*/\1/p' | tr '\n' ' ' | sed 's/ $//')"
+  if [ -n "$missing" ]; then
+    record warn pi-patches "not applied: $missing — node scripts/pi-patches.js"
+  elif ! printf '%s' "$patch_report" | grep -q '  ok '; then
+    record warn pi-patches "could not be checked — node scripts/pi-patches.js"
+  else
+    record ok pi-patches "applied"
+  fi
+fi
+
 # ---------------------------------------------------------------- skills
 section "Agent skills"
 

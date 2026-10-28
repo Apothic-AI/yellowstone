@@ -102,6 +102,28 @@ linked one, and the CLI (`unblock`) must be the same version as the pane. Both
 come from one checkout, so `scripts/herdr-plugins.sh install` links it and the
 checkout supplies the binary.
 
+## Local patches — npm packages we edit in place
+
+`scripts/pi-patches.js` holds the small text patches we apply to packages that
+are installed from npm. `scripts/upgrade.sh` runs it straight after
+`pi update --all`, because that is the command that reinstalls the files and
+throws the patches away.
+
+| Patch | Package | Why | Retired when |
+|---|---|---|---|
+| `pi-goal-experimental-warning` | `npm:@signalridge/pi-goal` | the experimental ordered-goals notice fires on every session start and pi-goal 1.4.8 exposes no setting to silence it | pi-goal ships a setting that silences the notice |
+
+**Why a patch and not a fork.** The patch is a removed notification, not
+behaviour we depend on, and `pi-goal` ships from a monorepo whose root is not a
+Pi package — a git install would need the package restructured to the fork's
+root. A patch that upstream can retire in one release is smaller than a fork
+that has to be rebased forever.
+
+Each entry names the exact text it replaces, so upstream changing that text
+makes the patch report itself as stale instead of silently doing nothing. Run
+`node scripts/pi-patches.js --check` to see the current state, and `--revert`
+to restore the file saved before patching (`*.bak-local-patch`).
+
 ## herdr plugins — pinned upstream, not forked
 
 Everything else is an upstream plugin installed at a pinned commit. We do not

@@ -106,7 +106,11 @@ upgrade_pi() {
   if ! have pi; then warn "pi not installed — skipping"; return 0; fi
   local cur; cur="$(version_of pi)"
   info "installed: $cur"
-  if [ "${DRY_RUN:-0}" = 1 ]; then dryrun "pi update --all"; return 0; fi
+  if [ "${DRY_RUN:-0}" = 1 ]; then
+    dryrun "pi update --all"
+    dryrun "node scripts/pi-patches.js"
+    return 0
+  fi
 
   # --all is (pi itself, then every installed package). Output is verbose and
   # npm-audit-noisy, so keep only the lines that report an outcome.
@@ -119,6 +123,15 @@ upgrade_pi() {
   fi
   local new; new="$(version_of pi)"
   [ "$new" != "$cur" ] && { did_anything=1; info "pi $cur -> $new"; } || info "pi already current"
+
+  # An npm-installed package is owned by npm: `pi update` replaces the files, so
+  # a patch applied once is gone after any package release. Re-apply ours here,
+  # where the thing that removes them already runs. See docs/forks.md.
+  step "Pi local patches"
+  if ! node "$REPO_ROOT/scripts/pi-patches.js"; then
+    warn "a local patch no longer applies — check whether upstream fixed the cause"
+    did_anything=1
+  fi
 }
 
 # ------------------------------------------------------------------ skills --
