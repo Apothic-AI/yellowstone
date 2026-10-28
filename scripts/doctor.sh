@@ -182,6 +182,20 @@ else
       else
         record warn pi-packages "not loaded: ${missing_pkgs}— run: pi update --extensions"
       fi
+
+      # pi-goal is served from our fork, not npm. The failure this guards is
+      # quiet: reinstalling the npm package restores a code path that emits the
+      # experimental-goals notice on every session start, and nothing else
+      # would report the swap — `pi list` would just say it loaded pi-goal.
+      goal_fork="$HOME/Code/pi-extensions-apothic/packages/pi-goal"
+      goal_entry="$(printf '%s\n' "$declared" | grep -i 'pi-goal' | head -n1)"
+      if [ -z "$goal_entry" ]; then
+        record info pi-goal "not declared in settings"
+      elif [ "$goal_entry" = "$goal_fork" ]; then
+        record ok pi-goal "fork (local path)"
+      elif [ "$goal_entry" != "${goal_entry#npm:}" ] || ! [ -d "$goal_entry" ]; then
+        record warn pi-goal "served from $goal_entry — the fork is $goal_fork (see docs/forks.md)"
+      fi
     else
       record info pi-packages "could not run 'pi list'"
     fi
