@@ -106,11 +106,7 @@ upgrade_pi() {
   if ! have pi; then warn "pi not installed — skipping"; return 0; fi
   local cur; cur="$(version_of pi)"
   info "installed: $cur"
-  if [ "${DRY_RUN:-0}" = 1 ]; then
-    dryrun "pi update --all"
-    dryrun "node scripts/pi-patches.js"
-    return 0
-  fi
+  if [ "${DRY_RUN:-0}" = 1 ]; then dryrun "pi update --all"; return 0; fi
 
   # --all is (pi itself, then every installed package). Output is verbose and
   # npm-audit-noisy, so keep only the lines that report an outcome.
@@ -123,15 +119,6 @@ upgrade_pi() {
   fi
   local new; new="$(version_of pi)"
   [ "$new" != "$cur" ] && { did_anything=1; info "pi $cur -> $new"; } || info "pi already current"
-
-  # An npm-installed package is owned by npm: `pi update` replaces the files, so
-  # a patch applied once is gone after any package release. Re-apply ours here,
-  # where the thing that removes them already runs. See docs/forks.md.
-  step "Pi local patches"
-  if ! node "$REPO_ROOT/scripts/pi-patches.js"; then
-    warn "a local patch no longer applies — check whether upstream fixed the cause"
-    did_anything=1
-  fi
 }
 
 # ------------------------------------------------------------------ skills --
@@ -214,6 +201,27 @@ report_forks() {
     local ub
     ub="$(git -C "$unblock_path" log --oneline -1 2>/dev/null)"
     info "unblock @ $(short "$unblock_path"): $ub"
+  fi
+
+  # pi-goal: a fork installed as a local path, because pi loads a git package
+  # from the repo root and this monorepo's root is not a Pi package. `pi update`
+  # does not move a path install, so report the checkout's own state here.
+  local pgoal="$HOME/Code/pi-extensions-apothic"
+  if [ -d "$pgoal/.git" ]; then
+    local branch head dirty
+    branch="$(git -C "$pgoal" rev-parse --abbrev-ref HEAD 2>/dev/null)"
+    head="$(git -C "$pgoal" log --oneline -1 2>/dev/null)"
+    info "pi-goal @ $branch: $head"
+    dirty="$(git -C "$pgoal" status --porcelain 2>/dev/null)"
+    [ -n "$dirty" ] && warn "pi-goal: working tree has local changes; the installed extension is that state"
+    # The upstream fix lands on main; the fork's own branch is what is installed.
+    if git -C "$pgoal" rev-parse --verify -q upstream/main >/dev/null 2>&1; then
+      local behind
+      behind="$(git -C "$pgoal" rev-list --count "$branch..upstream/main" 2>/dev/null || echo 0)"
+      [ "${behind:-0}" != 0 ] && info "  upstream/main is $behind commit(s) ahead — merge forward in $pgoal"
+    fi
+  else
+    info "pi-goal: fork checkout missing at $(short "$pgoal")"
   fi
 }
 

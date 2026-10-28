@@ -102,27 +102,48 @@ linked one, and the CLI (`unblock`) must be the same version as the pane. Both
 come from one checkout, so `scripts/herdr-plugins.sh install` links it and the
 checkout supplies the binary.
 
-## Local patches — npm packages we edit in place
+## pi-goal — fork
 
-`scripts/pi-patches.js` holds the small text patches we apply to packages that
-are installed from npm. `scripts/upgrade.sh` runs it straight after
-`pi update --all`, because that is the command that reinstalls the files and
-throws the patches away.
+| | |
+|---|---|
+| Upstream | [`signalridge/pi-extensions`](https://github.com/signalridge/pi-extensions), `packages/pi-goal` |
+| Our fork | `Apothic-AI/pi-extensions`, branch `apothic` |
+| Upstream PR | [signalridge/pi-extensions#77](https://github.com/signalridge/pi-extensions/pull/77) |
+| Installed as | the local path `/home/bitnom/Code/pi-extensions-apothic/packages/pi-goal` in `pi/settings.json` |
+| Delta | one setting, `experimental.notices` |
 
-| Patch | Package | Why | Retired when |
-|---|---|---|---|
-| `pi-goal-experimental-warning` | `npm:@signalridge/pi-goal` | the experimental ordered-goals notice fires on every session start and pi-goal 1.4.8 exposes no setting to silence it | pi-goal ships a setting that silences the notice |
+**Why a fork.** Enabling the experimental ordered-goal queue emits a warning on
+**every** session start, and nothing in the settings file, the Settings menu or
+the environment could answer it. A warning the reader cannot acknowledge stops
+carrying information, and the same notification level carries notices worth
+reading — a malformed settings file, a failed tool restore — so the noise
+quietly devalues the channel that matters.
 
-**Why a patch and not a fork.** The patch is a removed notification, not
-behaviour we depend on, and `pi-goal` ships from a monorepo whose root is not a
-Pi package — a git install would need the package restructured to the fork's
-root. A patch that upstream can retire in one release is smaller than a fork
-that has to be rebased forever.
+**The delta.** `experimental.notices` sits directly beside `experimental.goals`
+and defaults to `true`, so an unmodified configuration behaves exactly as
+before. It gates that one announcement and nothing else; validation failures,
+settings-load warnings and recovery notices still report because they describe
+a problem rather than restate a decision the user already made. The Settings
+menu exposes it under **Ordered goal queue**, and the change carries tests,
+a README section and a changeset.
 
-Each entry names the exact text it replaces, so upstream changing that text
-makes the patch report itself as stale instead of silently doing nothing. Run
-`node scripts/pi-patches.js --check` to see the current state, and `--revert`
-to restore the file saved before patching (`*.bak-local-patch`).
+**Why a local path and not a git source.** `pi` loads a git package from the
+repository root, and this repository's root is a private Bun workspace with no
+Pi manifest and no `index.ts`. A git install would either fail to load or
+discover every extension in the monorepo. The local path points at
+the one package directory, and Bun's per-package module links supply its
+dependencies (`@narumitw/pi-tui-kit`, `@signalridge/pi-ui`).
+
+**Retirement condition.** Upstream merges #77 and publishes `pi-goal` with
+`experimental.notices`. Then delete the fork, drop the local path from
+`pi/settings.json`, and pin `npm:@signalridge/pi-goal`. The setting is the only
+thing to preserve: `{"experimental": {"goals": true, "notices": false}}` is
+valid in the unmodified package once the release lands.
+
+**Do not patch the installed copy instead.** An npm-installed package is owned
+by npm, so `pi update` silently reverts any in-place edit of it, and a local
+edit leaves the version `pi list` reports describing code that is not running.
+A fork costs one checkout and survives updates.
 
 ## herdr plugins — pinned upstream, not forked
 
