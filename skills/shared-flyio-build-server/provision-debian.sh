@@ -206,10 +206,11 @@ cat > "$VOLUME/bin/ensure-ready" <<'ENSURE'
 # of using a shell, so it cannot take a script as its argument.
 set -e
 # `flyctl machine exec` runs this with no login shell and a minimal environment:
-# HOME is unset, so `. $HOME/.cargo/env` later in this script would prepend
-# `/.cargo/bin`, and every rustup call would fail with "rustup: not found" (exit
-# 127). That reads as a broken box even though apt and sshd already succeeded.
-HOME=${HOME:-/root}
+# HOME is `/` rather than unset, and rustup's env file expands it, so PATH ends
+# up holding `/.cargo/bin` instead of `/root/.cargo/bin`. Every rustup call then
+# failed with "rustup: not found" (exit 127) even though apt and sshd had already
+# succeeded. Set both explicitly rather than trusting the caller's environment.
+HOME=/root
 PATH=/data/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export HOME PATH
 DEBIAN_FRONTEND=noninteractive
