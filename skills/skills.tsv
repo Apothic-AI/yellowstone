@@ -38,3 +38,4 @@ mycord-irc-skill	repo	Apothic-AI/mycord	The comms space's IRC surface (pydle REP
 mycord-email-skill	repo	Apothic-AI/mycord	The comms space's email surface: Himalaya CLI with a per-account wrapper config.
 google-voice-skill	repo	Apothic-AI/mycord	The comms space's SMS/voice surface (unofficial gvoice TS client). Reading works; sending SMS needs a captured exchange.
 ferdium-skill	repo	Apothic-AI/mycord	Drives a Ferdium install over CDP: launches it headless on a virtual display or headed, discovers per-service webviews, and reads or interacts with any of them. The catch-all for a service with no dedicated skill.
+shared-flyio-build-server	bundle	./skills/shared-flyio-build-server	Host-specific half of the shared Fly build box: provisioning, the idle supervisor and scale-to-zero. The build-side half is the cargo-remote-build skill in the cargo-remote-3000 repo.
