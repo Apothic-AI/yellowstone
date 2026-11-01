@@ -21,18 +21,26 @@
 #   2. Any cargo/rustc/wasm-pack runs.   Catches builds that did not take a lease
 #                                        (another project's Makefile, a hand-run
 #                                        ssh command, a lane that predates the lease
-#                                        protocol).
+#                                        protocol). Zombies never count.
 #   3. CPU time advanced since the last sample.
 #                                        Catches everything else -- a test binary
 #                                        doing real work without a cargo process
 #                                        above it. Compares cumulative
 #                                        user+system jiffies, so it measures WORK
 #                                        DONE, never instantaneous load.
+#   4. A file under the build roots changed recently.
+#                                        Catches a build BETWEEN processes -- sync,
+#                                        fetch, unpack -- where nothing is running
+#                                        and CPU is quiet, which is the window an
+#                                        unleased project is most exposed to.
 #
 # Idleness must persist for IDLE_GRACE seconds before the box stops itself, so a
 # brief gap between two chained builds (rsync, then compile) does not trigger a stop
-# mid-tranche. Every sample and every decision is written to /data/state/idle.log so
-# a stop can always be explained after the fact.
+# mid-tranche. The box cannot enforce that itself (no Fly credential -- see below),
+# so `--status` carries the counter instead: each poll advances it while the answer
+# stays `idle` and any other answer resets it, and the host stops only once it has
+# reached the grace. Every sample and every decision is written to
+# /data/state/idle.log so a stop can always be explained after the fact.
 #
 # HOW IT STOPS: the machine's own Fly metadata is the authority, not a local script.
 # It starts `flyctl`-free -- the box calls the Fly machines API through its own
@@ -63,6 +71,13 @@ IDLE_CPU_RATE_HUNDREDTHS=${IDLE_CPU_RATE_HUNDREDTHS:-2}
 mkdir -p "$STATE_DIR"
 
 now() { date -u +%s; }
+# When this boot began. Idleness cannot predate it, and a marker left over from a
+# previous boot must not be inherited -- that is the one way the idle counter could
+# ever stop a box too early.
+boot_time() {
+    up=$(awk '{ print int($1) }' /proc/uptime 2>/dev/null || echo 0)
+    printf '%s\n' "$(( $(now) - up ))"
+}
 iso() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 log() { printf '%s %s\n' "$(iso)" "$*" >>"$LOG"; }
 
@@ -76,8 +91,18 @@ build_processes() {
     # -x matches the exact command name, so this cannot be fooled by a shell whose
     # argv merely mentions the word (which is how a naive `pgrep -f cargo` reports
     # its own grep, or a wrapper script, as a build).
+    #
+    # Zombies do not count. A killed build leaves children whose command name
+    # outlives them and which burn no CPU ever again, and nothing guarantees PID 1
+    # here reaps them; counting those pins the verdict at `building` for the rest
+    # of the boot, which is one way a genuinely idle box never scales to zero.
+    # Output is `name/pid` so a `building` verdict can say WHICH process it saw.
     for name in cargo rustc wasm-pack rustdoc; do
-        pgrep -x "$name" 2>/dev/null
+        for pid in $(pgrep -x "$name" 2>/dev/null); do
+            state=$(awk -F')' '{ print $2 }' "/proc/$pid/stat" 2>/dev/null | awk '{ print $1 }')
+            [ "$state" = Z ] && continue
+            printf '%s/%s\n' "$name" "$pid"
+        done
     done
 }
 
@@ -91,6 +116,18 @@ leased() {
     return 0
 }
 
+# A build can be BETWEEN processes -- rsyncing sources, waiting on a fetch, or
+# unpacking a seed -- with no cargo running and CPU near zero. Leases cover the
+# projects that take them, so this is the signal for the ones that do not.
+# -print -quit makes the cost proportional to activity: it returns at the first
+# recent file while a build is live, and only walks the whole tree when the box
+# looks quiet. Both roots are scanned because starla builds under
+# /data/projects/<slug>/builds and the older projects still use /data/builds.
+recent_churn() {
+    find /data/builds /data/projects -maxdepth 6 \
+        -newermt "-${CHURN_WINDOW_MIN:-10} minutes" -print -quit 2>/dev/null
+}
+
 # $1 = "advance" to compare against and update the stored CPU baseline, anything
 # else to observe without touching it. A read-only status matters: two lanes
 # polling --status must not keep resetting the baseline, or a genuinely idle box
@@ -102,6 +139,14 @@ leased() {
 # a stale sample and the box could never be judged idle -- which is exactly how the
 # first version of this script would have failed to scale anything to zero.
 verdict() {
+    # A missing builder-state must not read as `leased`: fail closed either way
+    # (the host stops only on `idle`), but a quote-verdict should say what is
+    # actually wrong. This happened for real on 2026-10-30 -- a restart left
+    # /usr/local/bin empty and the box silently dropped its admission control.
+    if ! command -v builder-state >/dev/null 2>&1; then
+        echo "no-lease-tool"
+        return
+    fi
     if leased; then
         echo "leased"
         return
@@ -109,6 +154,10 @@ verdict() {
     pids=$(build_processes)
     if [ -n "$pids" ]; then
         echo "building"
+        return
+    fi
+    if [ -n "$(recent_churn)" ]; then
+        echo "churning"
         return
     fi
 
@@ -149,6 +198,12 @@ verdict() {
 
 stop_machine() {
     # The Fly machines API from inside the machine: no flyctl, no operator token.
+    #
+    # This path is normally UNAVAILABLE by design, not by accident: the box was
+    # created with `machine run` on /bin/sleep, so it carries no FLY_* environment
+    # and no machine token, and planting one would put a standing credential on a
+    # shared box any build could read. The host applies the stop; this function
+    # exists only for a box that someone deliberately equipped.
     # FALLBACK_ORDER matters -- a stop that fails must be visible, never silent.
     for path in \
         /usr/local/bin/fly-machine-stop \
@@ -161,7 +216,7 @@ stop_machine() {
     # Last resort that needs no API at all: Fly restarts an exited init, so this is
     # NOT equivalent to a stop -- it is deliberately not attempted here. Report
     # instead of pretending.
-    log "ERROR no fly-machine-stop helper installed; cannot scale to zero"
+    log "no fly-machine-stop on this box (expected: the host owns the stop)"
     return 1
 }
 
@@ -201,10 +256,32 @@ case "${1:-}" in
         ;;
     --status)
         v=$(verdict)
+        # A --status poll IS a sample, so it maintains the idle marker exactly as
+        # the foreground loop would: set on idle, cleared by any activity. This
+        # matters because the box-side loop cannot own the grace period -- the box
+        # has no Fly credential by design, so the host is the only sampler. Without
+        # this the grace is dead code and a single idle sample stops the box, which
+        # re-opens the race that once killed five lanes: start the box, let the
+        # supervisor poll before the build takes its lease, lose the build.
+        if [ "$v" = "idle" ]; then
+            pending=$(cat "$PENDING_FILE" 2>/dev/null || echo "")
+            boot=$(boot_time)
+            if [ -z "$pending" ] || [ "$pending" -lt "$boot" ]; then
+                pending=$(now); printf '%s\n' "$pending" >"$PENDING_FILE"
+            fi
+        else
+            rm -f "$PENDING_FILE"
+        fi
         pending=$(cat "$PENDING_FILE" 2>/dev/null || echo "")
         if [ -n "$pending" ]; then idle_for=$(( $(now) - pending )); else idle_for=0; fi
-        printf '{"verdict":"%s","idleSeconds":%s,"grace":%s,"time":"%s"}\n' \
-            "$v" "$idle_for" "$GRACE" "$(iso)"
+        # `procs` names what a `building` verdict actually saw, so a stuck verdict is
+        # self-explaining instead of needing another diagnostic round trip. It is
+        # computed here rather than reused from verdict() because verdict() runs in
+        # a command substitution, so its variables do not survive the subshell.
+        procs=""
+        [ "$v" = building ] && procs=$(build_processes | tr '\n' ',' | sed 's/,$//')
+        printf '{"verdict":"%s","idleSeconds":%s,"grace":%s,"procs":"%s","time":"%s"}\n' \
+            "$v" "$idle_for" "$GRACE" "$procs" "$(iso)"
         exit 0
         ;;
 esac

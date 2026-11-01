@@ -1,6 +1,18 @@
 #!/usr/bin/env bash
 # fly-builder-idle-stop — stop the shared Fly build box when genuinely idle.
 #
+# SUPERSEDED 2026-11-01 by apps/starla-staging/scripts/build-server-supervise.sh,
+# and its timer is disabled. Two independent authorities over the same stop is a
+# hazard, not redundancy: they disagreed, and neither was reviewable as the truth
+# (this file lives in a skill directory that is not in any repo). Everything worth
+# keeping from here was carried over: the filesystem-churn signal is now part of
+# the box's own verdict in builder-idle (so the decision still comes from where
+# the work is), and the 6PN repair that this script worked around with a
+# `flyctl proxy` fallback is now done properly by
+# scripts/ensure-build-transport.sh. Verified before retiring: this script's own
+# log shows the last stop it made (2026-11-01T05:24:04Z, "idle 601s, no leases,
+# no compilers"), and the supervisor has since made one itself.
+#
 # WHY THIS EXISTS
 # ---------------
 # open-surrealdb-ds-builder costs ~$0.32/hr as a performance-8x machine and has

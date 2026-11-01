@@ -128,22 +128,34 @@ Two details that make the stop/restart cycle safe:
 
 ## After every restart
 
-The root filesystem is ephemeral, so apt packages are gone after any stop. Only
-`/data` persists. Two steps:
+The root filesystem is ephemeral, so apt packages and `/usr/local/bin/builder-*`
+are gone after any stop. Only `/data` persists. Do not hand-roll this — one command
+repairs everything, in the order that works:
 
 ```bash
-# 1. reinstall packages and start sshd (one word, so flyctl's argv-splitting
-#    cannot break it -- see Traps)
-flyctl machine exec -a open-surrealdb-ds-builder --no-container \
-    87477e0cd01748 /data/bin/ensure-ready
-
-# 2. only needed on a fresh volume, or after changing provision-debian.sh
-ssh fly-builder 'sh -s' < "$SKILL_DIR/provision-debian.sh"
+cd apps/starla-staging
+scripts/build-server.sh start     # transport, bootstrap, ssh, reconcile
+scripts/build-server.sh sync      # same repair on a box that is already started
 ```
 
-`ensure-ready` is quick (~60s, mostly apt). `provision-debian.sh` is idempotent
-and installs the Rust toolchain and cargo config onto `/data`, so it is only
-slow the first time.
+What it fixes, and why the order matters: `ensure-ready` (one word, so `flyctl`'s
+argv-splitting cannot break it) reinstalls packages and starts sshd, so it must
+run **before** anything waits for ssh — a cold boot has no sshd until it does, and
+reaches port 2222 about **4m20s** after `machine start` (measured twice on
+2026-11-01). `flyctl machine exec` is not a usable success signal: its client times
+out at 120–300s while the command keeps running and succeeds on the box, and
+retrying on that timeout starts a second `ensure-ready` contending for the dpkg
+lock.
+
+```bash
+# what the wrapper does, by hand, in this order
+flyctl machine start 87477e0cd01748 -a open-surrealdb-ds-builder
+flyctl machine exec -a open-surrealdb-ds-builder --no-container \
+    87477e0cd01748 /data/bin/ensure-ready   # then poll ssh; do not retry it
+
+# only on a fresh volume, or after changing provision-debian.sh
+ssh fly-builder 'sh -s' < "$SKILL_DIR/provision-debian.sh"
+```
 
 ## Using it
 
@@ -279,13 +291,17 @@ invocations across sessions with stop paths that nobody reliably ran. It is now 
 
 | Piece | Where |
 | --- | --- |
-| timer + unit | `~/.config/systemd/user/fly-builder-idle-stop.{timer,service}` |
-| the supervisor | `~/.local/bin/fly-builder-idle-stop`, every 15 minutes |
-| its log | `~/.local/state/fly-builder-idle-stop.log` |
+| timer + unit | `~/.config/systemd/user/starla-build-server-supervise.{timer,service}` |
+| the supervisor | `apps/starla-staging/scripts/build-server-supervise.sh`, every 5 minutes |
+| the verdict | `builder-idle --status`, computed **on the box** |
+| transport repair | `apps/starla-staging/scripts/ensure-build-transport.sh` |
 
-The supervisor reaches the box over **6PN and falls back to the Fly API proxy**
-(`flyctl proxy 2223:2222`, the same route the wrappers use) when 6PN is stale. It
-stops the machine only when all four answers say idle:
+There used to be a second, independent stop path (the retired
+`fly-builder-idle-stop`, 15-minute timer, now disabled): two opinions about
+idleness is a hazard disguised as redundancy, and it lived in a directory that is
+in no repo. Its one unique signal — filesystem churn — is now part of the box's
+verdict. There is one authority, and it stops the machine only when all four
+answers say idle:
 
 1. **`builder-state park` succeeds** — no builder-state lease is held;
 2. **no `cargo`/`rustc`/`cc`/`ld`/`wasm-pack` process** — catches builds that
@@ -298,17 +314,39 @@ stops the machine only when all four answers say idle:
 Three things here were fixed only after they bit, and each restored the same
 billing leak in a different disguise:
 
-- **A failed probe must not be a no-op.** With no route to the box the supervisor
-  used to refuse, log one line and exit 0: a green unit and a running machine for
-  35 hours. The fallback above is the fix; the log is still the only place the
-  verdict appears.
-- **`churn_age=0` means "nothing changed in the 30-minute window", i.e. idle**,
-  not "unprovable". Refusing on it made the backstop unable to stop the one box
-  it exists for.
-- **The churn window must reach the trees.** `-maxdepth 2` was written for the
-  pre-0.5.0 layout (`/data/builds/<hash>`); lanes live at
-  `/data/builds/lanes/<lane>/<hash>`, so the check saw nothing and the verdict
-  degraded to "cannot prove idle".
+- **"Unreachable" is not a no-op, and the transport is a prerequisite.** The box
+  is reached only over its own `/48`, carried by a WireGuard interface (`ds`)
+  that is **disabled at boot**; `fly-personal` is a different `/48` and looks like
+  a working tunnel. Measured cost: 622 consecutive polls over **~52 hours** with
+  the machine started, billed and unreachable, logged at default priority while
+  the supervisor did nothing. `ensure-build-transport.sh` now derives the prefix
+  from the ssh alias, tests *that* prefix (not the default route — a ProtonVPN
+  interface answers `ip -6 route get` for an address nothing can carry), repairs
+  the tunnel, and a started box that stays unusable for `UNUSABLE_SECONDS` is
+  logged at `user.err` and stopped: every build path here is ssh, so a box nobody
+  can reach is doing nobody's work.
+- **A cold boot has no sshd for ~4 minutes.** Measured twice: `machine start` →
+  sshd accepting at 4m14s and ~4m20s. Anything that waits for ssh before running
+  `/data/bin/ensure-ready` (which is what starts sshd) can only succeed by luck.
+  `flyctl machine exec` is also not a success signal: its client gives up at
+  120–300s while the command keeps running and succeeds, and retrying starts a
+  second `ensure-ready` that contends for the dpkg lock. Fire it once, poll sshd.
+- **A restart silently downgrades the box.** `/usr/local/bin/builder-*` are on the
+  ephemeral root filesystem, so a rebooted box runs builds **unleased** and answers
+  `{"verdict":"unknown"}`, which can never be stopped on. The repair existed in
+  the provisioner but the copy deployed on the box predated it, so it never ran.
+  `start`/`sync` reconcile the tools and the `ensure-ready` body *from the
+  provisioner* and verify by asking the box.
+- **The grace window has to be accumulated by whoever polls.** The box cannot
+  sample itself (no Fly credential, by design), so `--status` maintains the idle
+  marker: set on `idle`, cleared by any other verdict, clamped to the current boot
+  so a marker from a previous boot cannot short-circuit it. A stranded 142329s
+  marker was stopped on once; the supervisor now requires `idleSeconds >= 900`,
+  i.e. three consecutive idle polls.
+- **`churn_age=0` means "nothing changed in the window", i.e. idle**, and the
+  churn window must reach the trees: lanes live at
+  `/data/builds/lanes/<lane>/<hash>` and starla builds at
+  `/data/projects/<slug>/builds`, so both roots are scanned.
 
 **cargo-remote-3000 0.5.0 and later do not take builder-state leases.** The tool
 leases its own lane (`<lane>/<hash>.lock`), which the host cannot see, so answers
@@ -317,9 +355,11 @@ CPU rate, and the gap between two processes by the churn window. A hand-run
 `builder-state lease` is still right for anything the tool does not drive — a
 shell running `cargo` by hand, a long import in `psql`.
 
-Verified live on 2026-10-30: the supervisor refused while a real lane build was
-compiling (`CPU 44% busy over 2s`), and stopped an idle box 171 s after its last
-churn, reaching it through the proxy fallback.
+Verified live on 2026-11-01: a cold-booted box had no `builder-*` at all and
+answered `{"verdict":"unknown"}`; the supervisor repaired it and got
+`{"verdict":"idle","idleSeconds":0}` and correctly did **not** stop — the grace
+window is three polls. A fresh boot also reaches sshd in ~4m20s, so the start path
+budgets 480s and polls the port.
 
 The box **cannot** stop itself and should not be given a token to do so: it was
 created with `machine run` on `/bin/sleep`, so PID 1 carries no `FLY_*`
