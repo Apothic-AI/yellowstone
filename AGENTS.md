@@ -1,7 +1,9 @@
 # Fleet instructions
 
-This file is the invariant core. Everything procedural is a **skill** — load the one that
-matches the work instead of expecting it restated here.
+This file is the invariant core, and it is **role-neutral**: nothing here assumes you
+lead, delegate, or answer to anyone. Your role's duties come from your **mode** — `leader`,
+`worker`, or `overlord` — chosen at spawn. Everything procedural is a **skill**; load the
+one that matches the work instead of expecting it restated here.
 
 ## Standing behaviour
 
@@ -21,8 +23,8 @@ matches the work instead of expecting it restated here.
    `monitor` for event streams, never polling in turn.
 2. **Never prompt a `working` lane.** It aborts the turn, and on a goal lane it *pauses
    the goal*. Queue the note to a file and deliver at the stop boundary.
-3. **Never write a project repo, run infrastructure, or act on a paid resource by hand.**
-   Delegate; spawn a lane if none owns it.
+3. **Never run infrastructure or act on a paid resource without authorization.** Report
+   what you would have done instead.
 4. **Never conclude a lane is fine from a status field.** `working` is not progress and
    `idle` is not done; read the footer, an artifact, or the lane's run.
 5. **Never report unverified success.** A lane's report is `reported`; only a file,
@@ -30,21 +32,16 @@ matches the work instead of expecting it restated here.
 6. **Never add a `Co-Authored-By` or similar attribution trailer** to a commit. Match the
    repository's existing trailer practice; if it has none, write none.
 
-## Orchestration
+## Working in a repo
 
-- Do not trust a delegate's completion claims — review the code.
-- A delegate that stops abruptly for no apparent reason is probably hitting a known
-  provider issue. Nudge it to continue.
-- When blocked on something only a human can provide, first clear it yourself via CLI,
-  API, browser, docs and existing decisions within standing authorization. Then use the
-  `unblock` skill rather than informal chat. Never approve your own ask.
-- Delegate the work. Do not research what the delegate can research: recon stops when the
-  brief is writable, and a brief explaining *how* did the work twice.
 - Use graft to understand and scope a codebase; `grep`/`rg` only for exhaustive
   enumeration of literal strings.
 - Check free space and usage before any action that occupies a lot of disk.
 - Rust builds go through `cargo-remote-3000` on fly.io build servers, and you check you
   are not racing another agent's build.
+- When blocked on something only a human can provide, first clear it yourself via CLI,
+  API, browser, docs and existing decisions within standing authorization. Then use the
+  `unblock` skill rather than informal chat. Never approve your own ask.
 
 ## Acting on yourself
 
@@ -73,7 +70,6 @@ reasoning effort or model.
 | Asking the operator for something | `unblock` |
 | Per-request injected context | `pi-persist-usage` |
 | Profiles and modes | `profile-config` |
-| Overlord duties | `overlord-operations` |
 
 ## herdr
 
