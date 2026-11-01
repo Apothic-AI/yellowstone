@@ -27,7 +27,7 @@ scripts/doctor.sh          # confirm it took
 |---|---|
 | `yellowstone-skill/` | the install/configure/upgrade/repair guide, as an agent skill |
 | `AGENTS.md` | the shared agent instructions, installed to `~/AGENTS.md` |
-| `herdr/config.toml` | theme, sidebar rows, keybindings (incl. dictate/bar/manager) |
+| `herdr/config.toml` | theme, sidebar rows, keybindings (dictate, voice, bar, plugin manager, dagr, unblock, stash, beady-eye) |
 | `herdr/plugins.toml` | the plugin manifest, with pinned refs |
 | `herdr/skills/herdr/` | skill: how an agent drives herdr panes |
 | `herdr/scripts/herdr-agy.sh` | reliable agent waits for `agy`/`grok` panes |
@@ -46,8 +46,12 @@ scripts/doctor.sh          # confirm it took
 herdr owns the terminals, the panes, and the sidebar that reports which agent is
 working. Its plugins add the pieces we actually use: a live DAG of orchestrated
 work (`herdr-dagr`), one queue for everything a human has to answer
-(`unblock`), session handoff between agents (`catchup`), jj state in the sidebar,
-and a theme picker.
+(`unblock`), session handoff between agents (`catchup`), the project's bead
+trees beside the pane with the agent working each one (`beady-eye`), parking a
+whole workspace and getting it back (`stash`) or recovering the herd after a
+crash (`resurrect`), jj state in the sidebar, a theme picker, and voice two ways
+— transcription into the pane (`dictate`) and a spoken conversation that drives
+the panes (`herdr-voice`).
 
 pi owns the conversation. Its packages add background tasks, goals, todos,
 sub-agents, web access, cache optimization, and the TUI. Two of those are our
