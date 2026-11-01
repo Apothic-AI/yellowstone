@@ -1,3 +1,4 @@
 {
-  "mode": "clean"
+  "mode": "clean",
+  "pasteShorten": true
 }
