@@ -21,6 +21,20 @@ why       = "speak into any pane; local STT, useful when typing is the bottlenec
 keybind   = "prefix+v -> abhishekrana.dictate.toggle, prefix+shift+v -> abhishekrana.dictate.toggle-send, prefix+alt+v -> abhishekrana.dictate.toggle-chunking"
 requires  = "rust >= 1.88 to build; a microphone; Linux"
 
+# --- realtime voice -----------------------------------------------------------
+# The conversational counterpart to dictate: instead of transcribing into the
+# focused pane, it opens a realtime voice session (Grok, OpenAI or Gemini) that
+# drives the Claude Code / Codex panes, with a floating orb for state. Local
+# plugin: a Swift/SwiftPM build from a checkout, so it links rather than installs.
+[[plugin]]
+id        = "brogrammermw.herdr-voice"
+source    = "local"
+repo      = "Apothic-AI/herdr-voice-linux"
+link_path = "~/Code/herdr-voice-linux"
+why       = "talk to the agents instead of typing: realtime voice into the focused pane"
+keybind   = "prefix+m -> brogrammermw.herdr-voice.start"
+requires  = "swift toolchain to build (`swift build -c release`); a microphone"
+
 # --- the command bar ----------------------------------------------------------
 # Fuzzy "go anywhere" switcher: Cmd+K / prefix+k, matching tasks, tabs, panes,
 # agents, repos and branches. Also titles unnamed tabs from the agent's task
@@ -59,6 +73,20 @@ ref       = "52991f9a95a2b8c11518ed66f9530d938c1ba254"
 why       = "dagr view pane + bin/dagr, the validator used by the dagr-producer skill"
 keybind   = "prefix+d -> herdr-dagr.open-dagr"
 
+# --- work graph beside the pane ----------------------------------------------
+# `bdi` in a split: the trees of work in the focused pane's project, with what
+# each agent is doing beside its bead. It reads the same beads database the
+# `beads` skill uses, so a project tracked in bd gets a live view without a dagr
+# run — the dagr pane is for orchestrated runs, this one is for beads work.
+[[plugin]]
+id        = "codeforbreakfast.beady-eye"
+source    = "CodeForBreakfast/beady-eye"
+ref       = "6d92fa7bef1d91cb29b5352ce4fb00f7c0313a7b"
+why       = "see a project's bead trees and which agent is working each one"
+keybind   = "prefix+i -> codeforbreakfast.beady-eye.open"
+requires  = "a beads database (bd) for the project it is pointed at"
+note      = "herdr/fetch.sh pulls the bdi binary during install"
+
 # --- the human-in-the-loop queue --------------------------------------------
 # One queue for everything agents need from a human. Local plugin: point this at
 # a checkout of Apothic-AI/unblock (upstream: aneym/unblock) and it links.
@@ -94,6 +122,25 @@ id        = "wilbeibi.catchup"
 source    = "wilbeibi/herdr-catchup"
 ref       = "da82ca7ec300b0b4fb5ebf73dedc9e63b77c78ec"
 why       = "summarize / fork / hand a pane's session to another agent"
+
+# --- parking and recovery -----------------------------------------------------
+# Two different answers to "too many live agents". Stash is deliberate parking:
+# record a workspace's layout and its agents' conversations, stop the processes,
+# restore later from a popup. Resurrect is recovery: snapshot the herd and bring
+# it back after a crash or reboot, when nobody got to park anything.
+[[plugin]]
+id        = "vsh.stash"
+source    = "victor-software-house/herdr-stash"
+ref       = "5618e89585cd92fef9215cc5630cce67dfb9c23b"
+why       = "park a whole workspace (agents, layout, conversations) and restore it later"
+keybind   = "prefix+s -> vsh.stash.open, prefix+shift+s -> vsh.stash.stash"
+
+[[plugin]]
+id        = "ntindle.herdr-resurrect"
+source    = "ntindle/herdr-resurrect"
+ref       = "109a9376549e29646c77fdfb7ed8ba456a9d6617"
+why       = "bring the whole herd (spaces, tabs, panes, agents) back after a crash or reboot"
+note      = "no keybind: its save/restore actions run from the command palette"
 
 # --- themes ------------------------------------------------------------------
 [[plugin]]

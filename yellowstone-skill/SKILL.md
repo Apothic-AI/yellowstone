@@ -160,6 +160,10 @@ One `[[plugin]]` table per plugin, with a pinned `ref` and a `why` line:
 | `herdr-bar` | command bar: `prefix+k` fuzzy-jumps to any tab, pane, agent, repo or branch; also titles unnamed tabs | — |
 | `ray.plugin-manager` | plugin popup: `prefix+p` to install, update, remove, toggle and browse plugins | — |
 | `abhishekrana.dictate` | local speech-to-text into the focused pane: `prefix+v` toggle, `prefix+shift+v` toggle-and-submit, `prefix+alt+v` live typing | Rust ≥ 1.88 to build, a microphone, Linux |
+| `brogrammermw.herdr-voice` | realtime voice session that drives the panes, with a floating orb: `prefix+m` | a Swift toolchain to build, a microphone, a local checkout |
+| `codeforbreakfast.beady-eye` | `bdi` split beside the focused pane: the project's bead trees with the agent on each one: `prefix+i` | a beads database for that project |
+| `vsh.stash` | park a workspace (agents stopped, layout and conversations kept) and restore it from a popup: `prefix+s`, `prefix+shift+s` | — |
+| `ntindle.herdr-resurrect` | tmux-resurrect for herdr: snapshot the herd and restore it after a crash or reboot (no keybind; command palette) | — |
 | `ezracerpac.jj-waltz` | jj workspace switcher (optional) | `jj` |
 
 Apply the manifest:

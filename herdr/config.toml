@@ -30,14 +30,12 @@ command = "unblock.open"
 description = "open unblock queue"
 
 # command bar: jump to any tab, pane, agent, repo or branch
-# command bar: jump to any tab, pane, agent, repo or branch
 [[keys.command]]
 key = "prefix+k"
 type = "plugin_action"
 command = "herdr-bar.open"
 description = "command bar"
 
-# plugin manager: install, update, browse plugins from a popup
 # plugin manager: install, update, browse plugins from a popup
 [[keys.command]]
 key = "prefix+p"
@@ -86,3 +84,31 @@ key = "prefix+alt+v"
 type = "plugin_action"
 command = "abhishekrana.dictate.toggle-chunking"
 description = "dictate: toggle live typing"
+
+# herdr-voice: start the voice in a split pane below the focused pane
+# The orb shows its state; right-click it for Show voice pane, models and Quit.
+[[keys.command]]
+key = "prefix+m"
+type = "plugin_action"
+command = "brogrammermw.herdr-voice.start"
+description = "start herdr-voice"
+
+# stash: park this workspace (agents, layout, conversations) and restore it later
+[[keys.command]]
+key = "prefix+s"
+type = "plugin_action"
+command = "vsh.stash.open"
+description = "stash: the stash picker"
+
+[[keys.command]]
+key = "prefix+shift+s"
+type = "plugin_action"
+command = "vsh.stash.stash"
+description = "stash: stop this workspace and keep it"
+
+# beady-eye: the bead trees of the focused pane's project, in a split beside it
+[[keys.command]]
+key = "prefix+i"
+type = "plugin_action"
+command = "codeforbreakfast.beady-eye.open"
+description = "beady-eye: trees of work beside the pane"
