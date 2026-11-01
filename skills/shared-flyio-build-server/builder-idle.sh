@@ -128,16 +128,14 @@ recent_churn() {
         -newermt "-${CHURN_WINDOW_MIN:-10} minutes" -print -quit 2>/dev/null
 }
 
-# $1 = "advance" to compare against and update the stored CPU baseline, anything
-# else to observe without touching it. A read-only status matters: two lanes
-# polling --status must not keep resetting the baseline, or a genuinely idle box
-# would report cpu-active forever and never scale to zero.
-# $1 = "advance" (the watchdog loop) or "observe" (a status poll). Both update the
-# CPU baseline; that is safe because idleness is judged as a RATE, not a bare delta.
-# A bare delta cannot work here: the only caller of --status is the host supervisor,
-# so if observing did not update the baseline the comparison would always be against
-# a stale sample and the box could never be judged idle -- which is exactly how the
-# first version of this script would have failed to scale anything to zero.
+# No argument: every caller gets the same comparison, and every call UPDATES the
+# stored CPU baseline. That is safe because idleness is judged as a RATE, not a
+# bare delta. A bare delta cannot work here: the only caller of `--status` is the
+# host supervisor, so leaving the baseline alone would compare against a stale
+# sample and the box could never be judged idle -- which is how the first version
+# of this script would have failed to scale anything to zero. The consequence is
+# that the CPU window is the gap between two polls (5 minutes at the installed
+# supervisor cadence), never a fixed sample.
 verdict() {
     # A missing builder-state must not read as `leased`: fail closed either way
     # (the host stops only on `idle`), but a quote-verdict should say what is
@@ -221,7 +219,7 @@ stop_machine() {
 }
 
 one_cycle() {
-    v=$(verdict advance)
+    v=$(verdict)
     if [ "$v" = "idle" ]; then
         pending=$(cat "$PENDING_FILE" 2>/dev/null || echo "")
         [ -n "$pending" ] || { pending=$(now); printf '%s\n' "$pending" >"$PENDING_FILE"; }

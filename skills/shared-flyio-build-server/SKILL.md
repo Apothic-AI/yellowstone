@@ -304,12 +304,16 @@ verdict. There is one authority, and it stops the machine only when all four
 answers say idle:
 
 1. **`builder-state park` succeeds** — no builder-state lease is held;
-2. **no `cargo`/`rustc`/`cc`/`ld`/`wasm-pack` process** — catches builds that
-   never took one;
-3. **CPU below 2% of the box over a 2-second `/proc/stat` sample** — a
+2. **no `cargo`/`rustc`/`rustdoc`/`wasm-pack` process** — catches builds that
+   never took one; a zombie of one of those does not count, because nothing reaps
+   it and it would otherwise pin the verdict at `building` for the whole boot;
+3. **CPU below 2% of one core over the gap since the previous poll** — `delta
+   jiffies / elapsed seconds` from `/proc/stat`, so it measures work done and a
    futex-blocked *or* CPU-bound test binary cannot hide behind either;
-4. **no churn under `/data/builds` for `IDLE_MIN_SECONDS` (600 s)** — `find
-   -maxdepth 6 -newermt`, newest match, so a lane tree three levels down is seen.
+4. **no churn under `/data/builds` or `/data/projects` for `CHURN_WINDOW_MIN`
+   (default 10 minutes)** — `find -maxdepth 6 -newermt`, newest match, so a lane
+   tree three levels down is seen. Starla builds under `/data/projects/<slug>`,
+   which is why both roots are scanned.
 
 Three things here were fixed only after they bit, and each restored the same
 billing leak in a different disguise:
