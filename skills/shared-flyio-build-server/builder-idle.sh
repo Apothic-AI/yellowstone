@@ -65,8 +65,12 @@ IDLE_SINCE_FILE=$STATE_DIR/idle-since
 PENDING_FILE=$STATE_DIR/idle-pending-since
 GRACE=${IDLE_GRACE:-900}
 INTERVAL=${IDLE_INTERVAL:-60}
-# Threshold as a percentage of one core: 2 means "less than 2% busy is idle".
-IDLE_CPU_RATE_HUNDREDTHS=${IDLE_CPU_RATE_HUNDREDTHS:-2}
+# Threshold as a percentage of one core: 10 means "less than 10% busy is idle".
+# 2 was never measurable over ssh: the sampler itself (ssh handshake, login shell,
+# the churn scan) costs a few CPU-seconds per poll, which is a real share of 2% of
+# a core across a five-minute window, while a build is hundreds of CPU-seconds in
+# that window. 10% keeps a wide margin on both sides.
+IDLE_CPU_RATE_HUNDREDTHS=${IDLE_CPU_RATE_HUNDREDTHS:-10}
 
 mkdir -p "$STATE_DIR"
 
@@ -81,10 +85,20 @@ boot_time() {
 iso() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 log() { printf '%s %s\n' "$(iso)" "$*" >>"$LOG"; }
 
-# Cumulative user+system jiffies across every process. Monotonic for the life of the
-# boot, so a delta is work done and a zero delta is genuinely no work.
+# Cumulative CPU WORK across every core: user+nice+system+irq+softirq+steal.
+# Fields 5 and 6 (idle, iowait) are deliberately excluded.
+#
+# This used to sum the whole line, which counts wall time, not work: on an N-core
+# box the total advances at N*100 jiffies per second whether or not anything runs,
+# so `rate_hundredths` was N*100 (400 on this 4-core machine) and always above the
+# threshold. `cpu-active` was therefore the permanent answer, and the few `idle`
+# verdicts ever produced were artifacts of a sample left by a previous boot, where
+# the delta went negative and was clamped to zero -- the check read a *busy* box as
+# idle. Measured on this box 2026-11-01: 801 jiffies in 2s, almost all of it idle.
+# The whole design leans on this signal (load average cannot see a futex-blocked
+# test binary), so it has to measure work.
 cpu_jiffies() {
-    awk '/^cpu /{s=0; for(i=2;i<=NF;i++) s+=$i; print s; exit}' /proc/stat 2>/dev/null || echo 0
+    awk '/^cpu /{ print $2+$3+$4+$7+$8+$9; exit }' /proc/stat 2>/dev/null || echo 0
 }
 
 build_processes() {
@@ -179,7 +193,14 @@ verdict() {
         return
     fi
     delta=$(( cur - prev ))
-    [ "$delta" -lt 0 ] && delta=0
+    if [ "$delta" -lt 0 ]; then
+        # The counter is monotonic only for the life of one boot. A negative delta
+        # means the baseline predates this boot, which is no evidence of idleness --
+        # and clamping it to zero (as this used to) reads a freshly booted box as
+        # idle, which is the wrong direction for a stop decision.
+        echo "warmup"
+        return
+    fi
 
     # CPU-seconds burned per wall-second, in hundredths, compared against the
     # threshold. $(RATE) of one core busy is enough to count as activity: a

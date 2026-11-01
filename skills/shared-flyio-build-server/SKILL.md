@@ -307,9 +307,14 @@ answers say idle:
 2. **no `cargo`/`rustc`/`rustdoc`/`wasm-pack` process** — catches builds that
    never took one; a zombie of one of those does not count, because nothing reaps
    it and it would otherwise pin the verdict at `building` for the whole boot;
-3. **CPU below 2% of one core over the gap since the previous poll** — `delta
+3. **CPU below 10% of one core over the gap since the previous poll** — `delta
    jiffies / elapsed seconds` from `/proc/stat`, so it measures work done and a
-   futex-blocked *or* CPU-bound test binary cannot hide behind either;
+   futex-blocked *or* CPU-bound test binary cannot hide behind either. It must sum
+   work fields only (user+nice+system+irq+softirq+steal): summing the whole line
+   includes `idle`, which counts wall time × cores and reads `cpu-active` forever.
+   The 10% is the margin over the sampler's own cost (ssh handshake, login shell,
+   churn scan — a few CPU-seconds per poll); a build is hundreds in the same window.
+   A negative delta means a stale baseline from a previous boot: `warmup`, not `idle`;
 4. **no churn under `/data/builds` or `/data/projects` for `CHURN_WINDOW_MIN`
    (default 10 minutes)** — `find -maxdepth 6 -newermt`, newest match, so a lane
    tree three levels down is seen. Starla builds under `/data/projects/<slug>`,
