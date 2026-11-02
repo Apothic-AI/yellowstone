@@ -197,7 +197,7 @@ log "writing $VOLUME/bin/ensure-ready"
 # The ensure-ready body below is the live one; keep the two in step. It is the
 # only thing that runs after a restart, so anything it omits is broken until
 # someone notices -- which is how the ~/.cargo symlink went missing for a while.
-cat > "$VOLUME/bin/ensure-ready" <<'ENSURE'
+cat > "$VOLUME/bin/ensure-ready.tmp" <<'ENSURE'
 #!/bin/sh
 # Single-word bootstrap, reachable as:
 #   flyctl machine exec -a <app> --no-container <id> /data/bin/ensure-ready
@@ -212,7 +212,14 @@ set -e
 # succeeded. Set both explicitly rather than trusting the caller's environment.
 HOME=/root
 PATH=/data/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-export HOME PATH
+# The volume mount. This body is written out through a QUOTED heredoc, so the
+# provisioner's own $VOLUME does not expand into it; every use below was
+# therefore testing /bin/builder-state and silently skipping the copy. Leaving it
+# undefined made the tool-restore block dead code, which is why a restarted box
+# came up without builder-* in /usr/local/bin and had to be repaired from the
+# host instead.
+VOLUME=${VOLUME:-/data}
+export HOME PATH VOLUME
 DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq --no-install-recommends \
@@ -221,8 +228,40 @@ apt-get install -y -qq --no-install-recommends \
     libzstd-dev liblz4-dev libsnappy-dev libssl-dev \
     openssh-server openssh-client >/dev/null
 mkdir -p /run/sshd
-/usr/sbin/sshd -f /data/ssh/sshd_config
+# `|| true` is not laziness. This body is re-run on purpose (the host re-runs it
+# whenever the completion marker at the end is missing), and on a re-run sshd is
+# already listening and exits non-zero -- which under `set -e` would abort the
+# whole repair *before* the project users are restored, i.e. before the one thing
+# a re-run exists to do. A genuinely broken sshd config is not silent: it lands in
+# the bootstrap log above, and the host refuses to report the box ready without
+# the marker.
+/usr/sbin/sshd -f /data/ssh/sshd_config || true
 sleep 1
+
+# Keep a record of what this run did. The host used to fire this with its output
+# sent to /dev/null, and that is why a bootstrap which dies halfway was invisible:
+# sshd already answers (it is started above, ~line 31 of this file), so every host
+# check says the box is healthy while nothing past this point has run. A build
+# failure hours later was the first symptom, and by then the evidence was gone
+# because the root filesystem is ephemeral. /data survives, so log there, and trim
+# so a long-lived volume cannot grow it without bound.
+mkdir -p "$VOLUME/state"
+# Serialize concurrent runs. A boot run and a host-triggered re-run can overlap, and
+# two `apt-get install` invocations contend for the dpkg lock -- one of them fails,
+# and under `set -e` that is a failed repair. Holding a lock for the life of the run
+# makes the second one wait and then repeat an already-idempotent repair. Guarded so
+# a box without flock still bootstraps instead of aborting at this line.
+if command -v flock >/dev/null 2>&1; then
+    exec 8>>"$VOLUME/state/bootstrap.lock"
+    flock -x 8
+fi
+if [ -f "$VOLUME/state/bootstrap.log" ] && [ "$(wc -c <"$VOLUME/state/bootstrap.log")" -gt 200000 ]; then
+    tail -c 100000 "$VOLUME/state/bootstrap.log" >"$VOLUME/state/bootstrap.log.tmp"
+    mv "$VOLUME/state/bootstrap.log.tmp" "$VOLUME/state/bootstrap.log"
+fi
+printf '=== bootstrap %s boot_id=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(cat /proc/sys/kernel/random/boot_id)" \
+    >>"$VOLUME/state/bootstrap.log"
+exec >>"$VOLUME/state/bootstrap.log" 2>&1
 
 # Only /data survives a stop. /root/.cargo and /root/.rustup are symlinks that
 # live on the ephemeral root filesystem, so they are gone after every restart
@@ -260,15 +299,40 @@ fi
 
 # /data/bin is NOT on a non-login ssh shell's PATH, and the root filesystem is
 # ephemeral, so anything that must be found by `command -v` has to be copied to
-# /usr/local/bin on every boot. Both of these are load-bearing and both were
-# missing here at some point, which is what made a restart silently downgrade the
-# box: builds ran unleased (so a stop could kill them) and nothing enforced
-# scale-to-zero.
-for tool in builder-state builder-idle; do
+# /usr/local/bin on every boot. builder-state and builder-idle are load-bearing
+# and were missing here at some point, which is what made a restart silently
+# downgrade the box: builds ran unleased (so a stop could kill them) and nothing
+# enforced scale-to-zero. builder-project was missing from this list too, so the
+# one tool that can recreate a project user was unreachable exactly when a reboot
+# had deleted them all.
+for tool in builder-state builder-idle builder-project; do
     if [ -x "$VOLUME/bin/$tool" ]; then
         cp "$VOLUME/bin/$tool" /usr/local/bin/$tool
         chmod 755 /usr/local/bin/$tool
     fi
+done
+
+# /etc/passwd is ephemeral for the same reason /usr/local/bin is, so a restart
+# deletes every project user while /data/projects/<slug> survives on the volume.
+# Without its user a project still has files but no identity: remote-cargo.sh
+# probes `id <slug>`, the probe fails, and the build falls back to the
+# vintage-keyed seed root -- which nothing has ever created -- so the first rsync
+# dies with "mkdir ...: No such file or directory" and every build on the box
+# fails. One boot was enough to do this. Re-ensure each surviving project home;
+# builder-project ensure is idempotent and reuses the owner uid, so the file
+# tree is not re-chowned on every restart.
+for home in "$VOLUME"/projects/*/; do
+    [ -d "$home" ] || continue
+    [ -f "$home/.builder-project" ] || continue
+    slug=$(basename "$home")
+    # Deliberately fatal, not a warning. A project whose user cannot be restored
+    # has no working build path at all: remote-cargo.sh's `id` probe fails and
+    # every rsync dies against a seed root nothing creates. Swallowing that as a
+    # warning lets the host print `box ready` over a box that cannot build, which
+    # is exactly what happened on 2026-11-02 and cost a full gate sweep to find.
+    # `set -e` aborts here, before the completion marker is written, so the host
+    # reports the failure instead of inheriting it.
+    "$VOLUME/bin/builder-project" ensure "$slug"
 done
 
 # NOTE: the box deliberately does NOT run its own stop loop. It has no Fly
@@ -279,14 +343,24 @@ done
 # via scripts/build-server-supervise.sh on a systemd timer. Decision data comes from
 # where the work is; authority comes from where the credentials are.
 
+# The completion marker is what makes "ready" mean ready. The host compares this
+# against /proc/sys/kernel/random/boot_id, so a marker left by a previous boot is
+# not mistaken for this one's, and it does not infer completion from "ssh answers"
+# -- which is only true from ~line 31 of this file onward. Everything above has
+# succeeded when this exists.
+printf '%s\n' "$(cat /proc/sys/kernel/random/boot_id)" >"$VOLUME/state/bootstrap-complete.tmp"
+mv -f "$VOLUME/state/bootstrap-complete.tmp" "$VOLUME/state/bootstrap-complete"
 echo READY
 ENSURE
-chmod +x "$VOLUME/bin/ensure-ready"
+# Write then rename. A body written in place can be read by a run that started
+# before the write, and this file is executed directly.
+chmod 755 "$VOLUME/bin/ensure-ready.tmp"
+mv -f "$VOLUME/bin/ensure-ready.tmp" "$VOLUME/bin/ensure-ready"
 
 # The admission-control and idle-watchdog scripts live in this skill directory and
 # are installed onto the volume, not written inline: they are long enough that
 # keeping a second copy in this file would drift.
-for script in builder-state.sh builder-idle.sh; do
+for script in builder-state.sh builder-idle.sh builder-project.sh; do
     if [ -f "$SKILL_DIR/$script" ]; then
         install -m 755 "$SKILL_DIR/$script" "$VOLUME/bin/${script%.sh}"
         log "installed $VOLUME/bin/${script%.sh}"
