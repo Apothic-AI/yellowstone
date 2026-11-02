@@ -26,7 +26,8 @@ scripts/doctor.sh          # confirm it took
 | Path | What it is |
 |---|---|
 | `yellowstone-skill/` | the install/configure/upgrade/repair guide, as an agent skill |
-| `AGENTS.md` | the shared agent instructions, installed to `~/AGENTS.md` |
+| `fleet/AGENTS.md` | the fleet instruction core, installed to `~/AGENTS.md` |
+| `AGENTS.md` | this repo's own instructions — a pointer to the global core, plus where role deltas go |
 | `herdr/config.toml` | theme, sidebar rows, keybindings (dictate, voice, bar, plugin manager, dagr, unblock, stash, beady-eye) |
 | `herdr/plugins.toml` | the plugin manifest, with pinned refs |
 | `herdr/skills/herdr/` | skill: how an agent drives herdr panes |

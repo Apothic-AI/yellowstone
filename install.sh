@@ -22,7 +22,7 @@ Stages (default: all, in this order):
   herdr      config.toml, plugins, pi integration, herdr skill, herdr-agy.sh
   pi         settings.json, models.json, extensions, packages
   skills     install every agent skill from the tree that owns it
-  agents     ~/AGENTS.md — the shared agent instructions
+  agents     ~/AGENTS.md — the fleet instruction core (fleet/AGENTS.md)
   overlord   ~/.overlord + ~/.sysops dirs, the two herdr spaces and their tabs
   secrets    create empty ~/.pi/agent/secrets/<provider> files to fill in
   verify     report what is installed, outdated, or missing
@@ -231,17 +231,24 @@ install_agents() {
   # working directory's ancestors. This file is the shared instruction set, so it
   # lives at $HOME: every project under $HOME inherits it.
   #
+  # The source is fleet/AGENTS.md, not the repo's own AGENTS.md. The two are
+  # different documents with different readers: this repo's AGENTS.md tells an
+  # agent how to work in this tree, while the fleet core is what every project
+  # under $HOME inherits. They were one file while they were byte-identical, and
+  # installing the repo copy once that stopped being true would have replaced the
+  # core with a pointer to itself.
+  #
   # A local AGENTS.md is often hand-edited. Copy over it, but back it up first and
   # say so — silently replacing someone's instructions is worse than a stale file.
   local dest="$HOME/AGENTS.md"
-  if [ -f "$dest" ] && cmp -s "$REPO_ROOT/AGENTS.md" "$dest"; then
+  if [ -f "$dest" ] && cmp -s "$FLEET_AGENTS" "$dest"; then
     info "unchanged $(short "$dest")"
     return 0
   fi
   if [ -f "$dest" ] && [ "$DRY_RUN" = 0 ]; then
-    info "existing $(short "$dest") differs from the repo — backing it up before replacing"
+    info "existing $(short "$dest") differs from the shipped core — backing it up before replacing"
   fi
-  install_file "$REPO_ROOT/AGENTS.md" "$dest"
+  install_file "$FLEET_AGENTS" "$dest"
 }
 
 # ---------------------------------------------------------------- overlord --

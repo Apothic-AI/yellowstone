@@ -29,6 +29,12 @@ HERDR_DIR="${HERDR_CONFIG_DIR:-$HOME/.config/herdr}"
 PI_DIR="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
 AGENTS_SKILLS="${AGENTS_SKILLS_DIR:-$HOME/.agents/skills}"
 LOCAL_BIN="${LOCAL_BIN_DIR:-$HOME/.local/bin}"
+# The fleet instruction core, shipped to $HOME/AGENTS.md. Deliberately NOT this
+# repository's own AGENTS.md: that file is instructions for working *here*, and
+# serving one file in both roles is how it became a copy of the global core and
+# then silently stopped matching it. The install destination is the same; the
+# source is not.
+FLEET_AGENTS="$REPO_ROOT/fleet/AGENTS.md"
 
 DRY_RUN=0
 ASSUME_YES=0

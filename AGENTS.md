@@ -1,79 +1,16 @@
-# Fleet instructions
+# yellowstone
 
-This file is the invariant core, and it is **role-neutral**: nothing here assumes you
-lead, delegate, or answer to anyone. Your role's duties come from your **mode** — `leader`,
-`worker`, or `overlord` — chosen at spawn. Everything procedural is a **skill**; load the
-one that matches the work instead of expecting it restated here.
+`~/AGENTS.md` is the invariant core and applies here in full. This directory has no
+space-specific rules of its own: the 78-line file that used to sit here was a byte-identical
+copy of the global core (verified with `diff` on 2026-11-02), so this file is a pointer
+instead. The core the installer ships to `~/AGENTS.md` lives in `fleet/AGENTS.md`; this file is
+what an agent working in *this tree* reads, and it should not be a second copy of it.
 
-## Standing behaviour
+## Role deltas
 
-- Take the initiative. When you notice a pattern across prompts, act on it; when you know
-  the next step, do it. Do not stop to report while work remains, unless blocked on
-  something only the operator can resolve.
-- Use intuition to see around corners, then verify it.
-- Speak English to the operator.
-- Create TODOs before starting, keep them current, and update each one immediately after
-  it completes — never batched. A stale TODO tells the operator something untrue.
+Role-only instructions, if they are ever needed here, go in `.pi/modes/<role>.json` — `key`
+equal to the fleet mode key (`leader` or `worker`), `promptStrategy: "append"` — and compose
+onto that fleet mode. `.pi/launch.env` carries the launch line:
+`PI_MODE=leader PI_PROFILE=fleet PI_MODE_CONFIRM_PROJECT=1`.
 
-## Never — unrecoverable within the turn
-
-1. **Never block your own session.** A blocking call is a defect even when the wait is
-   legitimate; background it and stay reachable. `jobs action='output'`, never `attach`.
-   `run_in_background` plus an `until` loop that exits on a condition, never `sleep`.
-   `monitor` for event streams, never polling in turn.
-2. **Never prompt a `working` lane.** It aborts the turn, and on a goal lane it *pauses
-   the goal*. Queue the note to a file and deliver at the stop boundary.
-3. **Never run infrastructure or act on a paid resource without authorization.** Report
-   what you would have done instead.
-4. **Never conclude a lane is fine from a status field.** `working` is not progress and
-   `idle` is not done; read the footer, an artifact, or the lane's run.
-5. **Never report unverified success.** A lane's report is `reported`; only a file,
-   commit, test count, or live read makes it `verified`.
-6. **Never add a `Co-Authored-By` or similar attribution trailer** to a commit. Match the
-   repository's existing trailer practice; if it has none, write none.
-
-## Working in a repo
-
-- Use graft to understand and scope a codebase; `grep`/`rg` only for exhaustive
-  enumeration of literal strings.
-- Check free space and usage before any action that occupies a lot of disk.
-- Rust builds go through `cargo-remote-3000` on fly.io build servers, and you check you
-  are not racing another agent's build.
-- When blocked on something only a human can provide, first clear it yourself via CLI,
-  API, browser, docs and existing decisions within standing authorization. Then use the
-  `unblock` skill rather than informal chat. Never approve your own ask.
-
-## Acting on yourself
-
-You may send slash commands to yourself only to set your own goal and to adjust your own
-reasoning effort or model.
-
-- pi: `/thinking <level>` and `/model <provider/model>` set them directly. **Bare `/model`
-  and bare `/thinking` open selectors whose modal absorbs the next Enter.**
-- `/goal edit` is safe and in place; `/goal add` appends. **Bare `/goal <objective>`
-  wipes the whole queue** behind a modal. See `pi-goal-contracts`.
-- Setting your own goal is a completion contract, not a task summary.
-
-## Skills — everything procedural
-
-| Work | Skill |
-|---|---|
-| Goals, `/goal`, queue, blocked/wait | `pi-goal-contracts` |
-| Naming, spawning, renaming a lane | `lane-identity` |
-| Agent messaging, rooms | `pi-rooms-protocol` |
-| Durable memory and notes | `pi-hermes-memory-usage` |
-| Token and context cost, waits, polling | `context-economy` |
-| Durable task graph (`bd`) | `beads` |
-| Scheduled and recurring work | `agents-cron` |
-| dagr runs | `dagr-producer` |
-| herdr control | `herdr` |
-| Asking the operator for something | `unblock` |
-| Per-request injected context | `pi-persist-usage` |
-| Profiles and modes | `profile-config` |
-
-## herdr
-
-If you do not know whether you are inside herdr, load the `herdr` skill and check. Observe
-before and after every message or command you send to another agent. If you race another
-project's agent for a resource, message that orchestrator; orchestrator tabs always carry
-"leader" in their name.
+Repo notes live with the code: `overlord/AGENTS.md` covers the overlord subproject.

@@ -150,6 +150,14 @@ suite_smoke() {
     bad "missing skills/skills.tsv"
   fi
 
+  # Two documents, two readers. The repo's own AGENTS.md is instructions for
+  # working in this tree; the fleet core that installs to $HOME/AGENTS.md is a
+  # separate artifact. Collapsing them is what made the installed copy a
+  # pointer to itself on the next install.
+  check "ships the fleet core" test -f "$REPO/fleet/AGENTS.md"
+  check "fleet core is not this repo's own instructions" bash -c \
+    "! cmp -s '$REPO/AGENTS.md' '$REPO/fleet/AGENTS.md'"
+
   # The shipped overlord docs: present, and free of any one operator's projects.
   for f in overlord/AGENTS.md overlord/README.md; do
     check "ships $f" test -f "$REPO/$f"
@@ -350,7 +358,7 @@ suite_install() {
   # be created in the sandbox because herdr workspaces are per-user, so this
   # asserts the directory side and that the script reports the workspace gap.
   check "~/AGENTS.md installed" test -f "$home/AGENTS.md"
-  check "~/AGENTS.md matches the repo" cmp -s "$REPO/AGENTS.md" "$home/AGENTS.md"
+  check "~/AGENTS.md matches the shipped core" cmp -s "$REPO/fleet/AGENTS.md" "$home/AGENTS.md"
   check "~/.sysops created" test -d "$home/.sysops"
   check "overlord AGENTS.md installed" test -f "$home/.overlord/AGENTS.md"
   check "overlord README.md installed" test -f "$home/.overlord/README.md"
@@ -456,11 +464,11 @@ JSON
   check "new packages still added" bash -c \
     "node -e 'const s=require(\"$home/.pi/agent/settings.json\");process.exit(s.packages.some(p=>String(p).includes(\"pi-rooms\"))?0:1)'"
 
-  # A hand-edited ~/AGENTS.md must be backed up before the repo's version lands.
+  # A hand-edited ~/AGENTS.md must be backed up before the shipped core lands.
   printf '# my own instructions\ncustom rule\n' > "$home/AGENTS.md"
   in_home "$home" bash "$REPO/install.sh" agents --yes >/dev/null 2>&1
   check "hand-edited ~/AGENTS.md backed up" bash -c "ls '$home/AGENTS.md.bak-yellowstone-'* >/dev/null 2>&1"
-  check "~/AGENTS.md replaced by the repo version" cmp -s "$REPO/AGENTS.md" "$home/AGENTS.md"
+  check "~/AGENTS.md replaced by the shipped core" cmp -s "$REPO/fleet/AGENTS.md" "$home/AGENTS.md"
 
   # An operator's live workspace index must survive a reinstall.
   mkdir -p "$home/.overlord"

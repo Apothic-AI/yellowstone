@@ -307,15 +307,17 @@ else
   record info nonblock "not installed (./install.sh pi)"
 fi
 
-# The shared agent instructions at $HOME.
-if [ -f "$HOME/AGENTS.md" ]; then
-  if cmp -s "$REPO_ROOT/AGENTS.md" "$HOME/AGENTS.md"; then
-    record ok agents-md "in sync with repo"
-  else
-    record warn agents-md "differs from repo — review: diff $(short "$REPO_ROOT/AGENTS.md") ~/AGENTS.md"
-  fi
-else
+# The fleet instruction core at $HOME. Compared against the shipped artifact,
+# fleet/AGENTS.md — never against the repo's own AGENTS.md, which is instructions
+# for working in this tree and would report drift on a machine that is correct.
+if [ -f "$FLEET_AGENTS" ] && [ ! -f "$HOME/AGENTS.md" ]; then
   record warn agents-md "missing ~/AGENTS.md — run ./install.sh agents"
+elif [ ! -f "$FLEET_AGENTS" ]; then
+  record warn agents-md "fleet/AGENTS.md is missing from the repo — cannot compare ~/AGENTS.md"
+elif cmp -s "$FLEET_AGENTS" "$HOME/AGENTS.md"; then
+  record ok agents-md "in sync with the shipped core"
+else
+  record warn agents-md "differs from the shipped core — review: diff $(short "$FLEET_AGENTS") ~/AGENTS.md"
 fi
 
 # The overlord space: directory + the herdr workspace whose cwd is that directory.

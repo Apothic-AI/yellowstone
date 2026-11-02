@@ -92,7 +92,7 @@ Stages, in the order they run:
 | `herdr` | writes `config.toml`, installs the pi integration, installs/links the plugins from `herdr/plugins.toml`, symlinks the herdr skill, installs `herdr-agy.sh` |
 | `pi` | merges owned keys into `settings.json`, merges providers into `models.json`, installs hand-written extensions, reconciles packages |
 | `skills` | installs every agent skill from the tree that owns it (`skills/skills.tsv`) |
-| `agents` | installs `~/AGENTS.md`, the shared agent instructions |
+| `agents` | installs `~/AGENTS.md` from `fleet/AGENTS.md`, the shared agent instructions |
 | `overlord` | creates `~/.overlord` + `~/.sysops`, both spaces, and their agent tabs |
 | `secrets` | creates empty credential files for every provider `models.json` references |
 | `verify` | runs `scripts/doctor.sh` |
@@ -788,7 +788,8 @@ pi's own rules. It refuses to touch quota and billing errors.
 ## Layout
 
 ```
-AGENTS.md                  shared agent instructions for this setup
+AGENTS.md                  this repo's own instructions (a pointer to the global core)
+fleet/AGENTS.md            the fleet instruction core, installed to ~/AGENTS.md
 install.sh                 install / reconcile a machine
 herdr/
   config.toml              theme, sidebar rows, keybindings
