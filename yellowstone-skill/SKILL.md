@@ -462,7 +462,7 @@ Yellowstone ships two herdr workspaces that are not projects:
 
 | Space | cwd | Tabs (each hosts a pi agent of the same name) | Job |
 |---|---|---|---|
-| `overlord` | `~/.overlord` | `overlord`, `comms` | coordinate the coding-agent orchestrators in the other spaces |
+| `overlord` | `~/.overlord` | `overlord` | coordinate the coding-agent orchestrators in the other spaces |
 | `sysops` | `~/.sysops` | `sysop-leader` | machine and service operations: host config, disks, services, network |
 
 They are separate because they are different jobs. Mixing ops work into the
@@ -506,7 +506,6 @@ The `overlord` workspace has exactly two tabs, each hosting a **pi** agent:
 | Space | Tab label | Agent name | Role |
 |---|---|---|---|
 | `overlord` | `overlord` | `overlord` | the parent orchestrator — reads `~/.overlord/AGENTS.md` and directs the other spaces |
-| `overlord` | `comms` | `comms` | the operator-facing channel — chat, email, SMS and voice through the mycord skills |
 | `sysops` | `sysop-leader` | `sysop-leader` | machine and service operations |
 
 `overlord.sh install` creates each tab if it is missing and starts a `pi` agent
@@ -535,8 +534,8 @@ click around.
 
 ### Comms — the mycord skills
 
-The `comms` tab is only useful if the agent there knows how to reach each
-channel. Those skills all live in one repository,
+A comms space is only useful if the agent there knows how to reach each channel.
+Those skills all live in one repository,
 [`Apothic-AI/mycord`](https://github.com/Apothic-AI/mycord), one directory per
 channel:
 
@@ -764,7 +763,7 @@ while you are working.
 | Two extensions claim the same tool | startup error naming both | they conflict by design; disable one |
 | herdr updated but behaves old | `herdr status` → `server_binary_stale` | reattach (`herdr`); the new client works at once, server features need a server restart — avoid `herdr server stop` while agents are running, it ends their panes |
 | `doctor.sh` says a skill is elsewhere | `readlink -f ~/.agents/skills/<s>` | re-run `./install.sh skills`, or leave it if intentional |
-| `overlord` or `comms` tab has no agent | `scripts/overlord.sh status` | re-run `./install.sh overlord`; it starts a pi agent in an agentless tab and renames nothing |
+| `overlord` tab has no agent | `scripts/overlord.sh status` | re-run `./install.sh overlord`; it starts a pi agent in an agentless tab and renames nothing |
 | `npx skills add Apothic-AI/mycord` finds no skills | the skills are at the repo root | clone the repo and run `./scripts/skills-sync.sh install` |
 | A test passes but the code you changed is not the code that ran | `./test/run.sh`, not a bare `docker run` | the image bakes the repo at build time; the wrapper mounts your work tree |
 | Two `overlord` workspaces exist | `herdr workspace list` | `overlord.sh install` should have prevented it; close the extra one, then re-run to confirm |
@@ -810,7 +809,7 @@ pi/
 overlord/
   AGENTS.md                orchestrator role + operating rules (installed)
   README.md                workspace-index template (installed once)
-                           its space hosts two pi tabs: `overlord`, `comms`
+                           its space hosts one pi tab: `overlord`
 scripts/
   overlord.sh              create ~/.overlord + the `overlord` workspace
 skills/

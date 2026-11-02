@@ -369,7 +369,7 @@ suite_install() {
   # check_contains is glob-based, so alternation needs two separate assertions.
   # In the container herdr has no running server, so the tab stage legitimately
   # reports a gap; either it names the tabs or it explains why it could not.
-  tab_line="$(printf '%s\n' "$out" | grep -iE 'overlord:|comms:|herdr not installed|no herdr server|could not create tab' | head -1)"
+  tab_line="$(printf '%s\n' "$out" | grep -iE 'overlord:|herdr not installed|no herdr server|could not create tab' | head -1)"
   if [ -n "$tab_line" ]; then ok "overlord tab stage reports: $(printf '%s' "$tab_line" | sed 's/^ *//')"
   else bad "overlord tab stage said nothing about tabs"; fi
 

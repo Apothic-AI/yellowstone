@@ -62,9 +62,11 @@ instead of copying them. See [`docs/forks.md`](docs/forks.md).
 
 Both sides read `~/.agents/skills`, which is why skills are installed from the
 tree that owns each one rather than copied here. On top of both sit two herdr
-spaces that are not projects: `overlord` (cwd `~/.overlord`, tabs `overlord` +
-`comms`) for coordinating project agents, and `sysops` (cwd `~/.sysops`, tab
-`sysop-leader`) for machine and service operations.
+spaces that are not projects: `overlord` (cwd `~/.overlord`, tab `overlord`) for
+coordinating project agents, and `sysops` (cwd `~/.sysops`, tab `sysop-leader`)
+for machine and service operations. A comms space for the operator-facing channel
+is a third surface of that kind, set up on its own: this installer does not create
+it.
 
 ## Requirements
 

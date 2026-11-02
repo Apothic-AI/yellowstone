@@ -7,10 +7,10 @@ the other herdr spaces.
 `AGENTS.md` beside this file is the instruction set for that role. This file is
 the index it reads and updates.
 
-The space carries two tabs, each hosting one pi agent: **`overlord`** (the
-orchestrator that reads `AGENTS.md`) and **`comms`** (the operator-facing channel
-for chat, email, SMS and voice). Both are created and checked by
-`scripts/overlord.sh`.
+The space carries one tab, hosting one pi agent: **`overlord`**, the orchestrator
+that reads `AGENTS.md`. It is created and checked by `scripts/overlord.sh`. The
+operator-facing channel for chat, email, SMS and voice is a separate space with its
+own cwd and its own leader lane, not a tab here.
 
 ## How the two files relate
 

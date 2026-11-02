@@ -8,7 +8,7 @@
 #
 # Two spaces ship by default:
 #
-#   overlord  tabs: overlay(pi, "overlord"), comms(pi, "comms")
+#   overlord  tab:  "overlord" (pi)
 #             the parent orchestrator, cwd ~/.overlord
 #   sysops    tab:  "sysop-leader" (pi)
 #             machine and service operations, separate from project orchestration
@@ -216,9 +216,12 @@ install_tabs() {
     warn "no '$OVERLORD_LABEL' workspace — skipping its tabs"
     failed=$((failed + 1))
   else
-    # `overlord` hosts the orchestrator; `comms` hosts the operator-facing channel.
+    # One tab: this space hosts the orchestrator. The operator-facing channel is
+    # NOT a tab here — it is its own space, with its own cwd and its own leader
+    # lane, and creating a "comms" tab in this workspace would put a second agent
+    # on the same channels under a second identity. An older version of this
+    # script did exactly that, so a machine installed from it may still have one.
     ensure_agent_tab "$over" overlord pi overlord "$OVERLORD_DIR" || failed=$((failed + 1))
-    ensure_agent_tab "$over" comms pi comms "$OVERLORD_DIR" || failed=$((failed + 1))
   fi
 
   sys="$(find_sysops_workspace || true)"
@@ -338,7 +341,7 @@ cmd_status() {
 
   # Both default spaces, each with the tabs it is supposed to host.
   local spec name rest label dir tabs_csv wsid tab pane agent
-  for spec in "overlord:$OVERLORD_LABEL:$OVERLORD_DIR:overlord comms" \
+  for spec in "overlord:$OVERLORD_LABEL:$OVERLORD_DIR:overlord" \
               "sysops:$SYSOPS_LABEL:$SYSOPS_DIR:$SYSOPS_TAB"; do
     name="${spec%%:*}"
     rest="${spec#*:}"

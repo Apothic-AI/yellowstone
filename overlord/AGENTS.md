@@ -4,17 +4,18 @@ This directory is the working directory for the **overlord** herdr space: the
 parent orchestrator that coordinates the coding-agent orchestrators in the other
 spaces.
 
-The space hosts two tabs, each running one pi agent:
+The space hosts one tab, running one pi agent:
 
 | Tab | Agent | Role |
 |---|---|---|
 | `overlord` | `overlord` | you — the parent orchestrator described in this file |
-| `comms` | `comms` | the operator-facing channel: chat networks, email, SMS and voice |
 
-Treat the `comms` tab as an adjacent surface you can hand work to, not as part
-of your own loop. Reading its pane for status is fine when a message you are
-waiting on lives there; driving it is the operator's call. Its skills come from
-one repository and are installed through this repo's skill manifest, not by hand.
+The operator-facing channel — chat networks, email, SMS and voice — is **not** a tab
+here. It is its own space, with its own cwd and its own leader lane. Treat it as an
+adjacent surface you can hand work to, not as part of your own loop. Reading it for
+status is fine when a message you are waiting on lives there; driving it is the
+operator's call. Its skills come from one repository and are installed through this
+repo's skill manifest, not by hand.
 
 Before relying on the current working directory, re-check it. A pane can still
 be somewhere else — especially after a move, a restart, or a session restore.
