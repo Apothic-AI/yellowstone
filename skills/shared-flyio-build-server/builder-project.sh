@@ -59,18 +59,35 @@ ensure() {
     valid_slug "$slug" || die "invalid slug '$slug' (use [a-z0-9-], max 20, no leading -)"
 
     home="$ROOT/$slug"
+    mkdir -p "$home"
+
+    # /etc/passwd is on the ephemeral rootfs, so a restart deletes the project user
+    # while /data/projects/<slug> survives on the volume. That makes ensure() a boot
+    # step, not a one-off, and a boot step must not churn identity: letting --system
+    # pick a fresh uid each restart rewrites the recursive chown below over a
+    # multi-GB tree and invalidates anything keyed on the project's uid. Reuse the
+    # uid that already owns the home, as long as nothing else has claimed it.
+    owner_uid=$(stat -c %u "$home" 2>/dev/null || echo 0)
     if ! id "$slug" >/dev/null 2>&1; then
         # A system user with a home on the volume: --system keeps it out of the way
         # in passwd ordering, and the home is created here so ownership is right from
         # the first file rather than fixed up later.
-        mkdir -p "$home"
-        useradd --system --create-home --home-dir "$home" --shell /bin/sh \
+        uid_opt=""
+        if [ "$owner_uid" -ge 100 ] && ! getent passwd "$owner_uid" >/dev/null 2>&1; then
+            uid_opt="--uid $owner_uid"
+        fi
+        # Deliberate word splitting: $uid_opt is either empty or two arguments.
+        useradd --system --create-home --home-dir "$home" --shell /bin/sh $uid_opt \
             --comment "build project $slug" "$slug" \
             || die "could not create user $slug"
     fi
 
     mkdir -p "$home/libs" "$home/builds"
-    chown -R "$slug:$slug" "$home"
+    # Skip the recursive walk when ownership is already right, which is the normal
+    # boot path once the uid above is preserved.
+    if [ "$owner_uid" != "$(id -u "$slug")" ]; then
+        chown -R "$slug:$slug" "$home"
+    fi
     chmod 750 "$home"
     printf '%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ) ensured" >"$home/.builder-project"
     chown "$slug:$slug" "$home/.builder-project"

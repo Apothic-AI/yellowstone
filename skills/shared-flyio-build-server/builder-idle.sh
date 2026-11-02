@@ -293,12 +293,17 @@ case "${1:-}" in
         fi
         pending=$(cat "$PENDING_FILE" 2>/dev/null || echo "")
         if [ -n "$pending" ]; then idle_for=$(( $(now) - pending )); else idle_for=0; fi
-        # `procs` names what a `building` verdict actually saw, so a stuck verdict is
-        # self-explaining instead of needing another diagnostic round trip. It is
-        # computed here rather than reused from verdict() because verdict() runs in
-        # a command substitution, so its variables do not survive the subshell.
-        procs=""
-        [ "$v" = building ] && procs=$(build_processes | tr '\n' ',' | sed 's/,$//')
+        # `procs` names what is actually running, and it is reported for EVERY
+        # verdict, not just `building`: it is the only field here that is direct
+        # evidence rather than inference from a CPU rate, a lease or a churn scan.
+        # A consumer making a destructive decision -- scripts/build-server.sh park --
+        # must see a live compile even when the verdict came out `warmup` (stale CPU
+        # baseline) or `cpu-active`. Gating this on `building` is exactly how a park
+        # guard read an empty process list while a sibling project's
+        # `cargo test --workspace` was mid-run, and stopped the box underneath it.
+        # It is computed here rather than reused from verdict() because verdict() runs
+        # in a command substitution, so its variables do not survive the subshell.
+        procs=$(build_processes | tr '\n' ',' | sed 's/,$//')
         printf '{"verdict":"%s","idleSeconds":%s,"grace":%s,"procs":"%s","time":"%s"}\n' \
             "$v" "$idle_for" "$GRACE" "$procs" "$(iso)"
         exit 0
