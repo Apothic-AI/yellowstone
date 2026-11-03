@@ -303,10 +303,30 @@ in no repo. Its one unique signal — filesystem churn — is now part of the bo
 verdict. There is one authority, and it stops the machine only when all four
 answers say idle:
 
-1. **`builder-state park` succeeds** — no builder-state lease is held;
+1. **`builder-state park` succeeds** — no builder-state lease is held. A lease is
+   also **aged** (`LEASE_START_GRACE`, 180s): past that with no compile and no
+   churn it is logged as stale and stops vetoing the stop. A lease is a promise
+   the *client* makes, so a killed client leaves one standing that nothing can
+   withdraw — measured 2026-11-01, one killed wrapper left the box permanently
+   `leased`, `park` refused, and this verdict said `leased` forever while a machine
+   nobody was using billed all night. The same measurement showed why a lock is
+   not a record: an orphaned child that inherited the lock fd keeps it held after
+   its recorded holder is pruned, so `leased:true` with `leaseCount:0` names
+   nobody. That unattributable lock is logged and ignored; a real build still
+   shows up in the process check below;
 2. **no `cargo`/`rustc`/`rustdoc`/`wasm-pack` process** — catches builds that
    never took one; a zombie of one of those does not count, because nothing reaps
-   it and it would otherwise pin the verdict at `building` for the whole boot;
+   it and it would otherwise pin the verdict at `building` for the whole boot.
+   Live processes are `building` unless they are **wedged**: no CPU work, no churn,
+   no attached client, unbroken for `WEDGE_GRACE` (1200s). That answer is
+   `wedged`, which the supervisor treats as a stop, and it exists because a
+   process alive is not progress — dxdb measured an orphaned box-side `cargo`
+   parked in `do_wait` on a deadlocked test binary with 0.00 load for 20–38
+   minutes while seven lanes queued behind it. Killing the child is what releases
+   such a tree, not any lock, so nothing on the box tries to tidy it up. A live
+   binary under `target/{debug,release}/deps/` vetoes this rule entirely: a
+   sleeping test and a deadlocked one are indistinguishable from inside the box,
+   and only the client can tell them apart;
 3. **CPU below 10% of one core over the gap since the previous poll** — `delta
    jiffies / elapsed seconds` from `/proc/stat`, so it measures work done and a
    futex-blocked *or* CPU-bound test binary cannot hide behind either. It must sum
@@ -314,11 +334,27 @@ answers say idle:
    includes `idle`, which counts wall time × cores and reads `cpu-active` forever.
    The 10% is the margin over the sampler's own cost (ssh handshake, login shell,
    churn scan — a few CPU-seconds per poll); a build is hundreds in the same window.
-   A negative delta means a stale baseline from a previous boot: `warmup`, not `idle`;
+   A negative delta means a stale baseline from a previous boot: `warmup`, not `idle`.
+   **Sample once per poll and reuse it.** The sampler writes the baseline on every
+   call, so calling it twice makes the second call compare against the sample the
+   same poll just wrote — elapsed 0, no rate, `warmup` on every poll forever, and
+   `idle` unreachable. This was live in the working tree on 2026-11-02 and is what
+   the `rate` reuse in `verdict()` exists to prevent;
 4. **no churn under `/data/builds` or `/data/projects` for `CHURN_WINDOW_MIN`
    (default 10 minutes)** — `find -maxdepth 6 -newermt`, newest match, so a lane
    tree three levels down is seen. Starla builds under `/data/projects/<slug>`,
    which is why both roots are scanned.
+
+Any answer other than `idle` also clears the accumulated grace, so a batch of
+interleaved busy and idle polls can never stop the box.
+
+**Residual risk:** `recent_churn` does not scan `/data/cargo`, so an unleased
+build parked for 20+ minutes on a registry download (writes go to the registry
+cache, not a build root) is indistinguishable from a wedge and would be stopped.
+Every lease-holding build is protected by `lease_watched`, and cargo-remote-3000
+holds its own lane lock the host cannot see, which is why this has not bitten yet.
+If a build is ever killed this way, add `/data/cargo` to the churn roots rather
+than lengthening the grace.
 
 Three things here were fixed only after they bit, and each restored the same
 billing leak in a different disguise:
@@ -494,7 +530,7 @@ missing package and is not fixable by installing packages.
 | `provision.sh` | the earlier **Alpine** provisioner. Kept only as the record of why Alpine cannot be used: `fly-builder-glowing-aurora-7598` is the account's pre-existing remote builder, not ours, and musl fails as described below. Do not repurpose it again. |
 | `fly.glibc.toml` | machine definition for the Debian box (see the warning below) |
 | `builder-state.sh` | lease + park admission control (installed to `/usr/local/bin`) |
-| `builder-idle.sh` | the idleness verdict (leases, processes, CPU rate) |
+| `builder-idle.sh` | the idleness verdict (leases, processes, CPU rate, churn, wedge) |
 | `builder-project.sh` | per-project user, seed and build root |
 | `fly.toml` | machine definition for the Alpine one; documents why a build box must have no HTTP service |
 

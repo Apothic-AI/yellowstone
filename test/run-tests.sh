@@ -8,6 +8,8 @@
 #   partial   install on a machine with pre-existing config: assert the
 #             installer adds and never overwrites.
 #   failures  no herdr / no pi / no network: assert clean, explained failures.
+#   resolvers linked-skill resolution across the two layouts.
+#   builder   the box-side idleness verdict and the lease lock-fd fix.
 #   all       everything
 #
 # Every suite that writes runs against a fresh HOME under $SANDBOX, so the real
@@ -529,6 +531,121 @@ suite_failures() {
   check_contains "skills-sync prints the clone command" "$out" "gh repo clone"
 }
 
+# --------------------------------------------------------------- builder ----
+# The box-side idleness verdict. These are the decisions that either leak money
+# (never reaching `idle`) or kill somebody's build (reaching it too eagerly), and
+# both have shipped before, so they are asserted rather than trusted.
+#
+suite_builder() {
+  suite builder
+
+  local script="$REPO/skills/shared-flyio-build-server/builder-idle.sh"
+  local home; home="$(new_home builder)"
+  local shims="$home/shims"
+  mkdir -p "$shims"
+
+  # A fake builder-state: the verdict reads lease facts from `status --json` only.
+  cat > "$shims/builder-state" <<'EOS'
+#!/bin/sh
+[ "$1" = status ] && [ "${2:-}" = --json ] || exit 1
+printf '{"leased":%s,"idleSeconds":-1,"leaseCount":%s,"leases":[%s]}\n' \
+  "${FAKE_LEASED:-false}" "${FAKE_COUNT:-0}" "${FAKE_BODY:-}"
+EOS
+  # A fake pgrep so the process set under test is exactly what the case chose,
+  # never whatever else the container happens to be running.
+  cat > "$shims/pgrep" <<'EOS'
+#!/bin/sh
+[ "$1" = -x ] || exit 1
+for p in $FAKE_PIDS; do [ -d "/proc/$p" ] && echo "$p"; done
+exit 0
+EOS
+  chmod +x "$shims/builder-state" "$shims/pgrep"
+
+  # Run the verdict against a seeded state dir. $2 is the baseline: "idle" seeds a
+  # rate of 1% of one core over 100s, "busy" 50%.
+  verdict_of() {
+    local dir="$home/state-$1" kind="$2"; shift 2
+    rm -rf "$dir"; mkdir -p "$dir"
+    local cur; cur="$(awk '/^cpu /{ print $2+$3+$4+$7+$8+$9; exit }' /proc/stat)"
+    local burn=100; [ "$kind" = busy ] && burn=5000
+    printf '%s %s\n' "$(( cur - burn ))" "$(( $(date -u +%s) - 100 ))" > "$dir/cpu-sample"
+    PATH="$shims:$PATH" BUILDER_STATE_DIR="$dir" sh "$script" "$@"
+  }
+
+  local out
+
+  # The bug this suite exists for: sampling the CPU baseline twice per poll made
+  # the second sample read elapsed 0, so the answer was `warmup` on every poll and
+  # `idle` was unreachable -- the box could never scale to zero.
+  out="$(verdict_of a idle --once)"
+  check_contains "idle is reachable when nothing is happening" "$out" '"verdict":"idle"'
+
+  out="$(verdict_of b busy --once)"
+  check_contains "real work reads cpu-active" "$out" '"verdict":"cpu-active"'
+
+  # A baseline with no timestamp is what an older box left in cpu-sample. Treating
+  # the missing field as 0 divides by the whole epoch and calls it idle.
+  local legacy="$home/state-legacy"; rm -rf "$legacy"; mkdir -p "$legacy"
+  awk '/^cpu /{ print $2+$3+$4+$7+$8+$9; exit }' /proc/stat > "$legacy/cpu-sample"
+  out="$(PATH="$shims:$PATH" BUILDER_STATE_DIR="$legacy" sh "$script" --once)"
+  check_contains "a timestamp-less baseline fails closed" "$out" '"verdict":"warmup"'
+  check "the timestamp-less baseline is rewritten" \
+    test "$(awk 'NF==2' "$legacy/cpu-sample")" != ""
+
+  # A live `cargo` that has burned no CPU, touched nothing and has no client is a
+  # wedge -- but only once that state is older than WEDGE_GRACE.
+  cp /bin/sleep "$home/cargo" 2>/dev/null || cp "$(command -v sleep)" "$home/cargo"
+  "$home/cargo" 30 & local cpid=$!
+  for _ in $(seq 1 50); do [ -d "/proc/$cpid" ] && break; done
+
+  local wdir="$home/state-wedge"; rm -rf "$wdir"; mkdir -p "$wdir"
+  local cur; cur="$(awk '/^cpu /{ print $2+$3+$4+$7+$8+$9; exit }' /proc/stat)"
+  printf '%s %s\n' "$(( cur - 100 ))" "$(( $(date -u +%s) - 100 ))" > "$wdir/cpu-sample"
+  printf '%s\n' "$(( $(date -u +%s) - 5000 ))" > "$wdir/wedge-since"
+  out="$(PATH="$shims:$PATH" BUILDER_STATE_DIR="$wdir" WEDGE_GRACE=1200 \
+    FAKE_PIDS="$cpid" FAKE_COUNT=0 sh "$script" --once)"
+  check_contains "a stalled live process is reported wedged" "$out" '"verdict":"wedged"'
+
+  printf '%s\n' "$(date -u +%s)" > "$wdir/wedge-since"
+  out="$(PATH="$shims:$PATH" BUILDER_STATE_DIR="$wdir" WEDGE_GRACE=1200 \
+    FAKE_PIDS="$cpid" FAKE_COUNT=0 sh "$script" --once)"
+  check_contains "a young stall is still building" "$out" '"verdict":"building"'
+
+  # A lease is a promise the client makes, so a killed client leaves one standing.
+  # Past LEASE_START_GRACE with no compile and no churn it must stop vetoing.
+  local sdir="$home/state-stale"; rm -rf "$sdir"; mkdir -p "$sdir"
+  printf '%s %s\n' "$(( cur - 100 ))" "$(( $(date -u +%s) - 100 ))" > "$sdir/cpu-sample"
+  out="$(PATH="$shims:$PATH" BUILDER_STATE_DIR="$sdir" FAKE_COUNT=1 FAKE_PIDS= \
+    FAKE_BODY="\"started\":\"$(date -u -d '-1000 seconds' +%Y-%m-%dT%H:%M:%SZ)\"" \
+    sh "$script" --once 2>/dev/null)"
+  check_contains "a stale lease stops vetoing the stop" "$out" '"verdict":"idle"'
+
+  out="$(PATH="$shims:$PATH" BUILDER_STATE_DIR="$sdir" FAKE_COUNT=1 FAKE_PIDS= \
+    FAKE_BODY="\"started\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"" \
+    sh "$script" --once 2>/dev/null)"
+  check_contains "a fresh lease still holds the box" "$out" '"verdict":"leased"'
+
+  kill "$cpid" 2>/dev/null; wait "$cpid" 2>/dev/null
+
+  # The lease must not outlive the record: a child that inherits the lock fd keeps
+  # the shared lock held after the recorded holder is gone, and `park` then refuses
+  # forever with nothing to name.
+  local st="$REPO/skills/shared-flyio-build-server/builder-state.sh"
+  local ldir="$home/state-lock"; rm -rf "$ldir"; mkdir -p "$ldir"
+  BUILDER_STATE_DIR="$ldir" sh "$st" lease probe -- sleep 30 >/dev/null 2>&1 &
+  local shellpid=$!
+  for _ in $(seq 1 100); do [ -n "$(ls "$ldir/leases" 2>/dev/null)" ] && break; done
+  for _ in $(seq 1 100); do pgrep -P "$shellpid" -x sleep >/dev/null 2>&1 && break; done
+  local child; child="$(pgrep -P "$shellpid" -x sleep 2>/dev/null | head -1)"
+  for _ in $(seq 1 20); do :; done
+  kill -9 "$shellpid" 2>/dev/null; wait "$shellpid" 2>/dev/null
+  local held=0
+  [ -n "$child" ] && [ -d "/proc/$child" ] \
+    && held="$(ls -l "/proc/$child/fd" 2>/dev/null | grep -c 'lease.lock')"
+  check_eq "the leased child does not inherit the lock fd" "0" "${held:-0}"
+  kill -9 "$child" 2>/dev/null
+}
+
 # ------------------------------------------------------------- resolvers ----
 suite_resolvers() {
   suite resolvers
@@ -595,7 +712,8 @@ main() {
     partial)    suite_partial ;;
     failures)   suite_failures ;;
     resolvers)  suite_resolvers ;;
-    all)        suite_smoke; suite_install; suite_idempotent; suite_partial; suite_failures; suite_resolvers ;;
+    builder)    suite_builder ;;
+    all)        suite_smoke; suite_install; suite_idempotent; suite_partial; suite_failures; suite_resolvers; suite_builder ;;
     *) printf 'unknown suite: %s\n' "$SUITE" >&2; exit 2 ;;
   esac
 

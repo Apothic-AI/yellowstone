@@ -71,6 +71,30 @@ INTERVAL=${IDLE_INTERVAL:-60}
 # a core across a five-minute window, while a build is hundreds of CPU-seconds in
 # that window. 10% keeps a wide margin on both sides.
 IDLE_CPU_RATE_HUNDREDTHS=${IDLE_CPU_RATE_HUNDREDTHS:-10}
+# How long a lease is trusted on its own word with no compile under it. Covers the
+# gap between taking the lease and cargo starting (a couple of seconds), and nothing
+# longer: a lease is a promise a CLIENT makes, so a killed client leaves the promise
+# standing forever -- the holder is a `while read` under sshd whose client is gone,
+# which never sees EOF and never releases. Measured 2026-11-01: one killed wrapper
+# left the box `leased` permanently, `park` refused, and this script's `leased`
+# verdict told the host never to stop, so a machine nobody was using billed all
+# night. Past this grace with no cargo and no churn the lease is stale and must not
+# gate the stop; the box stopping is itself what clears it.
+LEASE_START_GRACE=${LEASE_START_GRACE:-180}
+# A live process set that stops making progress is a WEDGE, not a build.
+#
+# Measured on this box by the dxdb lanes: an orphaned box-side `cargo` parked in
+# `do_wait` on a deadlocked test-binary child, 0.00 load, no churn, for 20-38
+# minutes, with seven lanes queued behind it and nothing able to progress. `procs`
+# alone cannot see that -- it reports `building` for as long as the process lives --
+# so this uses the two signals a wedge cannot produce: work (cumulative CPU) and
+# churn. The window is much longer than IDLE_GRACE on purpose: from inside the box a
+# legitimately sleeping test is indistinguishable from a deadlock, so only a long,
+# unbroken absence of both counts, and a build whose client is still attached (see
+# lease_watched) is never stopped by this rule at all. Killing the child is what
+# releases such a tree -- not any lock -- so nothing here tries to tidy up a build.
+WEDGE_GRACE=${WEDGE_GRACE:-1200}
+WEDGE_FILE=$STATE_DIR/wedge-since
 
 mkdir -p "$STATE_DIR"
 
@@ -99,6 +123,46 @@ log() { printf '%s %s\n' "$(iso)" "$*" >>"$LOG"; }
 # test binary), so it has to measure work.
 cpu_jiffies() {
     awk '/^cpu /{ print $2+$3+$4+$7+$8+$9; exit }' /proc/stat 2>/dev/null || echo 0
+}
+
+# CPU-seconds burned per wall-second, in hundredths of one core, or empty when there
+# is no usable baseline (first sample, no elapsed time, or a sample from a previous
+# boot). Every call UPDATES the stored baseline, so verdict() calls this EXACTLY
+# ONCE per poll and reuses the answer for both decisions. It is taken before the
+# process check because the wedge rule needs a rate while processes are alive; a
+# second sample for the idle decision would then compare against the baseline this
+# same poll had just written, which is elapsed 0, no rate, and a `warmup` answer on
+# every poll forever. Measured on this host: no cargo, no churn, 1% of a core,
+# and the answer was `warmup` for ten seconds straight while the committed version
+# answered `idle` on the same seeds. A negative delta is not clamped to zero -- that
+# reads a freshly booted box as idle, which is the wrong direction for a stop.
+cpu_rate_hundredths() {
+    prev_line=$(cat "$CPU_SAMPLE" 2>/dev/null || echo "")
+    cur=$(cpu_jiffies)
+    cur_ts=$(now)
+    if [ -z "$prev_line" ]; then
+        printf '%s %s\n' "$cur" "$cur_ts" >"$CPU_SAMPLE"
+        return 0
+    fi
+    prev=$(printf '%s' "$prev_line" | awk '{print $1}')
+    prev_ts=$(printf '%s' "$prev_line" | awk '{print $2}')
+    # A baseline with no timestamp is not a baseline, and a box patched on top of an
+    # older one has exactly that file: earlier versions seeded cpu-sample with the
+    # jiffy count alone. Arithmetic on the missing field treats it as 0, so elapsed
+    # becomes the whole epoch (~1.7e9) and a 54-jiffy delta divides down to a rate of
+    # 0 -- which is `idle`, claimed from no evidence at all. Rewrite it properly and
+    # answer `warmup`, the fail-closed direction.
+    if [ -z "$prev" ] || [ -z "$prev_ts" ]; then
+        printf '%s %s\n' "$cur" "$cur_ts" >"$CPU_SAMPLE"
+        return 0
+    fi
+    printf '%s %s\n' "$cur" "$cur_ts" >"$CPU_SAMPLE"
+    elapsed=$(( cur_ts - prev_ts ))
+    [ "$elapsed" -gt 0 ] || return 0
+    delta=$(( cur - prev ))
+    [ "$delta" -ge 0 ] || return 0
+    # Jiffies are USER_HZ (100/s) on Linux, so delta/elapsed is hundredths of a core.
+    printf '%s\n' "$(( delta / elapsed ))"
 }
 
 build_processes() {
@@ -130,6 +194,81 @@ leased() {
     return 0
 }
 
+# Live lease facts from ONE call, as "<recordCount> <youngestAgeSeconds|->".
+#
+# Two different things matter here and they are not interchangeable. `leaseCount`
+# counts lease RECORDS, i.e. builds that can be named; `leased` is a flock probe, and
+# a lock can be held by a child that inherited the fd after its recorded holder died
+# (measured 2026-11-02: `leased: true`, zero records, the lock held by an orphaned
+# `sleep`). Nothing can be named as waiting on that lock, so it must not veto a stop
+# on its own. The YOUNGEST record is what the age rule needs: one fresh build must
+# keep a batch of stale records from looking old.
+lease_facts() {
+    json=$(builder-state status --json 2>/dev/null) || return 1
+    count=$(printf '%s' "$json" | sed -n 's/.*"leaseCount":\([0-9][0-9]*\).*/\1/p')
+    [ -n "$count" ] || return 1
+    youngest=$(printf '%s' "$json" \
+        | grep -o '"started":"[^"]*"' \
+        | sed 's/.*"started":"//; s/"$//' \
+        | while read -r iso; do
+              epoch=$(date -u -d "$iso" +%s 2>/dev/null) || continue
+              printf '%s\n' "$epoch"
+          done \
+        | sort -n | tail -1)
+    if [ -n "$youngest" ]; then
+        printf '%s %s\n' "$count" "$(( $(now) - youngest ))"
+    else
+        printf '%s -\n' "$count"
+    fi
+}
+
+# Seconds this sample has been part of an unbroken no-progress run, starting one if
+# there is none. Boot-clamped for the same reason the idle marker is: a marker left
+# by a previous boot is not evidence about this one.
+wedge_since() {
+    first=$(cat "$WEDGE_FILE" 2>/dev/null || echo "")
+    boot=$(boot_time)
+    if [ -z "$first" ] || [ "$first" -lt "$boot" ]; then
+        first=$(now); printf '%s\n' "$first" >"$WEDGE_FILE"
+    fi
+    printf '%s\n' "$(( $(now) - first ))"
+}
+clear_wedge() { rm -f "$WEDGE_FILE"; }
+
+# Processes running from a compiled test binary (…/target/{debug,release}/deps/…).
+# Deliberately separate from build_processes: `procs` is what `park` refuses on and
+# what the verdict quotes, and a running test is not a compile. This exists because
+# churn is evidence about COMPILATION and says nothing about test execution -- a
+# running test binary writes no files -- so a test tree is the one case where "no
+# CPU and no churn" does not imply "no progress". Measured by dxdb: both of their
+# wedges were `wrapper-…` / `storage_matrix-…` under target/*/deps/ with a `cargo`
+# parent parked in do_wait, a shape indistinguishable from a long legitimate test.
+test_binaries() {
+    for proc in /proc/[0-9]*; do
+        pid=${proc#/proc/}
+        exe=$(readlink "/proc/$pid/exe" 2>/dev/null) || continue
+        case "$exe" in
+            */target/debug/deps/*|*/target/release/deps/*)
+                printf '%s/%s\n' "$(cat "/proc/$pid/comm" 2>/dev/null)" "$pid"
+                ;;
+        esac
+    done
+}
+
+# True when a lease exists that is young enough to be a client still watching its
+# build. Deliberately generous, because the cost of both mistakes is not symmetric:
+# being generous delays stopping a wedge by one WEDGE_GRACE, while being strict can
+# kill a build somebody is attached to. Unreadable lease state counts as watched.
+lease_watched() {
+    facts=$(lease_facts) || return 0
+    count=${facts%% *}
+    age=${facts##* }
+    [ "$count" -gt 0 ] || return 1
+    [ "$age" = "-" ] && return 0
+    [ "$age" -lt "$WEDGE_GRACE" ] && return 0
+    return 1
+}
+
 # A build can be BETWEEN processes -- rsyncing sources, waiting on a fetch, or
 # unpacking a seed -- with no cargo running and CPU near zero. Leases cover the
 # projects that take them, so this is the signal for the ones that do not.
@@ -159,56 +298,81 @@ verdict() {
         echo "no-lease-tool"
         return
     fi
-    if leased; then
+    # One sample per call, used by the wedge check (which needs the rate while
+    # processes exist) and by the idle decision below.
+    rate=$(cpu_rate_hundredths)
+    pids=$(build_processes)
+    if [ -n "$pids" ]; then
+        # Alive processes are `building` -- the direct, observed fact -- unless they
+        # are demonstrably making no progress. A wedge looks exactly like a build to
+        # `procs`, so it needs its own evidence: no CPU work, no churn, nobody
+        # attached, and that state unbroken for WEDGE_GRACE.
+        if [ -n "$rate" ] && [ "$rate" -lt "$IDLE_CPU_RATE_HUNDREDTHS" ] \
+            && [ -z "$(recent_churn)" ] && ! lease_watched; then
+            if [ -n "$(test_binaries)" ]; then
+                # A test binary is running and writing nothing. The box genuinely
+                # cannot tell a sleeping test from a deadlocked one, and the client is
+                # the only thing that can, so this rule declines to judge. dxdb's
+                # `make remote-orphans` lists those trees for a human instead.
+                clear_wedge
+            else
+                wedge_for=$(wedge_since)
+                if [ "$wedge_for" -ge "$WEDGE_GRACE" ]; then
+                    log "wedged: ${pids} alive with cpu rate ${rate}% and no churn for ${wedge_for}s (>= ${WEDGE_GRACE}s); no progress is possible"
+                    echo "wedged"
+                    return
+                fi
+            fi
+        else
+            clear_wedge
+        fi
+        echo "building"
+        return
+    fi
+    clear_wedge
+    facts=$(lease_facts) || facts=""
+    if [ -z "$facts" ]; then
+        # The box cannot say who is building. Fail closed: a stop we cannot justify
+        # is worse than one poll spent running a box nobody is using.
         echo "leased"
         return
     fi
-    pids=$(build_processes)
-    if [ -n "$pids" ]; then
-        echo "building"
-        return
+    lease_count=${facts%% *}
+    lease_age=${facts##* }
+    if [ "$lease_count" -gt 0 ]; then
+        # No compile, but a named build promises one. Either the few seconds between
+        # taking the lease and cargo appearing, or a promise nobody will ever
+        # withdraw. Distinguish them by age, and only pay for a churn scan once the
+        # lease is old enough for the question to matter.
+        if [ "$lease_age" = "-" ] || [ "$lease_age" -lt "$LEASE_START_GRACE" ]; then
+            echo "leased"
+            return
+        fi
+        if [ -n "$(recent_churn)" ]; then
+            # A long build between processes -- seed extraction, a fetch, an rsync.
+            echo "leased"
+            return
+        fi
+        log "stale lease: newest of ${lease_count} is ${lease_age}s old (>= ${LEASE_START_GRACE}s) with no cargo and no churn; not counting it as busy"
+    elif leased; then
+        # The lock is held but no lease record exists, so nothing can be named as
+        # waiting on it. Ignoring it is what turns a stranded lock back into a box
+        # that scales to zero; a real build still shows up in `procs` above.
+        log "unattributable lease lock (0 lease records); not counting it as busy"
     fi
     if [ -n "$(recent_churn)" ]; then
         echo "churning"
         return
     fi
 
-    # Jiffies are USER_HZ (100/s) on Linux, so 100 jiffies = one CPU-second.
-    prev_line=$(cat "$CPU_SAMPLE" 2>/dev/null || echo "")
-    cur=$(cpu_jiffies)
-    cur_ts=$(now)
-    if [ -z "$prev_line" ]; then
-        printf '%s %s\n' "$cur" "$cur_ts" >"$CPU_SAMPLE"
-        # No baseline yet: do not claim idleness on no evidence.
+    # Reuses the rate sampled at the top of this verdict -- see the note there on
+    # why sampling again here is what made `idle` unreachable.
+    if [ -z "$rate" ]; then
+        # No usable baseline: do not claim idleness on no evidence.
         echo "warmup"
         return
     fi
-    prev=$(printf '%s' "$prev_line" | awk '{print $1}')
-    prev_ts=$(printf '%s' "$prev_line" | awk '{print $2}')
-    printf '%s %s\n' "$cur" "$cur_ts" >"$CPU_SAMPLE"
-
-    elapsed=$(( cur_ts - prev_ts ))
-    if [ "$elapsed" -le 0 ]; then
-        echo "warmup"
-        return
-    fi
-    delta=$(( cur - prev ))
-    if [ "$delta" -lt 0 ]; then
-        # The counter is monotonic only for the life of one boot. A negative delta
-        # means the baseline predates this boot, which is no evidence of idleness --
-        # and clamping it to zero (as this used to) reads a freshly booted box as
-        # idle, which is the wrong direction for a stop decision.
-        echo "warmup"
-        return
-    fi
-
-    # CPU-seconds burned per wall-second, in hundredths, compared against the
-    # threshold. $(RATE) of one core busy is enough to count as activity: a
-    # compile, a test, or a link all exceed it, while a sleeping or futex-blocked
-    # process does not (which is the signal load average could not give).
-    # delta jiffies / elapsed seconds = hundredths of a CPU-second per second.
-    rate_hundredths=$(( delta / elapsed ))
-    if [ "$rate_hundredths" -ge "$IDLE_CPU_RATE_HUNDREDTHS" ]; then
+    if [ "$rate" -ge "$IDLE_CPU_RATE_HUNDREDTHS" ]; then
         echo "cpu-active"
         return
     fi
@@ -311,8 +475,10 @@ case "${1:-}" in
 esac
 
 log "watchdog starting (grace=${GRACE}s interval=${INTERVAL}s pid=$$)"
-# Seed the CPU baseline so the first real cycle compares against something.
-cpu_jiffies >"$CPU_SAMPLE"
+# Seed the CPU baseline so the first real cycle compares against something. The
+# timestamp matters as much as the jiffies: a one-field file leaves the next sample
+# no elapsed time to divide by, and the unset field arithmetics to 0.
+printf '%s %s\n' "$(cpu_jiffies)" "$(now)" >"$CPU_SAMPLE"
 while :; do
     one_cycle
     sleep "$INTERVAL"

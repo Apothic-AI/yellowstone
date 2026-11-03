@@ -172,7 +172,13 @@ cmd_lease() {
     flock -s 9
 
     rm -f "$IDLE_FILE"
-    "$@"
+    # `9>&-` closes the lock fd in the CHILD. Without it the command inherits the
+    # descriptor, so the shared lock outlives the process that recorded the lease:
+    # measured 2026-11-02, a killed `builder-state lease` left its `sleep` child
+    # holding /data/state/lease.lock while the record had already been pruned, and
+    # `status` then reported `leased: yes` with no lease to name. An unattributable
+    # lock is worse than no lock -- it blocks every stop and explains nothing.
+    "$@" 9>&-
     rc=$?
 
     audit "lease-end name=$name pid=$$ rc=$rc"
