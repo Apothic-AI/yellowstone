@@ -1,0 +1,29 @@
+{
+  "name": "pi-fleet-hooks",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Fleet-invariant hooks for Pi: never-block enforcement and transient-error retry recovery.",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Apothic-AI/pi-fleet-hooks.git"
+  },
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "hooks"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/nonblock.ts",
+      "./src/transient-error-retry.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": ">=0.99.1"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  }
+}
