@@ -1,0 +1,12 @@
+; DO NOT EDIT (unless you know what you are doing)
+;
+; This subdirectory is a git "subrepo", and this file is maintained by the
+; git-subrepo command. See https://github.com/ingydotnet/git-subrepo#readme
+;
+[subrepo]
+	remote = https://github.com/Apothic-AI/pi-pretty-tui
+	branch = test/composer-selection-on-apothic
+	commit = ec6df5eb676932ec22e8dfcfc5e1fb7e0dc0840f
+	parent = da00e191667cc79888d4b67e92dbafb123496ee7
+	method = merge
+	cmdver = 0.4.9

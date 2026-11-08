@@ -1,0 +1,31 @@
+# extensions/nested-tools.ts
+
+- Status · type · L5-L5 — type Status = "running" | "ok" | "error" | "cancelled";
+- NestedCall · type · L6-L9 — type NestedCall = { id: string; parentId: string; name: string; args: string; status: Status; startedAt?: number; durationMs?: number; output?: string; truncated?: boolean; argsTruncated?: boolean; };
+- NestedSnapshot · type · L10-L10 — type NestedSnapshot = { version: 1; rootId: string; calls: NestedCall[]; incomplete: boolean };
+- safeText · function · L11-L11 — safeText = (value: string)
+- bounded · function · L12-L12 — bounded = (text: string, limit: number)
+- argsText · function · L13-L19 — argsText = (args: any): string
+- recordedArgs · function · L20-L24 — recordedArgs = (value: string): string
+- resultText · function · L25-L39 — resultText = (result: any): string
+- compactArgs · function · L41-L50 — compactArgs = (value: string): string
+- NestedTools · class · L53-L297 — class NestedTools
+- invalidateRender · method · L62-L66 — private invalidateRender(rootId?: string)
+- clearExpansion · method · L70-L70 — clearExpansion()
+- clear · method · L71-L71 — clear()
+- toggle · method · L72-L75 — toggle(key: string, globallyExpanded = false)
+- isExpanded · method · L76-L78 — private isExpanded(key: string, globallyExpanded: boolean): boolean
+- root · method · L79-L85 — root(id: string): string
+- children · method · L86-L88 — children(parentId: string): NestedCall[]
+- count · method · L89-L95 — count(rootId: string): number
+- start · method · L96-L109 — start(event: any)
+- update · method · L110-L126 — update(event: any, finished = false)
+- finish · method · L127-L136 — finish(rootId: string): boolean
+- finishAll · method · L137-L140 — finishAll(): string[]
+- absorb · method · L142-L173 — absorb(rootId: string, records: any, complete = true)
+- snapshot · method · L174-L195 — snapshot(rootId: string): NestedSnapshot | undefined
+- restore · method · L196-L212 — restore(data: any)
+- render · method · L213-L296 — render(owner: any, width: number, theme: any, options: { rootDetails?: boolean } = {}): { lines: string[]; actions: Map<number, string> }
+- detail · function · L233-L247 — detail = (text: string, prefix: string, action?: string)
+- push · function · L234-L237 — push = (line: string)
+- visit · function · L255-L277 — visit = (call: NestedCall, indent: string, last: boolean, depth: number)

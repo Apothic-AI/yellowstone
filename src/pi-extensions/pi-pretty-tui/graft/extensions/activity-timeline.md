@@ -1,0 +1,40 @@
+# extensions/activity-timeline.ts
+
+- ActivityMemberKind · type · L1-L1 — type ActivityMemberKind = "tool" | "thinking" | "update";
+- ActivitySeverity · type · L2-L2 — type ActivitySeverity = "info" | "warning" | "error";
+- ActivityMember · type · L4-L16 — type ActivityMember = { id: string; kind: ActivityMemberKind; toolCallId?: string; toolName?: string; messageKey?: string; thinking?: string; updateKey?: string; updateTitle?: string; updateContent?: string; updateSeverity?: ActivitySeverity; persistent?: boolean; };
+- ActivityGroup · type · L18-L24 — type ActivityGroup = { id: string; members: ActivityMember[]; toolCallIds: string[]; thoughtCount: number; hardBoundarySplit?: boolean; };
+- toolMemberId · function · L26-L26 — toolMemberId = (toolCallId: string)
+- thinkingMemberId · function · L27-L27 — thinkingMemberId = (messageKey: string)
+- updateMemberId · function · L28-L28 — updateMemberId = (updateKey: string)
+- ActivityTimeline · class · L34-L368 — class ActivityTimeline
+- clear · method · L45-L55 — clear(): void
+- boundary · method · L62-L65 — boundary(settled = true): void
+- isSettled · method · L67-L69 — isSettled(groupId: string): boolean
+- ensureCurrentGroup · method · L71-L86 — private ensureCurrentGroup(): ActivityGroup
+- addTool · method · L88-L104 — addTool(toolCallId: string, toolName: string): ActivityMember
+- addThinking · method · L106-L128 — addThinking(messageKey: string, thinking: string): ActivityMember | undefined
+- addUpdate · method · L130-L139 — addUpdate( updateKey: string, title: string, content: string, persistent: boolean, severity: ActivitySeverity = "info", ): ActivityMember | undefined
+- addPendingUpdate · method · L141-L152 — addPendingUpdate( updateKey: string, title: string, content: string, persistent: boolean, severity: ActivitySeverity = "info", ): ActivityMember
+- hasWork · method · L159-L163 — hasWork(group: ActivityGroup | undefined): boolean
+- addUpdateToGroup · method · L165-L178 — addUpdateToGroup( groupId: string, updateKey: string, title: string, content: string, persistent: boolean, severity: ActivitySeverity = "info", ): ActivityMember | undefined
+- addUpdateAfterMember · method · L182-L199 — addUpdateAfterMember( anchorId: string, updateKey: string, title: string, content: string, severity: ActivitySeverity = "info", ): ActivityMember | undefined
+- addStandaloneUpdate · method · L202-L216 — addStandaloneUpdate( updateKey: string, title: string, content: string, severity: ActivitySeverity = "info", ): ActivityMember
+- appendUpdate · method · L218-L240 — private appendUpdate( group: ActivityGroup, updateKey: string, title: string, content: string, persistent: boolean, severity: ActivitySeverity = "info", ): ActivityMember
+- currentGroup · method · L242-L244 — currentGroup(): ActivityGroup | undefined
+- groups · method · L246-L248 — groups(): ActivityGroup[]
+- group · method · L250-L252 — group(groupId: string): ActivityGroup | undefined
+- member · method · L254-L256 — member(memberId: string): ActivityMember | undefined
+- groupForMember · method · L258-L261 — groupForMember(memberId: string): ActivityGroup | undefined
+- memberForTool · method · L263-L266 — memberForTool(toolCallId: string): ActivityMember | undefined
+- memberForThinking · method · L268-L271 — memberForThinking(messageKey: string): ActivityMember | undefined
+- memberForUpdate · method · L273-L276 — memberForUpdate(updateKey: string): ActivityMember | undefined
+- discardUpdate · method · L279-L294 — discardUpdate(updateKey: string): void
+- removeUpdate · method · L301-L352 — removeUpdate(updateKey: string): boolean
+- groupForTool · method · L354-L357 — groupForTool(toolCallId: string): ActivityGroup | undefined
+- groupForThinking · method · L359-L362 — groupForThinking(messageKey: string): ActivityGroup | undefined
+- groupForUpdate · method · L364-L367 — groupForUpdate(updateKey: string): ActivityGroup | undefined
+- assistantMessageKey · function · L370-L377 — assistantMessageKey = (message: any): string
+- thinkingText · function · L379-L386 — thinkingText = (message: any): string
+- visibleAssistantText · function · L388-L393 — visibleAssistantText = (message: any): boolean
+- assistantTerminalState · function · L395-L396 — assistantTerminalState = (message: any): boolean

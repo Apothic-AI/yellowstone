@@ -1,0 +1,220 @@
+# extensions/index.ts
+
+- PrettyTuiMode · type · L57-L57 — type PrettyTuiMode = "full" | "compact" | "clean";
+- PrettyTuiConfig · type · L62-L69 — type PrettyTuiConfig = { enabled?: boolean; mode?: PrettyTuiMode; /** Legacy location used by the first mode implementation. */ bash?: { mode?: "full" | "compact"; }; };
+- loadConfig · function · L71-L78 — loadConfig = (path: string): PrettyTuiConfig
+- prettyTui · function · L81-L4567 — function prettyTui(pi: ExtensionAPI)
+- errorDescriptor · function · L102-L110 — errorDescriptor = (component: any)
+- errorRun · function · L111-L125 — errorRun = (component: any)
+- same · function · L115-L119 — same = (other: any)
+- runningColor · function · L126-L129 — runningColor = (theme: any, text: string): string
+- LatestActivityStatus · type · L133-L137 — type LatestActivityStatus = { title: string; detail?: string; severity?: TransientStatusSeverity; };
+- TransientStatusSeverity · type · L141-L141 — type TransientStatusSeverity = "status" | "success" | "error";
+- renderLatestActivityStatus · function · L146-L156 — renderLatestActivityStatus = (status: LatestActivityStatus, width: number, theme: any): string
+- refreshLatestActivityWidget · function · L157-L181 — refreshLatestActivityWidget = ()
+- invalidate · method · L176-L176 — invalidate()
+- clearLatestActivityStatus · function · L182-L191 — clearLatestActivityStatus = ()
+- setLatestActivityStatus · function · L192-L202 — setLatestActivityStatus = (status: LatestActivityStatus)
+- copyTranscriptText · function · L203-L218 — copyTranscriptText = (text: string)
+- ResponseFooterData · type · L219-L223 — type ResponseFooterData = { answerEntryId?: string; durationMs: number; outcome: "completed" | "stopped"; };
+- stopWorkingElapsedTimer · function · L228-L231 — stopWorkingElapsedTimer = ()
+- startWorkingElapsedTimer · function · L232-L237 — startWorkingElapsedTimer = ()
+- assistantAnswerText · function · L239-L247 — assistantAnswerText = (message: any): string
+- formatResponseDuration · function · L248-L257 — formatResponseDuration = (durationMs: number): string
+- refreshNestedTools · function · L260-L265 — refreshNestedTools = (id: string)
+- renderCleanGroupSummary · function · L288-L288 — renderCleanGroupSummary = (_lastToolCallId: string, _width: number): string[]
+- withTranscriptMarkdown · function · L294-L301 — withTranscriptMarkdown = <T>(callback: () => T): T
+- transcriptMarkdownActive · function · L302-L302 — transcriptMarkdownActive = ()
+- setCleanGroupMembers · function · L304-L307 — setCleanGroupMembers = (lastToolCallId: string, toolCallIds: string[])
+- isCleanGroupRevealed · function · L309-L316 — isCleanGroupRevealed = (toolCallId: string): boolean
+- cleanThemeForToolCall · function · L318-L341 — cleanThemeForToolCall = (toolCallId: string): any
+- activityGroupOwner · function · L343-L355 — activityGroupOwner = (group: ActivityGroup): string | undefined
+- defaultActivityTheme · function · L358-L380 — defaultActivityTheme = ()
+- activityGroupTheme · function · L382-L398 — activityGroupTheme = (group: ActivityGroup): any
+- activityGroupRevealed · function · L400-L402 — activityGroupRevealed = (group: ActivityGroup): boolean
+- activityGroupCollapsible · function · L407-L408 — activityGroupCollapsible = (group: ActivityGroup): boolean
+- activityMemberPosition · function · L410-L413 — activityMemberPosition = (group: ActivityGroup, member: ActivityMember)
+- renderActivityCollapse · function · L417-L424 — renderActivityCollapse = (group: ActivityGroup, width: number): string
+- withActivityCollapse · function · L425-L432 — withActivityCollapse = ( group: ActivityGroup, member: ActivityMember, width: number, lines: string[], ): string[]
+- activityCollapseClicked · function · L433-L442 — activityCollapseClicked = ( group: ActivityGroup, member: ActivityMember, event: any, row: number, ): boolean
+- refreshActivityGroup · function · L444-L454 — refreshActivityGroup = (group: ActivityGroup): void
+- requestActivityRender · function · L455-L458 — requestActivityRender = (group?: ActivityGroup): void
+- revealActivityGroup · function · L459-L465 — revealActivityGroup = (group: ActivityGroup, ui?: any): void
+- collapseActivityGroup · function · L466-L478 — collapseActivityGroup = (group: ActivityGroup, ui?: any): void
+- activityTreeStyle · function · L480-L502 — activityTreeStyle = ( group: ActivityGroup, member: ActivityMember, width: number, memberTheme?: any, )
+- humanizeCustomType · function · L504-L509 — humanizeCustomType = (value: string): string
+- renderActivityUpdateMarkdown · function · L511-L538 — renderActivityUpdateMarkdown = ( member: ActivityMember, width: number, theme: any, ): string[]
+- activityUpdateStyle · function · L540-L553 — activityUpdateStyle = (member: ActivityMember, theme: any)
+- renderActivityUpdate · function · L555-L581 — renderActivityUpdate = ( group: ActivityGroup, member: ActivityMember, width: number, theme = activityGroupTheme(group), ): string[]
+- renderStandaloneError · function · L583-L602 — renderStandaloneError = (member: ActivityMember, width: number, component?: any): string[]
+- renderPendingActivityUpdate · function · L604-L620 — renderPendingActivityUpdate = (member: ActivityMember, width: number, component?: any): string[]
+- renderActivityUpdateProjection · function · L622-L636 — renderActivityUpdateProjection = ( group: ActivityGroup, member: ActivityMember, width: number, component?: any, ): string[]
+- handleActivityUpdateMouse · function · L638-L659 — handleActivityUpdateMouse = ( group: ActivityGroup, member: ActivityMember, event: any, )
+- saveConfig · function · L661-L665 — saveConfig = (nextConfig: Record<string, any>)
+- saveRenderMode · function · L667-L667 — saveRenderMode = (mode: PrettyTuiMode)
+- saveEnabled · function · L668-L668 — saveEnabled = (enabled: boolean)
+- patchedEditorTopBorder · function · L779-L801 — patchedEditorTopBorder = function (this: any, width: number, hiddenLineCount: number): string
+- indicatorColor · function · L787-L787 — indicatorColor = (text: string)
+- patchedEditorRender · function · L802-L821 — patchedEditorRender = function (this: any, width: number): string[]
+- fitInnerWidth · function · L810-L811 — fitInnerWidth = (line: string)
+- patchedEditorHandleMouse · function · L822-L830 — patchedEditorHandleMouse = function (this: any, event: any)
+- patchedUserMessageRebuild · function · L877-L1035 — patchedUserMessageRebuild = function (this: any)
+- renderMarkdown · function · L904-L906 — renderMarkdown = (width: number): string[]
+- layout · function · L907-L960 — layout = (width: number)
+- border · function · L961-L963 — border = (text: string)
+- render · method · L966-L986 — render(width: number): string[]
+- handleMouse · method · L987-L1019 — handleMouse(event: any)
+- invalidate · method · L1020-L1022 — invalidate()
+- bubbleClickHitTest · function · L1025-L1030 — bubbleClickHitTest = (event: any)
+- customMessageKey · function · L1055-L1063 — customMessageKey = (message: any): string
+- customMessageText · function · L1065-L1073 — customMessageText = (message: any): string
+- hasWorkActivity · function · L1078-L1079 — hasWorkActivity = (group: ActivityGroup | undefined): boolean
+- addPersistentActivityUpdate · function · L1081-L1095 — addPersistentActivityUpdate = (message: any): ActivityMember
+- closeCleanAtNativeCustomBoundary · function · L1098-L1098 — closeCleanAtNativeCustomBoundary = ()
+- closeCleanAtStandaloneAlert · function · L1099-L1099 — closeCleanAtStandaloneAlert = ()
+- releaseSemanticCustomMessage · function · L1105-L1116 — releaseSemanticCustomMessage = (component: any): boolean
+- patchedCustomRender · function · L1117-L1138 — patchedCustomRender = function (this: any, width: number): string[]
+- patchedCustomHandleMouse · function · L1139-L1150 — patchedCustomHandleMouse = function (this: any, event: any)
+- render · function · L1184-L1203 — render = function (this: any, width: number): string[]
+- handleMouse · function · L1204-L1222 — handleMouse = function (this: any, event: any)
+- assistantTerminalUpdate · function · L1251-L1274 — assistantTerminalUpdate = (message: any): ActivityMember | undefined
+- eligibleThinking · function · L1276-L1282 — eligibleThinking = (message: any)
+- refreshGroup · function · L1284-L1287 — refreshGroup = (group: ActivityGroup)
+- patchedSetHideThinkingBlock · function · L1291-L1295 — patchedSetHideThinkingBlock = function (this: any, hide: boolean)
+- renderPanelAssistant · function · L1297-L1367 — renderPanelAssistant = function (this: any, width: number): string[]
+- finishRun · function · L1310-L1313 — finishRun = ()
+- patchedUpdateContent · function · L1369-L1408 — patchedUpdateContent = function (this: any, message: any, isStreaming = this.isStreaming)
+- renderAssistantTranscript · function · L1410-L1529 — renderAssistantTranscript = function (this: any, width: number): string[]
+- appendTail · function · L1451-L1459 — appendTail = (activityLines: string[])
+- patchedRender · function · L1531-L1533 — patchedRender = function (this: any, width: number): string[]
+- handleAssistantTranscriptMouse · function · L1535-L1604 — handleAssistantTranscriptMouse = function (this: any, event: any)
+- patchedHandleMouse · function · L1606-L1608 — patchedHandleMouse = function (this: any, event: any)
+- orderContextEntriesForTranscript · function · L1651-L1672 — orderContextEntriesForTranscript = (entries: any[]): any[]
+- appendRuntimeActivityUpdate · function · L1674-L1714 — appendRuntimeActivityUpdate = ( mode: any, message: string, severity: ActivitySeverity, ): boolean
+- invalidate · method · L1703-L1703 — invalidate()
+- patchedToggleToolOutputExpansion · function · L1739-L1746 — patchedToggleToolOutputExpansion = function (this: any)
+- patchedSetToolsExpanded · function · L1747-L1764 — patchedSetToolsExpanded = function (this: any, expanded: boolean)
+- patchedRenderSessionEntries · function · L1766-L1787 — patchedRenderSessionEntries = function (this: any, entries: any[], options?: any)
+- patchedSwitchTuiMode · function · L1789-L1794 — patchedSwitchTuiMode = function (this: any, ...args: any[])
+- nativeExtensionNotify · function · L1801-L1819 — nativeExtensionNotify = function ( this: any, text: string, severity: ActivitySeverity, ): void
+- patchedShowExtensionNotify · function · L1821-L1831 — patchedShowExtensionNotify = function ( this: any, message: string, type?: "info" | "warning" | "error", )
+- patchedToggleThinkingBlockVisibility · function · L1833-L1850 — patchedToggleThinkingBlockVisibility = function (this: any)
+- patchedShowStatus · function · L1852-L1861 — patchedShowStatus = function (this: any, message: string)
+- patchedShowWarning · function · L1863-L1868 — patchedShowWarning = function (this: any, message: string)
+- patchedShowError · function · L1870-L1875 — patchedShowError = function (this: any, message: string)
+- patchedAddMessageToChat · function · L1880-L1885 — patchedAddMessageToChat = function (this: any, message: any, ...args: any[])
+- patchedMaybeShowCacheMissNotice · function · L1886-L1895 — patchedMaybeShowCacheMissNotice = function (this: any, message: any, ...args: any[])
+- mountActivityUpdate · function · L1900-L1936 — mountActivityUpdate = ( mode: any, group: ActivityGroup, member: ActivityMember, nativeNodes: Component[] = [], after?: Component, ): void
+- invalidate · method · L1924-L1924 — invalidate()
+- flushPendingCacheNotices · function · L1941-L1962 — flushPendingCacheNotices = (toolCallId: string): void
+- patchedAddCacheMissNotice · function · L1965-L2031 — patchedAddCacheMissNotice = function (this: any, miss: any)
+- summaryAtPoint · function · L2150-L2160 — summaryAtPoint = (screen: any, x: number, y: number): boolean
+- interactiveAtPoint · function · L2161-L2175 — interactiveAtPoint = (screen: any, x: number, y: number): boolean
+- visit · function · L2164-L2173 — visit = (box: any): boolean
+- withinTolerance · function · L2176-L2177 — withinTolerance = (press: any, event: any): boolean
+- isUnmodifiedLeftPress · function · L2178-L2179 — isUnmodifiedLeftPress = (event: any): boolean
+- patchedHandleMouseEvent · function · L2181-L2199 — patchedHandleMouseEvent = function (this: any, event: any)
+- patchedHandleSelectionMouseEvent · function · L2200-L2228 — patchedHandleSelectionMouseEvent = function (this: any, event: any)
+- stripTerminalStyles · function · L2268-L2269 — stripTerminalStyles = (value: string): string
+- patchedInvalidate · function · L2271-L2275 — patchedInvalidate = function (this: any)
+- patchedRender · function · L2277-L2325 — patchedRender = function (this: any, width: number): string[]
+- patchedRenderToken · function · L2327-L2503 — patchedRenderToken = function ( this: any, token: any, width: number, nextTokenType?: string, styleContext?: any, ): string[]
+- addHeadingSpacing · function · L2341-L2344 — addHeadingSpacing = (lines: string[])
+- headingStyle · function · L2345-L2345 — headingStyle = (text: string)
+- foregroundLuminance · function · L2346-L2351 — foregroundLuminance = (styled: string): number | undefined
+- whiteStyle · function · L2358-L2358 — whiteStyle = (text: string)
+- frameStyle · function · L2386-L2386 — frameStyle = (text: string)
+- frameBorder · function · L2473-L2475 — frameBorder = (text: string)
+- patchedHandleMouse · function · L2505-L2526 — patchedHandleMouse = function (this: any, event: TuiMouseEvent)
+- patchedRenderList · function · L2573-L2588 — patchedRenderList = function ( this: any, token: any, depth: number, width: number, styleContext?: any, ): string[]
+- textContent · function · L2602-L2606 — textContent = (result: any): string
+- nonEmptyLines · function · L2608-L2609 — nonEmptyLines = (value: string): number
+- readLineRange · function · L2613-L2625 — readLineRange = (offset: unknown, limit: unknown): string
+- parse · function · L2615-L2618 — parse = (value: unknown): number | undefined
+- DisplayValue · type · L2627-L2627 — type DisplayValue = string | (() => string);
+- DisplayRow · type · L2628-L2632 — type DisplayRow = { prefix: DisplayValue; continuation?: DisplayValue; content: DisplayValue; };
+- block · function · L2638-L2658 — block = (rows: DisplayRow[]): Component
+- render · method · L2639-L2656 — render(width: number): string[]
+- invalidate · method · L2657-L2657 — invalidate()
+- ToolStatus · type · L2660-L2660 — type ToolStatus = "running" | "success" | "error";
+- setStatus · function · L2661-L2663 — setStatus = (context: any, status: ToolStatus)
+- callRow · function · L2665-L2678 — callRow = (theme: any, name: string, detail: string, state: any): DisplayRow
+- call · function · L2680-L2681 — call = (theme: any, name: string, detail: string, state: any)
+- writeCall · function · L2683-L2712 — writeCall = (theme: any, name: string, path: string, content: string, expanded: boolean, state: any)
+- editDiffLayout · function · L2716-L2734 — editDiffLayout = (theme: any, diff: string): ((line: string) => DisplayRow)
+- parse · function · L2717-L2717 — parse = (line: string)
+- result · function · L2736-L2776 — result = ( theme: any, summary: string, output = "", expanded = false, error = false, summaryIsStyled = false, outputStyle: (line: string) => string = (line) => theme.fg("dim", line), outputLayout?: (line: string) => DisplayRow, )
+- isError · function · L2782-L2782 — isError = (renderContext: any): boolean
+- partialResult · function · L2784-L2787 — partialResult = (context: any, theme: any, label: string): Component
+- terminalOutputLines · function · L2789-L2815 — terminalOutputLines = (output: string): string[]
+- bashResult · function · L2817-L2853 — bashResult = ( context: any, theme: any, summary: string, output: string, expanded: boolean, status: ToolStatus, ): Component
+- completeStatus · function · L2855-L2859 — completeStatus = (context: any): boolean
+- ToolSummaryGroup · type · L2861-L2868 — type ToolSummaryGroup = { count: number; failed: number; thoughtCount?: number; lastToolCallId: string; toolCallIds?: string[]; activity?: string; };
+- ToolSummaryData · type · L2869-L2877 — type ToolSummaryData = { count?: number; failed?: number; thoughtCount?: number; /** Identifies the last tool component for older single-group entries. */ lastToolCallId?: string; /** All groups from a run, used to restore summaries after reload. */ groups?: ToolSummaryGroup[]; };
+- ToolActivityHold · type · L2878-L2885 — type ToolActivityHold = { toolCallId: string; name: string; until: number; after: string; started: boolean; timer?: ReturnType<typeof setTimeout>; };
+- CleanRunState · type · L2895-L2908 — type CleanRunState = { activeToolCallId?: string; lastCompletedToolCallId?: string; activeToolName?: string; activity?: string; requestRender?: () => void; count: number; failed: number; currentToolCallIds: string[]; activeToolCallIds: Set<string>; groups: ToolSummaryGroup[]; active: boolean; settled: boolean; };
+- clearToolActivityHolds · function · L2919-L2924 — clearToolActivityHolds = ()
+- heldActivity · function · L2926-L2927 — heldActivity = (hold: ToolActivityHold): string
+- scheduleToolActivityRelease · function · L2929-L2947 — scheduleToolActivityRelease = (hold: ToolActivityHold)
+- beginToolActivity · function · L2949-L2969 — beginToolActivity = (toolCallId: string, name: string, started = false)
+- holdToolActivity · function · L2971-L2988 — holdToolActivity = (toolCallId: string, name: string)
+- activityValueForHold · function · L2990-L2995 — activityValueForHold = (toolCallId: string, after: string): DisplayValue
+- liveCleanToolCount · function · L2997-L2998 — liveCleanToolCount = (): number
+- thoughtCountForTool · function · L3000-L3001 — thoughtCountForTool = (toolCallId: string | undefined): number
+- currentCleanActivity · function · L3003-L3012 — currentCleanActivity = (): string
+- projectTool · function · L3029-L3033 — projectTool = (owner: any, width: number, theme: any, mode: "compact" | "full")
+- handleProjectionMouse · function · L3034-L3059 — handleProjectionMouse = (owner: any, projection: ToolProjection, event: any)
+- patchedMarkExecutionStarted · function · L3062-L3078 — patchedMarkExecutionStarted = function (this: any)
+- patchedSetExpanded · function · L3079-L3093 — patchedSetExpanded = function (this: any, expanded: boolean)
+- patchedToolRender · function · L3094-L3213 — patchedToolRender = function (this: any, width: number): string[]
+- patchedToolHandleMouse · function · L3214-L3279 — patchedToolHandleMouse = function (this: any, event: any)
+- finishCleanGroup · function · L3322-L3351 — finishCleanGroup = (activity = cleanRun.activity ?? "done")
+- settleLastCleanGroup · function · L3362-L3372 — settleLastCleanGroup = ()
+- summaryText · function · L3374-L3397 — summaryText = ( count: number, _failed: number, thoughtCount: number, activity = "done", nestedCount = 0, ): string
+- summaryRow · function · L3399-L3435 — summaryRow = ( theme: any, count: number, failed: number, thoughtCount: number, activity: DisplayValue = "done", collapsedDone = false, nestedCount = 0, ): DisplayRow
+- renderActivityGroupSummary · function · L3471-L3534 — renderActivityGroupSummary = ( group: ActivityGroup, width: number, collapsedDone = false, ): string[]
+- fit · function · L3476-L3476 — fit = (lines: string[])
+- live · function · L3483-L3483 — live = ()
+- cleanToolCall · function · L3541-L3603 — cleanToolCall = (theme: any, name: string, toolCallId: string): Component
+- render · method · L3552-L3600 — render(width: number): string[]
+- invalidate · method · L3601-L3601 — invalidate()
+- hiddenToolResult · function · L3605-L3609 — hiddenToolResult = (context: any, options: any, output: string): Component
+- hideCleanTool · function · L3613-L3617 — hideCleanTool = ( toolCallId: string, expanded: boolean, _executionStarted = false, ): boolean
+- useCompactToolView · function · L3619-L3623 — useCompactToolView = (toolCallId: string, expanded: boolean): boolean
+- render · method · L3629-L3661 — render(width: number): string[]
+- handleMouse · method · L3662-L3678 — handleMouse(event: TuiMouseEvent)
+- invalidate · method · L3679-L3679 — invalidate()
+- render · method · L3684-L3717 — render(width: number): string[]
+- invalidate · method · L3718-L3718 — invalidate()
+- messageContentItems · function · L3721-L3722 — messageContentItems = (message: any): any[]
+- messageHasVisibleText · function · L3724-L3729 — messageHasVisibleText = (message: any): boolean
+- restoreCleanSession · function · L3731-L4004 — restoreCleanSession = (ctx: any)
+- rememberGroup · function · L3783-L3800 — rememberGroup = (group: ToolSummaryGroup, entryId?: string)
+- finishGroup · function · L3802-L3828 — finishGroup = ()
+- inferredGroupsOverlapping · function · L3830-L3845 — inferredGroupsOverlapping = (group: ToolSummaryGroup): ToolSummaryGroup[]
+- splitSummaryAtTranscriptBoundaries · function · L3847-L3860 — splitSummaryAtTranscriptBoundaries = (group: ToolSummaryGroup): ToolSummaryGroup[]
+- replaceInferredGroupsWithSummary · function · L3862-L3873 — replaceInferredGroupsWithSummary = ( persistedGroup: ToolSummaryGroup, restoredGroups: ToolSummaryGroup[], )
+- consumeGroupCoveredBySummary · function · L3875-L3891 — consumeGroupCoveredBySummary = (groups: ToolSummaryGroup[])
+- hasVisibleAssistantText · function · L4041-L4042 — hasVisibleAssistantText = (message: any): boolean
+- closeAtAssistantBoundary · function · L4044-L4059 — closeAtAssistantBoundary = (message: any, activity: string): boolean
+- pendingToolCalls · function · L4061-L4064 — pendingToolCalls = (message: any): any[]
+- conciseActivityText · function · L4066-L4072 — conciseActivityText = (value: string): string
+- trackThinkingActivity · function · L4074-L4078 — trackThinkingActivity = (message: any): void
+- trackPendingToolActivity · function · L4080-L4098 — trackPendingToolActivity = (message: any): boolean
+- clearPendingToolActivities · function · L4100-L4110 — clearPendingToolActivities = ()
+- registerStyledTool · function · L4335-L4352 — registerStyledTool = (definition: any)
+- select · function · L4337-L4347 — select = (kind: "renderCall" | "renderResult", args: any[])
+- renderCall · method · L4359-L4363 — renderCall(args: any, theme: any, context: any)
+- renderResult · method · L4364-L4380 — renderResult(toolResult: any, options: any, theme: any, context: any)
+- renderCall · method · L4388-L4401 — renderCall(args: any, theme: any, context: any)
+- renderResult · method · L4402-L4431 — renderResult(toolResult: any, options: any, theme: any, context: any)
+- renderCall · method · L4439-L4443 — renderCall(args: any, theme: any, context: any)
+- renderResult · method · L4444-L4474 — renderResult(toolResult: any, options: any, theme: any, context: any)
+- renderCall · method · L4482-L4493 — renderCall(args: any, theme: any, context: any)
+- renderResult · method · L4494-L4506 — renderResult(toolResult: any, options: any, theme: any, context: any)
+- renderCall · method · L4514-L4519 — renderCall(args: any, theme: any, context: any)
+- renderResult · method · L4520-L4527 — renderResult(toolResult: any, options: any, theme: any, context: any)
+- renderCall · method · L4535-L4538 — renderCall(args: any, theme: any, context: any)
+- renderResult · method · L4539-L4546 — renderResult(toolResult: any, options: any, theme: any, context: any)
+- renderCall · method · L4554-L4557 — renderCall(args: any, theme: any, context: any)
+- renderResult · method · L4558-L4565 — renderResult(toolResult: any, options: any, theme: any, context: any)

@@ -1,0 +1,18 @@
+{
+  "version": "0.21.1",
+  "hosts": [
+    "agents",
+    "antigravity",
+    "claude",
+    "copilot",
+    "gemini",
+    "grok"
+  ],
+  "opts": {
+    "global": true,
+    "mcp": true,
+    "hooks": true,
+    "statusline": true
+  },
+  "at": "2026-10-30T02:40:35.080Z"
+}
