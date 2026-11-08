@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "pi-profile-switch profile definition",
+  "description": "A named profile definition stored in ~/.pi-profile-switch/profiles/<name>.json or <project>/.pi/profiles/<name>.json. Definitions are complete and self-contained: there is no inheritance field, and resource references are names/globs, never copies.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "label": {
+      "type": "string",
+      "description": "Display label in the selector and /profile list."
+    },
+    "description": {
+      "type": "string"
+    },
+    "skills": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Skill names or globs (e.g. \"review\", \"internal-*\") referencing discovered skills."
+    },
+    "extensions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Extension names or globs. Package names, source aliases, loose-file stems, glob patterns, or direct file paths, resolved against discovered extensions."
+    },
+    "mcps": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "MCP server names or globs, discovered by pi-mcp-adapter configuration. Connection details stay in adapter-managed config."
+    },
+    "tools": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Names or globs for non-MCP Pi built-ins and non-MCP extension tools; MCP tools are selected separately with mcp_tools."
+    },
+    "mcp_tools": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[^[*?\\]{}]+$"
+      },
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "pattern": "^[^[*?\\]{}]+$"
+        }
+      },
+      "description": "Per-server tool lists mapping literal MCP server names to arrays of literal pi-mcp-adapter tool selectors. Original and prefixed names can select the same tool; globs are not allowed. An omitted server allows all its tools; an empty list denies all its tools."
+    },
+    "defaultProvider": {
+      "type": "string",
+      "description": "Startup provider for this profile (e.g. \"anthropic\", \"openai\"). Mirrors Pi's settings.defaultProvider."
+    },
+    "defaultModel": {
+      "type": "string",
+      "description": "Startup model ID for this profile. Mirrors Pi's settings.defaultModel."
+    },
+    "defaultThinkingLevel": {
+      "type": "string",
+      "description": "Startup thinking level for this profile. Mirrors Pi's settings.defaultThinkingLevel."
+    },
+    "instructions": {
+      "type": "string",
+      "description": "Appended to Pi's fully built system prompt on every turn."
+    },
+    "subagents": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "defaultModel": { "type": "string", "pattern": "\\S" },
+        "defaultThinking": { "$ref": "#/$defs/thinkingLevel" },
+        "agentOverrides": {
+          "type": "object",
+          "propertyNames": { "pattern": "^(?!\\s)(?!.*\\s$)(?!.*[*?\\[\\]{}]).+$" },
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "model": { "anyOf": [{ "type": "string", "pattern": "\\S" }, { "const": false }] },
+              "thinking": { "anyOf": [{ "$ref": "#/$defs/thinkingLevel" }, { "const": false }] },
+              "description": { "type": "string", "pattern": "\\S" },
+              "advertise": { "type": "boolean" }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "thinkingLevel": {
+      "type": "string",
+      "enum": ["off", "minimal", "low", "medium", "high", "xhigh", "max"]
+    }
+  }
+}

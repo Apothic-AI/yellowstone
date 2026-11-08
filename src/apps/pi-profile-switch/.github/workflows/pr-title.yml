@@ -1,0 +1,92 @@
+# The squash-merge commit on main is the PR title (repository setting), and
+# release-please derives the next version from the types of the commits that
+# land on main. Releasability is gated by the PR head branch name:
+#
+# - feat/* and fix/* branches: the title must be a valid Conventional Commit,
+#   so a release can never be silently swallowed by a malformed or
+#   non-releasable title — the usual failure being `chore: ...` wrapping real
+#   `feat:` work.
+# - Any other branch: merge is allowed with any title, EXCEPT releasable ones
+#   (feat / fix / deps types or a breaking `!` marker). A non-feat/fix branch
+#   can therefore never produce a release. To ship one, rename the branch to
+#   feat/* or fix/* and use a releasable title.
+name: PR title
+
+on:
+  pull_request:
+    # synchronize matters: required checks are tracked per commit, so the title
+    # check must re-report on every new head commit of the PR.
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  lint-pr-title:
+    name: lint-pr-title
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check PR title against branch release gate
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+          BRANCH: ${{ github.head_ref }}
+        run: |
+          set -euo pipefail
+
+          case "$BRANCH" in
+            feat/*|fix/*)
+              pattern='^(feat|fix|deps|docs|style|refactor|perf|test|build|ci|chore|revert)(\([^()]+\))?!?: .+'
+              if ! printf '%s' "$TITLE" | grep -qE "$pattern"; then
+                {
+                  echo "::error::PR title is not a Conventional Commit: \"$TITLE\""
+                  echo
+                  echo "Expected: <type>[(scope)][!]: <summary>"
+                  echo "Types: feat fix deps docs style refactor perf test build ci chore revert"
+                  echo
+                  echo "Examples:"
+                  echo "  feat: add a filter to the profile picker"
+                  echo "  fix(skills): keep unselected skills user-invocable"
+                  echo "  feat!: drop catalog schemaVersion 1"
+                } >&2
+                exit 1
+              fi
+
+              # The regex lives in a variable: an unquoted `)` directly inside
+              # `[[ =~ ]]` is a bash parse error.
+              breaking='^[a-z]+(\([^)]*\))?!: '
+              type=$(printf '%s' "$TITLE" | sed -E 's/^([a-z]+).*/\1/')
+              if [[ "$TITLE" =~ $breaking ]]; then
+                bump="breaking → minor while < 1.0.0 (next release 0.x.0)"
+              elif [[ "$type" == "feat" ]]; then
+                bump="minor → next release 0.x.0"
+              elif [[ "$type" == "fix" || "$type" == "deps" ]]; then
+                bump="patch → next release 0.x.y"
+              else
+                bump="no release (only feat / fix / deps are releasable units)"
+              fi
+
+              echo "OK: $TITLE"
+              echo "release-please: $bump"
+              ;;
+            *)
+              releasable='^(feat|fix|deps)(\([^()]+\))?!?: '
+              breaking='^[a-z]+(\([^()]*\))?!: '
+              if printf '%s' "$TITLE" | grep -qE "$releasable" || [[ "$TITLE" =~ $breaking ]]; then
+                {
+                  echo "::error::Releasable PR title on a non-release branch: \"$TITLE\" (branch: $BRANCH)"
+                  echo
+                  echo "Branches outside feat/* and fix/* never produce a release, so the"
+                  echo "squash-merge title must not be a releasable unit (feat / fix / deps,"
+                  echo "or any breaking '!' marker)."
+                  echo
+                  echo "Either:"
+                  echo "  - retitle with a non-releasable type, e.g. \"docs: ...\", \"ci: ...\", \"chore: ...\""
+                  echo "  - or rename the branch to feat/* or fix/* if this work must ship a release"
+                } >&2
+                exit 1
+              fi
+
+              echo "OK: $TITLE"
+              echo "release-please: no release (branch '$BRANCH' is not feat/* or fix/*)"
+              ;;
+          esac

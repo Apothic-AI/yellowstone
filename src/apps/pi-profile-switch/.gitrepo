@@ -1,0 +1,12 @@
+; DO NOT EDIT (unless you know what you are doing)
+;
+; This subdirectory is a git "subrepo", and this file is maintained by the
+; git-subrepo command. See https://github.com/ingydotnet/git-subrepo#readme
+;
+[subrepo]
+	remote = https://github.com/Apothic-AI/pi-profile-switch
+	branch = main
+	commit = 08d9a89711c4b287b5f9cb030a6febf5f6b8b643
+	parent = 7879efd9b2d9c009753a4f00dea4df3b88bcea4c
+	method = merge
+	cmdver = 0.4.9
