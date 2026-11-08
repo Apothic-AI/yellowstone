@@ -38,6 +38,26 @@ rather than stubbing them, because half of what the tests assert about —
 path — is defined by those binaries. A stub would pass tests the real thing
 fails.
 
+## The conversion gate — host-side, not in the container
+
+```bash
+./test/verify-subrepo-roundtrip.sh
+```
+
+This is the FT-01 completion gate and it is the one test that must **not** run
+in the image. It clones the repository into a throwaway directory and, for every
+`src/**/.gitrepo`, asserts that `git subrepo status` resolves, that the pulled
+commit and branch equal the ones recorded, that the directory has content, and
+that `git subrepo pull` is a no-op — plus a hard count, so a subrepo deleted to
+make the rest pass fails instead of shrinking the gate. It needs the real remote
+(`git ls-remote` against GitHub) and the real subrepo trees, and `.dockerignore`
+excludes `src/` from the image on purpose. A container copy could only prove
+things about a copy.
+
+Run it on a clean tree: it clones what is committed, and it refuses to start if
+the working tree is dirty. That refusal is a feature — a gate that can be run
+over uncommitted work is not describing what ships.
+
 ## Suites
 
 | Suite | What it proves |
