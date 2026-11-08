@@ -22,9 +22,14 @@ cd "$(dirname -- "$0")/.."
 EXPECTED=12
 REPO="$(pwd)"
 
-if [ -n "$(git status --porcelain)" ]; then
+# The canonical checkout is permanently dirty in one file: `.pi/launch.env` is a lane-local
+# launch selector that profile machinery rewrites and nobody commits. Treating that as dirt
+# would make the gate unrunnable exactly where people work, so it is exempt by name — and by
+# name only. Any other modification still fails.
+DIRT="$(git status --porcelain | grep -vx ' M \.pi/launch\.env' || true)"
+if [ -n "$DIRT" ]; then
   echo "fail: working tree is dirty — commit first, the gate clones what is committed" >&2
-  git status --short | head >&2
+  printf '%s\n' "$DIRT" | head >&2
   exit 1
 fi
 
