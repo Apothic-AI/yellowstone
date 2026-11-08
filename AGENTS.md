@@ -11,6 +11,11 @@ what an agent working in *this tree* reads, and it should not be a second copy o
 Role-only instructions, if they are ever needed here, go in `.pi/modes/<role>.json` — `key`
 equal to the fleet mode key (`leader` or `worker`), `promptStrategy: "append"` — and compose
 onto that fleet mode. `.pi/launch.env` carries the launch line:
-`PI_MODE=leader PI_PROFILE=fleet PI_MODE_CONFIRM_PROJECT=1`.
+`PI_MODE=leader PI_PROFILE=leader PI_MODE_CONFIRM_PROJECT=1`. It said `PI_PROFILE=fleet`
+until 2026-11-08; `~/.pi-profile-switch/profiles/` holds `ask`, `leader` and `worker` and no
+`fleet`, so the committed value named a profile this machine cannot resolve. `pil` decides the
+profile from the tab or role and overrides this file — both idle worker lanes here launched as
+`worker` while the file said `leader` — so the line records the project's default rather than
+driving the launch.
 
 Repo notes live with the code: `overlord/AGENTS.md` covers the overlord subproject.
