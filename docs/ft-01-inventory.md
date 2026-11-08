@@ -31,18 +31,18 @@ Each is a real delta we maintain, installed from its own repository.
 
 | Component | Upstream | `apothic*` branch | Checked out | jj | Dirty files | Canonical checkout today |
 |---|---|---|---|---|---|---|
-| pi-pretty-tui | `Apothic-AI/pi-pretty-tui` | `apothic` | `apothic` | yes | 0 | `/home/bitnom/Code/apothic-monorepo-workspace/tooling/pi-pretty-tui` |
-| pi-extensions (supplies `packages/pi-goal`) | `Apothic-AI/pi-extensions` | `apothic` | `apothic` | no | 2 | `/home/bitnom/Code/pi-extensions-apothic` |
-| bizzy | `Apothic-AI/bizzy` | `apothic-main` | `apothic-main` | yes | 0 | `/home/bitnom/Code/apothic-monorepo-workspace/tooling/bizzy` |
-| unblock | `Apothic-AI/unblock` | `apothic-main` | detached `HEAD` | yes | 6 | `/home/bitnom/Code/apothic-monorepo-workspace/tooling/unblock` |
-| pi-rooms | `Apothic-AI/pi-rooms` | **none** | `master` | no | 2 | `/home/bitnom/Code/pi-rooms` |
-| apothic-todo | `Apothic-AI/apothic-todo` | **none** | `main` | no | 0 | `/home/bitnom/Code/apothic-todo` |
-| pi-persist | `Apothic-AI/pi-persist` | **none** | `main` | no | 0 | `/home/bitnom/Code/pi-persist` |
-| herdr-voice-linux | `Apothic-AI/herdr-voice-linux` | **none** | `linux-port` | no | 0 | `/home/bitnom/Code/herdr-voice-linux` |
-| pi-cache-optimizer | `bitnom/pi-cache-optimizer` | **none** | `feat/opencode-cache-stats` | no | 2 | `/home/bitnom/Code/pi-cache-optimizer` |
-| pi-fleet-hooks | `Apothic-AI/pi-fleet-hooks` | **none** | `master` | no | 0 | `/home/bitnom/Code/pi-fleet-hooks` |
-| pi-modes (in `packages/`) | `Apothic-AI/pi-extensions-1` | `origin/apothic-main` (no local) | `feat/same-key-append-composition` | no | 54 | `/home/bitnom/Code/apothic-pi-extensions` |
-| pi-profile-switch (`pil`) | `Apothic-AI/pi-profile-switch` | **none** | `main` | no | 4 | `/home/bitnom/Code/pi-profile-switch` |
+| pi-pretty-tui | `Apothic-AI/pi-pretty-tui` | `apothic` | `apothic` | yes | 0 | `~/Code/apothic-monorepo-workspace/tooling/pi-pretty-tui` |
+| pi-extensions (supplies `packages/pi-goal`) | `Apothic-AI/pi-extensions` | `apothic` | `apothic` | no | 2 | `~/Code/pi-extensions-apothic` |
+| bizzy | `Apothic-AI/bizzy` | `apothic-main` | `apothic-main` | yes | 0 | `~/Code/apothic-monorepo-workspace/tooling/bizzy` |
+| unblock | `Apothic-AI/unblock` | `apothic-main` | detached `HEAD` | yes | 6 | `~/Code/apothic-monorepo-workspace/tooling/unblock` |
+| pi-rooms | `Apothic-AI/pi-rooms` | **none** | `master` | no | 2 | `~/Code/pi-rooms` |
+| apothic-todo | `Apothic-AI/apothic-todo` | **none** | `main` | no | 0 | `~/Code/apothic-todo` |
+| pi-persist | `Apothic-AI/pi-persist` | **none** | `main` | no | 0 | `~/Code/pi-persist` |
+| herdr-voice-linux | `Apothic-AI/herdr-voice-linux` | **none** | `linux-port` | no | 0 | `~/Code/herdr-voice-linux` |
+| pi-cache-optimizer | `bitnom/pi-cache-optimizer` | **none** | `feat/opencode-cache-stats` | no | 2 | `~/Code/pi-cache-optimizer` |
+| pi-fleet-hooks | `Apothic-AI/pi-fleet-hooks` | **none** | `master` | no | 0 | `~/Code/pi-fleet-hooks` |
+| pi-modes (in `packages/`) | `Apothic-AI/pi-extensions-1` | `origin/apothic-main` (no local) | `feat/same-key-append-composition` | no | 54 | `~/Code/apothic-pi-extensions` |
+| pi-profile-switch (`pil`) | `Apothic-AI/pi-profile-switch` | **none** | `main` | no | 4 | `~/Code/pi-profile-switch` |
 
 Twelve repositories. Five carry an `apothic*` branch (`pi-pretty-tui`, `pi-extensions`,
 `bizzy`, `unblock`, and `pi-extensions-1` — the last only as `origin/apothic-main`, with no
@@ -197,7 +197,7 @@ the measurement. Four of its decisions shaped the entries above:
 8. **The herdr plugin manifest is short one plugin, and it is the one that runs unpublished
    code.** `herdr/plugins.toml` declares 14 plugins; `~/.config/herdr/plugins.json` has 15. The
    missing one is `pi-rooms`, which is the rooms popup, and it is *link*-installed from
-   `/home/bitnom/Code/pi-rooms/.worktrees/c2/plugin` — the `task/c2` worktree, head `856a8fb`,
+   `~/Code/pi-rooms/.worktrees/c2/plugin` — the `task/c2` worktree, head `856a8fb`,
    which is on no remote. Two consequences: a machine built from this repo has no rooms popup
    at all, and the one that runs here is the only plugin in the fleet executing a branch that
    was never published. Note the two pi-rooms *surfaces* have different sources — the pi

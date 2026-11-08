@@ -1,0 +1,14 @@
+# What the test image does not need.
+#
+# `test/run.sh` builds with the repository root as its context and the Dockerfile
+# copies the whole context to /repo. Two directories dominate that:
+#
+#   src/   ~125 MB of other repositories' trees at pinned commits (git subrepo)
+#   .git/  the whole history
+#
+# Neither is used by any suite: the installer tests read scripts/, pi/, herdr/,
+# skills/ and home/, and no suite runs a git command. Leaving them in turns a
+# small build into a 200 MB transfer to the daemon on every `test/run.sh`.
+.git
+src
+node_modules
