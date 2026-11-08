@@ -1,0 +1,224 @@
+use crate::app::AppMsg;
+use crate::protocol::{Card, ViewMessage};
+use relm4::gtk;
+use std::collections::{HashMap, HashSet};
+use std::io::{BufRead, BufReader};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+/// Colour definitions used until the controller reports what Ghostty is showing.
+const FALLBACK_DEFINITIONS: &str = concat!(
+    "@define-color pi_background #1e2326;\n",
+    "@define-color pi_foreground #d3c6aa;\n",
+    "@define-color pi_accent #7fbbb3;\n",
+    "@define-color pi_thinking #7fbbb3;\n",
+    "@define-color pi_tool #dbbc7f;\n",
+    "@define-color pi_waiting #e69875;\n",
+    "@define-color pi_success #a7c080;\n",
+    "@define-color pi_error #e67e80;\n",
+);
+
+thread_local! {
+    static THEME_PROVIDER: gtk::CssProvider = gtk::CssProvider::new();
+}
+
+/// The stylesheet derives every shade from a handful of named colours, so following the terminal's
+/// theme is a matter of redefining those names and reloading one provider.
+#[allow(deprecated)]
+pub fn install_css() {
+    apply_theme(FALLBACK_DEFINITIONS);
+    THEME_PROVIDER.with(|provider| {
+        if let Some(display) = gtk::gdk::Display::default() {
+            gtk::style_context_add_provider_for_display(
+                &display,
+                provider,
+                gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+            );
+        }
+    });
+}
+
+/// Replace the active colour definitions. Definitions must sit in the same provider as the rules
+/// that reference them, so both are loaded together.
+#[allow(deprecated)]
+pub fn apply_theme(definitions: &str) {
+    let css = format!("{definitions}\n{}", include_str!("style.css"));
+    THEME_PROVIDER.with(|provider| provider.load_from_data(&css));
+}
+
+/// Read controller messages from stdin on their own thread. The thread is detached on purpose: it
+/// lives exactly as long as stdin, and on EOF it reports the parent gone, which closes the panel.
+pub fn start_input_reader(sender: relm4::Sender<AppMsg>) {
+    let reader_sender = sender.clone();
+    let spawned = std::thread::Builder::new()
+        .name("panel-input".into())
+        .spawn(move || read_input(reader_sender));
+    match spawned {
+        Ok(handle) => drop(handle),
+        Err(error) => {
+            let _ = sender.send(AppMsg::InputError(format!(
+                "could not start the panel input reader: {error}"
+            )));
+            let _ = sender.send(AppMsg::ParentGone);
+        }
+    }
+}
+
+fn read_input(sender: relm4::Sender<AppMsg>) {
+    for line in BufReader::new(std::io::stdin()).lines() {
+        match line {
+            Ok(line) if !line.trim().is_empty() => {
+                consume_line(&sender, &line);
+            }
+            Ok(_) => {}
+            Err(error) => {
+                let _ = sender.send(AppMsg::InputError(format!("panel input failed: {error}")));
+                break;
+            }
+        }
+    }
+    let _ = sender.send(AppMsg::ParentGone);
+}
+
+fn consume_line(sender: &relm4::Sender<AppMsg>, line: &str) {
+    let value = match serde_json::from_str::<serde_json::Value>(line) {
+        Ok(value) => value,
+        Err(error) => {
+            let _ = sender.send(AppMsg::InputError(format!(
+                "invalid panel message: {error}"
+            )));
+            return;
+        }
+    };
+    if value.get("protocol").and_then(|p| p.as_u64()) != Some(2) {
+        crate::protocol::reject_protocol(format!(
+            "Native panel private protocol mismatch: expected 2, received {}",
+            value.get("protocol").unwrap_or(&serde_json::Value::Null)
+        ));
+    }
+    match value.get("type").and_then(|kind| kind.as_str()) {
+        Some("view") => match serde_json::from_value::<ViewMessage>(value) {
+            Ok(view) => {
+                let _ = sender.send(AppMsg::View(view));
+            }
+            Err(error) => {
+                let _ = sender.send(AppMsg::InputError(format!("invalid view message: {error}")));
+            }
+        },
+        Some("theme") => {
+            let definitions = value
+                .get("definitions")
+                .and_then(|item| item.as_str())
+                .unwrap_or_default()
+                .to_owned();
+            if definitions.is_empty() {
+                let _ = sender.send(AppMsg::InputError(
+                    "theme message carried no colours".into(),
+                ));
+            } else {
+                let _ = sender.send(AppMsg::Theme(definitions));
+            }
+        }
+        Some("focus-strip") => {
+            let _ = sender.send(AppMsg::FocusStrip(
+                value
+                    .get("revision")
+                    .and_then(|item| item.as_u64())
+                    .unwrap_or(0),
+                value
+                    .get("epoch")
+                    .and_then(|item| item.as_u64())
+                    .unwrap_or(0),
+            ));
+        }
+        Some("hover-grant") => {
+            let _ = sender.send(AppMsg::HoverGrant(
+                value
+                    .get("token")
+                    .and_then(|item| item.as_u64())
+                    .unwrap_or(0),
+                value
+                    .get("epoch")
+                    .and_then(|item| item.as_u64())
+                    .unwrap_or(0),
+                value
+                    .get("request")
+                    .and_then(|item| item.as_u64())
+                    .unwrap_or(0),
+            ));
+        }
+        Some("hover-denied") => {
+            let _ = sender.send(AppMsg::HoverDenied(
+                value
+                    .get("token")
+                    .and_then(|item| item.as_u64())
+                    .unwrap_or(0),
+            ));
+        }
+        Some("collapse") => {
+            let _ = sender.send(AppMsg::Collapse);
+        }
+        Some("activation-result") => {
+            let card_id = value
+                .get("cardId")
+                .and_then(|item| item.as_str())
+                .unwrap_or_default()
+                .to_owned();
+            let ok = value
+                .get("ok")
+                .and_then(|item| item.as_bool())
+                .unwrap_or(false);
+            let message = value
+                .get("message")
+                .and_then(|item| item.as_str())
+                .unwrap_or(if ok {
+                    "Focused Ghostty window."
+                } else {
+                    "Focus failed; nothing moved."
+                })
+                .to_owned();
+            let _ = sender.send(AppMsg::ActivationResult(card_id, ok, message));
+        }
+        Some("jump-result") => {
+            let ok = value
+                .get("ok")
+                .and_then(|item| item.as_bool())
+                .unwrap_or(false);
+            let message = value
+                .get("message")
+                .and_then(|item| item.as_str())
+                .unwrap_or(if ok { "Jumped." } else { "Nothing moved." })
+                .to_owned();
+            let window_id = value
+                .get("windowId")
+                .and_then(|item| item.as_i64())
+                .unwrap_or(-1);
+            let _ = sender.send(AppMsg::JumpResult(window_id, ok, message));
+        }
+        Some(kind) => {
+            let _ = sender.send(AppMsg::InputError(format!(
+                "unsupported panel message: {kind}"
+            )));
+        }
+        None => {
+            let _ = sender.send(AppMsg::InputError("panel message type is required".into()));
+        }
+    }
+}
+
+pub fn duplicate_labels<'a>(cards: impl Iterator<Item = &'a Card>) -> HashSet<String> {
+    let mut counts = HashMap::new();
+    for card in cards {
+        *counts.entry(card.repo_label.clone()).or_insert(0usize) += 1;
+    }
+    counts
+        .into_iter()
+        .filter_map(|(label, count)| (count > 1).then_some(label))
+        .collect()
+}
+
+pub fn now_ms() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64
+}

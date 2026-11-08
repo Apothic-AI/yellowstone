@@ -1,0 +1,109 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import test from "node:test";
+import { fileURLToPath } from "node:url";
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const PUBLISH = path.join(ROOT, ".github", "workflows", "publish.yml");
+const FULL = path.join(ROOT, "scripts", "ci", "full.sh");
+
+function step(workflow, name) {
+  const marker = `      - name: ${name}\n`;
+  const start = workflow.indexOf(marker);
+  assert.notEqual(start, -1, `workflow step not found: ${name}`);
+  const next = workflow.indexOf("\n      - name:", start + marker.length);
+  return workflow.slice(start, next < 0 ? workflow.length : next);
+}
+
+test("publication inspects immutable npm state before either exact publish path", () => {
+  const workflow = fs.readFileSync(PUBLISH, "utf8");
+  const inspect = step(workflow, "Inspect immutable npm publication state");
+  const special = step(workflow, "Publish retained tarball to npm (OIDC + provenance)");
+  const generic = step(workflow, "Publish authoritative generic tarball to npm (OIDC + provenance)");
+  // Inspection runs from the current main tooling checkout, not the frozen
+  // tag scripts, so registry/npm behavior drift cannot block old tags.
+  assert.match(inspect, /release-tooling\/scripts\/release-npm-state\.mjs"?\s+inspect/u);
+  assert.doesNotMatch(inspect, /node \.\/scripts\/release-npm-state\.mjs/u);
+  assert.match(inspect, /--manifest "\$RELEASE_ARTIFACT_MANIFEST_PATH"/u);
+  assert.match(inspect, /--output-env-file "\$GITHUB_ENV"/u);
+  assert.ok(workflow.indexOf(inspect) < workflow.indexOf(special));
+  assert.ok(workflow.indexOf(inspect) < workflow.indexOf(generic));
+});
+
+test("missing bytes publish once, exact bytes are a no-op, and mismatches fail closed", () => {
+  const workflow = fs.readFileSync(PUBLISH, "utf8");
+  for (const name of [
+    "Publish retained tarball to npm (OIDC + provenance)",
+    "Publish authoritative generic tarball to npm (OIDC + provenance)",
+  ]) {
+    const publish = step(workflow, name);
+    assert.match(publish, /case "\$RELEASE_NPM_PUBLICATION_STATE" in/u);
+    assert.match(publish, /absent\)/u);
+    assert.match(publish, /npm publish "\$RELEASE_TARBALL_PATH" --provenance/u);
+    assert.match(publish, /exact\)/u);
+    assert.match(publish, /already contains the exact immutable bytes/u);
+    assert.match(publish, /mismatch\)/u);
+    assert.match(publish, /refusing to overwrite/u);
+    assert.doesNotMatch(publish, /for attempt|sleep 10|release-npm-state\.mjs/u);
+  }
+});
+
+test("durable evidence retention remains reachable after an exact publication no-op", () => {
+  const workflow = fs.readFileSync(PUBLISH, "utf8");
+  const wait = step(workflow, "Wait for exact npm publication").split("\n  retain-github-release-evidence:")[0];
+  assert.match(wait, /release-tooling\/scripts\/release-npm-state\.mjs"?\s+wait/u);
+  assert.match(wait, /--manifest "\$RELEASE_ARTIFACT_MANIFEST_PATH"/u);
+  assert.match(wait, /--deadline-ms 600000/u);
+  assert.doesNotMatch(wait, /if:|continue-on-error:|npm publish/u);
+  assert.equal((workflow.match(/release-npm-state\.mjs"?\s+wait/gu) ?? []).length, 1);
+  for (const name of [
+    "Publish retained tarball to npm (OIDC + provenance)",
+    "Publish authoritative generic tarball to npm (OIDC + provenance)",
+  ]) assert.ok(workflow.indexOf(step(workflow, name)) < workflow.indexOf(wait));
+});
+
+test("evidence retention requires the shared wait job to succeed", () => {
+  const workflow = fs.readFileSync(PUBLISH, "utf8");
+  const retainStart = workflow.indexOf("  retain-github-release-evidence:\n");
+  assert.notEqual(retainStart, -1);
+  const retain = workflow.slice(retainStart);
+  assert.match(retain, /needs: publish-npm/u);
+  assert.match(retain, /needs\.publish-npm\.result == 'success'/u);
+});
+
+test("task-session build outputs exist before the package quality gate validates them", () => {
+  const workflow = fs.readFileSync(PUBLISH, "utf8");
+  // pi-little-helpers declares ./dist/task-session/pi-tool.js in pi.extensions.
+  // Only prepack builds it, and the gate that checks entries exist runs before npm pack.
+  const install = step(workflow, "Install local file dependency dependencies without lock repair");
+  const build = step(workflow, "Build task-session outputs the quality gate validates");
+  const gate = step(workflow, "Run package quality gate");
+  assert.match(build, /working-directory: \$\{\{ env\.RELEASE_PACKAGE_PATH \}\}/u);
+  assert.match(build, /run: npm run --if-present task-session:build/u);
+  assert.ok(workflow.indexOf(install) < workflow.indexOf(build));
+  assert.ok(workflow.indexOf(build) < workflow.indexOf(gate));
+});
+
+test("helpers source peer runtime is installed before tagged-source and package checks", () => {
+  const workflow = fs.readFileSync(PUBLISH, "utf8");
+  const local = step(workflow, "Install local file dependency dependencies without lock repair");
+  const peer = step(workflow, "Install little-helpers source-test peer runtime dependencies");
+  const restored = step(workflow, "Verify dependency installation did not rewrite tagged source");
+  const gate = step(workflow, "Run package quality gate");
+  // The helpers fixture imports sibling source, not the optional npm peer copy.
+  // Its real broker launcher needs that sibling's locked development dependencies.
+  assert.match(peer, /^        if: env\.RELEASE_COMPONENT == 'pi-little-helpers'$/mu);
+  assert.match(peer, /^        working-directory: packages\/pi-peer-messaging$/mu);
+  assert.match(peer, /run: npm ci\s*$/u);
+  assert.doesNotMatch(peer, /continue-on-error|--omit|--production|--ignore-scripts/u);
+  assert.ok(workflow.indexOf(local) < workflow.indexOf(peer));
+  assert.ok(workflow.indexOf(peer) < workflow.indexOf(restored));
+  assert.ok(workflow.indexOf(restored) < workflow.indexOf(gate));
+});
+
+test("root quality gate executes npm state and workflow regression tests", () => {
+  const full = fs.readFileSync(FULL, "utf8");
+  assert.match(full, /node --test \.\/scripts\/release-npm-state\.test\.mjs/u);
+  assert.match(full, /node --test \.\/scripts\/release-npm-workflow\.test\.mjs/u);
+});

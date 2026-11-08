@@ -1,0 +1,196 @@
+---
+summary: "Historical AK6634 continuation checkpoints; use current-status.md and current AK receipts for deployment and lifecycle."
+task_id: 6634
+read_when:
+  - "Resuming AK6634 or inspecting its current verification and owner boundaries."
+---
+
+# AK6634 continuation — 2026-10-10
+
+> **Historical checkpoint report.** Later browser/native/dependency work and
+> owner decisions supersede portions below. Start at [current status](current-status.md)
+> and current AK receipts. Original observations/evidence are preserved.
+
+## Disposition at this checkpoint
+
+The earlier blockers below are dated checkpoint history, not current landing
+status. Package delivery was verified, canonically landed and pushed at
+`cc278d46e1936002af44d4a2a927800fc3a8d11e`; AK evidence **14604–14606** binds
+the resolved installation/audit blockers, actual full root/package gates,
+`land-canonical.sh` receipt, remote-main proof and fresh canonical native-tool
+receiver. All six remote workflows for that delivery commit subsequently passed
+(AK evidence **14621**, superseding the earlier pending-CI observation).
+Pi now references the canonical package, not this retained candidate worktree.
+
+A later operator-authorized documentation cleanup corrects the README's stale
+landing/host-policy statements without changing runtime, host/TypeBox metadata or
+dependency locks. The repair owner's worktree and AK6856 lifecycle remain untouched.
+For the atomic-completion disposition, see
+[the grouped findings register](2026-10-10-atomic-completion.md).
+
+Remaining blocks have scoped AK contracts and active first-class deferrals:
+**AK6870** browser/workstation integration, **AK6871** compiler/dependencies
+and **AK6872** native/transport hardening. Their owner review/resolution target
+is **2026-10-17**. The fourth block, the **AK6873** repair-owner closeout handback,
+was resolved on 2026-10-10. The original AK6856 owner session had closed
+without a handback. Under an explicit operator takeover, AK6856 was then
+completed with `owner_authorization` evidence **14641**. The repair was not
+reapplied. See the register's update section. AK6634 remains open;
+terminal completion is withheld by explicit operator direction. Extraction-only/no-save and text-only Interpreter
+payloads remain intentional limits. None of this asserts zero hidden defects.
+
+## Initial pass authority and custody
+
+Exact task AK6634, session `session-01a1240a-b4dc-740e-883e-860cfcadf581`,
+finite two-hour claim obtained at 04:21Z. Task scope permits only this package and
+`.release-please-config.json` / `.release-please-manifest.json`; it forbids
+`packages/pi-society-orchestrator/**` and
+`packages/pi-workstation-inference-provider/**`. AK has no done contract for this
+task. Its advisory close-check is not completion proof. The controller confirmed
+that terminal completion is the operator's decision.
+
+AK6856 remains another owner's task, pending/unclaimed at inspection. Evidence
+14549 and its package diary describe the already-applied repair. The controller
+confirmed adoption of the repaired candidate as the starting point, not another
+repair application. All six repaired files remain byte-identical to the retained
+AK6856 verification worktree: manifest, lock, README, structure validator, host
+contract test and artifact test. No mutation of that worktree or task lifecycle.
+
+The existing package was scaffolded from `pi-extensions-template`, simple-package
+mode, recorded template commit `9d52639`. Its unchanged `.copier-answers.yml`
+SHA-256 is `d227652ae42a28fafcef5a303ae8c69711783608986915b031bb139d63fc6fe0`.
+No AGENTS/CLAUDE contents were edited. Loader discovery/rendering was inspected
+before retaining the scaffold's package AGENTS.
+
+## Initial candidate reconciliation
+
+Worktree: `softwareco/owned/.pi-candidates/pi-obsidian-clipper-ak6634`.
+Branch: `task/6634-obsidian-clipper`.
+
+The prior package and root release additions were inspected before changes.
+Only the two release files were stashed to allow a fast-forward from `98c653f44`
+to current main `60a66bc57`; the installed package never moved or disappeared.
+Retained stash: `48c096c3010cd2609998e6dd09853620c525c7d5` (not deleted).
+Its manifest application conflicted at the neighbouring `pi-modes` entry; the
+resolution preserves main's `0.6.0` and adds clipper `0.1.0`. The resulting root
+diff contains only the new clipper mapping and version entry.
+
+This continuation does not change runtime implementation, host/TypeBox repair,
+compiler/dependency pins, installed package selection, native engine, provider
+export, browser/profile settings, workstation configuration, services or models.
+The retained compiler remains TypeScript 6.0.3, below the fleet's adopted TS7;
+this is not a compiler migration or dependency-security qualification. The actual
+current package gate did not reject that compiler.
+
+## Initial pass observations
+
+Pinned Node 22.23.3 / npm 12.0.2:
+
+- Package `npm run check`: passed structure/release mapping, host admission,
+  local-link check, lint, typecheck, all 27 test bodies and artifact checks.
+  Packaging included publish **dry-run** only; no publication.
+- Independent direct suite: 27/27 passing, zero skipped bodies.
+- Explicit actual-package `file-budget-audit --root ... --fail`: passed.
+- `git diff --check`: passed before retention.
+- Actual installed native CLI fixture smoke: passed, 114 post-frontmatter body
+  bytes, both synthetic paragraphs, canonical capture properties, `saved:false`.
+- CLI SHA-256 `afa7c1928101f21d7480850cefdabe70c7254c1435c2dc4a691791f5ee94416f`
+  and unchanged native lock SHA-256
+  `6aae2253ad079575339138df86f09651153039bbf0f1d4a8d551065b240d450e` matched
+  the documented preferred artifact.
+- Bounded recursive installed-native permission/ownership inspection found no
+  group/world-writable or non-owner/non-root entries. Three dependency binary
+  symlinks point within the production closure. This is a present-state check,
+  not runtime dependency-closure enforcement or build attestation.
+- Fresh globally configured Pi print commands `help` and `status`: exit 0,
+  no host-copy warning/load error. Status reports the real canonical declaration
+  timestamp `2026-10-04T07:38:07Z` as **stale**, exact `baseline-multimodal`,
+  browser state unknown, live health/availability not probed.
+- A real registered `obsidian_clipper_extract` tool call at 04:27Z extracted
+  inert caller HTML with both unique `AK6634 live tool opening` / `closing`
+  paragraphs and canonical capture metadata. Public URL was metadata only;
+  no page fetch, model POST or vault save was requested. This tests native
+  extraction through the loaded tool, not browser configuration.
+- Adapter npm audit including dev: one low, no moderate/high/critical findings;
+  no blanket security or exploitability claim.
+
+Package-local ignored logs:
+`.scratch/ak6634-current-root-before.log`,
+`.scratch/ak6634-pre-compiler-tests.log`,
+`.scratch/ak6634-pre-compiler-audit.json`,
+`.scratch/ak6634-current-native-smoke.{json,stderr}`,
+`.scratch/ak6634-live-{help,status}.log`, and
+`.scratch/ak6634-root-landing-gate.log`.
+
+## Initial handback obligations and nonblocking inspection findings (04:29Z)
+
+1. **Canonical landing blocked.** `just loop-landing-check` (declared `just ci`)
+   exits 1 at install admission: 38 other package roots lack their local hidden
+   lock/install state in this linked worktree. No root tests/builds start.
+   Host admission itself passes at 1.1.0. No skip variable, copied/symlinked
+   neighbouring install, forbidden-path hydration or gate weakening was used.
+   `scripts/land-canonical.sh` was not called; no canonical mutation or push.
+   An owner-authorized environment-preparation path consistent with the exact
+   task scope is needed before repeating the full landing gate.
+2. **Browser/Interpreter setup is an explicit operator-retained blocker.** The
+   native interview selected package landing if gates pass, with no browser,
+   profile or workstation configuration touch. Current declaration is stale;
+   no owner refresh was requested/performed. Authentication, preflight/host
+   permission and configured use remain unverified. Setup is an incomplete,
+   read-only recipe, not working browser configuration. Save is unsupported.
+3. Independent read-only inspection `dispatch-1791606136564` found no
+   unconditional code blocker. Conditional follow-up: executable ancestry
+   checks do not enforce permissions for every external native dependency.
+   Present installed-closure inspection above is not a general remedy.
+4. That inspection also noted mocked TLS option assertions are not real
+   certificate-handshake proof, and stalled/interrupted HTTPS response tests
+   and native outbound-network observation remain absent. The loaded extraction
+   tool was exercised here; these other test gaps were not silently treated as
+   resolved or turned into a broader certification.
+
+No task completion or AK6856 closeout is inferred from these observations.
+
+## Resumed environment preparation and audit alignment
+
+The controller corrected the first handback's scope interpretation: ignored
+`node_modules` installations in this worktree are scratch; the frozen path scope
+governs tracked edits. Evidence 14564's claim that such installation required a
+scope widening is superseded by that correction, not a continuing blocker.
+AK6634 was reclaimed at 04:35Z with a finite two-hour lease.
+
+Through `heavy-job run --label ak6634-existing-lock-installs --task 6634`, all 38
+missing installations were prepared from their existing locks with exactly
+`npm ci --prefer-offline --ignore-scripts --no-audit --no-fund`. No dependency
+pin, lock, tracked source, canonical installation or repaired clipper file changed.
+Tracked-file SHA-256 checks passed immediately after installation. Installation
+admission now passes for 39 roots; local-link admission passes for 40 roots and
+19 links. The dependency-free root has no lock requiring installation.
+
+Current main `972098f00` was merged into the candidate before validation; its
+one changed upstream reply-draft document explains the later difference from
+the pre-merge hash inventory. `git diff HEAD` remains clean outside the explicitly
+authored audit/evidence documents. Repo-declared `prepare-gate-builds.sh` passed,
+using owner build commands for ignored ASC/orchestrator/little-helpers/telemetry
+outputs, not `prepack` manifest rewrites or service/browser operations.
+
+The hydrated `just loop-landing-check` progressed through installation, root
+checks, isolated ROCS and release-contract checks, then failed
+`scripts/root-doc-alignment.test.mjs:166`, test 5: the engineering audit document
+still reported 39 packages rather than live 40. Live audit classifies clipper
+as `none`, raising that bucket from 8 to 9, with other buckets unchanged.
+
+A native operator interview explicitly authorized adding only
+`docs/project/engineering-review-surfaces.md` to AK6634's allowed paths and
+refreshing that factual projection. AK scope entity version 7 records the
+one-path addition, preserving all other allowed, required and forbidden paths.
+The authored refresh changes only 39→40, 8→9, adds clipper to the `none` bucket
+and dates the refresh. It changes no policy, test or existing package surface.
+The unchanged root/package gates still determine landing permission; this
+refresh and environment preparation are not themselves a passing landing gate.
+Browser setup remains deferred and the six AK6856 repaired files stay unchanged.
+
+Logs: `.scratch/ak6634-installs/` (per-owner installs, subjects and hash inventory),
+`.scratch/ak6634-hydrated-builds.log`, `.scratch/ak6634-hydrated-root-gate.log`,
+and `.scratch/ak6634-engineering-audit.json`. Failed-gate scratch was retained by
+the heavy-job runner at
+`~/.cache/ai-society-scratch/runs/run-1791607072-1dfecb770dbda4c0`.

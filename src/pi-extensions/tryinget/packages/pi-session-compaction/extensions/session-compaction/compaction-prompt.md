@@ -1,0 +1,88 @@
+---
+summary: "What to include"
+read_when:
+  - "Reading this document before changing adjacent package behavior."
+---
+
+# What to include
+
+This summary must be self-contained. Assume little or no recent conversation will remain verbatim after compaction, especially when `keepRecentTokens` is low or `0`.
+
+Use these section headings exactly. Omit a section only if it is truly empty. Prefer concise bullets under each heading.
+
+## Self-contained continuation snapshot
+- Current repo/cwd
+- Current objective
+- Latest explicit user request
+- Current implementation state
+- Current dirty/worktree state
+- Current blocker or risk
+
+## Compaction boundary
+- What older context this summary replaces
+- What, if anything, is expected to remain verbatim
+- Whether this was a split-turn compaction
+
+## Next action
+1. Recommended next action
+2. Why this action fits the current state
+3. First validation step
+4. Follow-up or rollback step
+
+## Constraints and preferences
+- User-stated constraints
+- Operator preferences
+- Scope boundaries
+- Things not to touch
+
+## Work performed
+- Completed changes
+- In-progress changes
+- Files changed and why
+- Files read only if important
+
+## Decisions and rejected paths
+- Decisions made
+- Failed/rejected approaches
+- Do not repeat
+
+## Evidence and verification
+- Commands/tests/checks run
+- Observed results
+- Unverified claims
+- Inferences vs facts
+
+## Valuable discoveries and promotion status
+- Strategic session-only insights that must survive reload, such as subagent findings, deep-review conclusions, many-of-the-greats lenses, operator corrections, owner routes, metrics, falsifiers, and non-authorizations
+- Source for each insight when useful: operator, subagent, deep-review, ASC/self mirror, visible-loop, pi-autoresearch, or other observed runtime surface
+- Owner surface for promotion
+- Whether each insight was promoted, intentionally deferred, or still needs exact promotion action
+- Do not imply this summary or JSONL is durable authority by itself
+
+## Open issues and uncertainties
+- Known unknowns
+- Questions for the operator
+- Risks for the next turn
+
+## Mandatory reading
+- exact/file/path.ts
+- docs/exact-doc.md
+
+## Essential user prompts / commands + arguments used
+- Preserve all essential user prompts, not only the original request.
+- Preserve user prompts that changed goals, constraints, corrections, preferences, decisions, or scope.
+- Preserve slash commands and their arguments.
+- Preserve `/compact ...` custom instructions.
+- Preserve prompts in chronological order when possible.
+- Do not preserve low-value acknowledgements or purely conversational filler.
+
+_Note: the `## Essential user prompts / commands + arguments used` and `## Last assistant message (verbatim)` blocks are appended mechanically after the model summary; do not duplicate them inside the summary body. The last-assistant block keeps the final assistant message verbatim (truncated at 4000 characters) so `keepRecentTokens=0` still preserves the exact latest state._
+
+# Style
+- This is a continuation checkpoint, not a narrative recap.
+- Make the summary self-contained enough to continue with `keepRecentTokens=0`.
+- Preserve exact file paths, commands, errors, symbols, task ids, and user instructions when useful.
+- Do not claim completion without observed evidence.
+- Do not reproduce secrets, tokens, credentials, private keys, or auth material.
+- Do not duplicate the full files-touched manifest; summarize meaning, then rely on the appended managed block.
+- Output only markdown for the summary.

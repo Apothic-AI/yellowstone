@@ -1,0 +1,150 @@
+/**
+summary: "Plans PTX transforms by parsing input, resolving prompt provenance and policy, reading templates, and mapping inferred arguments."
+read_when:
+  - "Changing the end-to-end PTX transform pipeline or any planner status transition."
+*/
+import { readFile } from "node:fs/promises";
+import { buildTransformedCommand } from "./buildTransformedCommand.js";
+import { inferContextArgs } from "./inferContextArgs.js";
+import { mapArgsByUsage } from "./mapArgsByUsage.js";
+import { parseRawCommand, RawCommandParseError } from "./parseRawCommand.js";
+import { parseTemplateArgHints } from "./parseTemplateArgHints.js";
+import { parseTemplatePlaceholders } from "./parseTemplatePlaceholders.js";
+import { resolveTemplatePolicy } from "./ptxPolicyConfig.js";
+import { resolvePromptTemplate } from "./resolvePromptTemplate.js";
+
+function normalizeTemplateCommandOverride(value) {
+  if (!value || typeof value !== "object") return undefined;
+
+  const name = typeof value.name === "string" ? value.name.trim().replace(/^\/+/, "") : "";
+  if (!name) return undefined;
+
+  const normalized = {
+    name,
+    source: "prompt",
+  };
+
+  if (typeof value.description === "string" && value.description.trim().length > 0) {
+    normalized.description = value.description.trim();
+  }
+
+  if (typeof value.path === "string" && value.path.trim().length > 0) {
+    normalized.path = value.path.trim();
+  }
+
+  return normalized;
+}
+
+/**
+ * Build a deterministic transform plan for a raw slash command.
+ */
+export async function planPromptTemplateTransform({
+  pi,
+  ctx,
+  rawText,
+  policyConfig,
+  templateCommandOverride,
+}) {
+  let parsed;
+  try {
+    parsed = parseRawCommand(rawText);
+  } catch (error) {
+    if (error instanceof RawCommandParseError) {
+      return { status: "parse-error", error };
+    }
+    throw error;
+  }
+
+  if (!parsed) {
+    return { status: "not-slash-command" };
+  }
+
+  const normalizedOverride = normalizeTemplateCommandOverride(templateCommandOverride);
+  const templateResolution =
+    normalizedOverride && normalizedOverride.name === parsed.commandName
+      ? {
+          status: "ok",
+          templateCommand: normalizedOverride,
+          matches: [normalizedOverride],
+          prefillableMatches: normalizedOverride.path ? [normalizedOverride] : [],
+          resolution: "override",
+        }
+      : resolvePromptTemplate(pi.getCommands(), parsed.commandName);
+
+  if (templateResolution.status === "ambiguous") {
+    return {
+      status: "template-name-ambiguous",
+      parsed,
+      matches: templateResolution.matches,
+      prefillableMatches: templateResolution.prefillableMatches,
+      resolution: templateResolution.resolution,
+    };
+  }
+
+  if (templateResolution.status !== "ok") {
+    return {
+      status: "non-template-command",
+      parsed,
+    };
+  }
+
+  const templateCommand = templateResolution.templateCommand;
+  const policy = resolveTemplatePolicy(parsed.commandName, policyConfig);
+  if (!policy.allowed) {
+    return {
+      status: "policy-blocked",
+      parsed,
+      templateCommand,
+      policy,
+      resolution: templateResolution.resolution,
+    };
+  }
+
+  if (!templateCommand.path) {
+    return {
+      status: "template-path-missing",
+      parsed,
+      templateCommand,
+      policy,
+      resolution: templateResolution.resolution,
+    };
+  }
+
+  let templateText;
+  try {
+    templateText = await readFile(templateCommand.path, "utf8");
+  } catch (error) {
+    return {
+      status: "template-read-error",
+      parsed,
+      templateCommand,
+      policy,
+      resolution: templateResolution.resolution,
+      error,
+    };
+  }
+
+  const usage = parseTemplatePlaceholders(templateText);
+  const hints = parseTemplateArgHints(templateText);
+  const inferred = await inferContextArgs({
+    pi,
+    ctx,
+    providedArgs: parsed.args,
+  });
+
+  const mappedArgs = mapArgsByUsage(parsed.args, inferred, usage, hints);
+  const transformed = buildTransformedCommand(parsed.commandName, mappedArgs);
+
+  return {
+    status: "ok",
+    parsed,
+    templateCommand,
+    policy,
+    resolution: templateResolution.resolution,
+    usage,
+    hints,
+    inferred,
+    mappedArgs,
+    transformed,
+  };
+}

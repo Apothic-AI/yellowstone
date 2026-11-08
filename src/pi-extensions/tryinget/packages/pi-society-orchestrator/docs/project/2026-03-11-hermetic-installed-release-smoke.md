@@ -1,0 +1,53 @@
+---
+summary: "Bounded plan for replacing the provider/auth-dependent installed-package smoke with a headless installed-runtime harness."
+read_when:
+  - "Implementing the hermetic installed-runtime smoke slice from next_session_prompt.md."
+  - "Reviewing why release-check no longer needs ambient Pi auth or a live provider host for installed-package smoke."
+system4d:
+  container: "Single-slice execution plan for release-smoke hardening."
+  compass: "Keep the installed-package proof while removing avoidable ambient host dependencies."
+  engine: "Install tarball -> load installed extension directly -> drive bounded tool/command smoke in-process."
+  fog: "The main risk is silently downgrading coverage while making the harness more deterministic."
+---
+
+# Hermetic installed release smoke — 2026-03-11
+
+## Scope
+
+Complete only the first bounded pack from `next_session_prompt.md`:
+- make installed-package release smoke more hermetic
+- preserve proof for timeout, truncation, team-mismatch, and package-owned KES behavior
+- remove dependency on ambient Pi auth and real provider execution for this smoke layer
+
+## Acceptance criteria
+
+1. `npm run release:check` still proves an isolated installed-package state rooted in the packed tarball and the target package's local sibling runtime dependencies when they are not yet registry-published.
+2. Installed-package smoke loads the installed extension package, not local source files.
+3. Smoke still proves:
+   - direct dispatch timeout classification
+   - bounded assistant-output truncation behavior
+   - loop/team mismatch fail-closed behavior
+   - a successful kaizen loop emits package-owned `diary/` plus candidate-only `docs/learnings/` output under the true installed package root rather than the operator cwd
+4. Smoke no longer requires `~/.pi/agent/auth.json` or a live provider-backed prompt execution.
+5. README + handoff docs reflect the new harness and the next remaining bounded work.
+
+## Chosen approach
+
+- Keep installed-package proof in an isolated npm prefix plus isolated Pi settings, even when the target package still depends on same-wave local sibling tarballs.
+- Replace real-host prompt-driven smoke with a headless Node harness that:
+  - reads the exact `PACKAGE_SPEC` from isolated Pi settings
+  - unpacks the tarball and verifies the installed global package still matches that packaged content
+  - imports a copy-isolated view of the installed extension entrypoint after artifact-identity proof so TypeScript loading stays deterministic outside `node_modules`
+  - registers tools/commands into a small Pi stub
+  - points runtime env to temporary isolated dependencies
+  - uses a fake `pi` binary for subagent timeout/truncation cases
+  - uses a fake `ak` binary that records/asserts expected evidence-write argv
+  - uses a temporary Dolt prompt-vault fixture for cognitive tool lookup
+- Preserve loop/team mismatch coverage by driving `/agents-team` + `loop_execute` against that installed-artifact harness.
+- Also drive one successful kaizen loop against that same harness while explicitly targeting the true installed package root for KES writes, so the proof shows package-owned KES output materializes under the installed package root instead of the operator cwd.
+
+## Risks / non-goals
+
+- Do not broaden into the unified execution/evidence contract slice yet.
+- Do not change public tool semantics beyond the release-check harness.
+- Do not collapse the proof down to pack-only validation; the goal is still installed-runtime smoke against an isolated installed dependency set.

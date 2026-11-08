@@ -1,0 +1,292 @@
+// ---
+// summary: "defines source TypeScript contracts for session telemetry, broker transport, and runtime compatibility"
+// read_when:
+//   - "changing shared activity-strip types or the interfaces consumed through JSDoc imports"
+// ---
+
+export type SessionState = "idle" | "thinking" | "tool" | "waiting" | "success" | "error";
+
+export interface SessionSnapshot {
+  sessionId: string;
+  publisherId: string;
+  publisherSequence: number;
+  processId: number;
+  terminalKind: "ghostty-surface" | "unbound";
+  terminalKey: string;
+  terminalFamily: string;
+  terminalSurfaceId: string;
+  cardId?: string;
+  publisherCount?: number;
+  publisherIds?: string[];
+  publisherRecordKeys?: string[];
+  publisherSessionIds?: string[];
+  akTasks?: AkTaskChip[];
+  akTaskOverflow?: number;
+  /** Niri window id; for a hidden tab, the window hosting it. */
+  windowId?: number | null;
+  /** Niri workspace `idx`, the number the operator sees, never the internal workspace id. */
+  workspaceIdx?: number | null;
+  placement?: "title" | "host" | "binding";
+  surfaceVisible?: boolean;
+  cwd: string;
+  repoLabel: string;
+  sessionName: string;
+  phase: string;
+  detail: string;
+  assistantPreview: string;
+  toolName: string;
+  toolTarget: string;
+  state: SessionState;
+  turnIndex: number;
+  updatedAt: number;
+  lastEventAt: number;
+  startedAt: number;
+  agentStartedAt: number | null;
+  agentActive: boolean;
+  lastPromptPreview: string;
+  errorMessage: string;
+}
+
+export type AkTaskChipState = "active" | "deferred" | "orphaned";
+
+/** One read-only AK task reference joined onto a terminal card by the native projection. */
+export interface AkTaskChip {
+  id: number;
+  title: string;
+  state: AkTaskChipState;
+}
+
+/** A live-lease task claim parsed from read-only `ak task list` output. */
+export interface AkTaskClaim {
+  id: number;
+  title: string;
+  repo: string;
+  sessionId: string;
+  leaseExpiresAt: number;
+  claimedAt: number;
+}
+
+/** A task with an active deferral parsed from read-only `ak task deferred` output. */
+export interface AkTaskDeferred {
+  id: number;
+  title: string;
+  repo: string;
+}
+
+export interface BrokerSnapshot {
+  generatedAt: number;
+  sessions: SessionSnapshot[];
+}
+
+export type ActivityStripRuntimeState = "starting" | "ready" | "error";
+
+export interface ActivityStripRuntimeStatus {
+  state: ActivityStripRuntimeState;
+  backend?: "native-layer-shell";
+  startedAt: number;
+  readyAt?: number | null;
+  windowVisible?: boolean;
+  displayServer?: "wayland" | "x11" | "headless" | "unknown";
+  windowManager?: string | null;
+  displayCount?: number | null;
+  alignmentMode?: "layer-shell";
+  rendererCardCount?: number;
+  rendererCardIds?: string[];
+  rendererHiddenTabCardCount?: number;
+  surfaceBindingCount?: number;
+  unplacedSurfaceCount?: number;
+  agentTabCount?: number;
+  themeScheme?: "dark" | "light" | "unknown";
+  themeName?: string | null;
+  themeSource?: string | null;
+  themeFingerprint?: string;
+  themeError?: string;
+  agentScanError?: string | null;
+  heightRepairState?: "enabled" | "disabled";
+  heightRepairCount?: number;
+  lastHeightRepairAt?: number;
+  tabInventoryState?: "pending" | "ready" | "failed" | "unavailable" | "disabled";
+  tabInventoryDetail?: string | null;
+  tabInventoryFrameCount?: number;
+  tabInventoryTabCount?: number;
+  tabInventoryProbedAt?: number | null;
+  akTaskState?: "pending" | "ok" | "unavailable" | "disabled";
+  akTaskError?: string | null;
+  akTaskClaimCount?: number;
+  akTaskDeferredCount?: number;
+  /** When the deferral list was last read; it is reused for up to AK_DEFERRED_REFRESH_MS (AK7943). */
+  akTaskDeferredReadAt?: number | null;
+  /** How long that list may be reused (AK_DEFERRED_REFRESH_MS). */
+  akTaskDeferredMaxAgeMs?: number;
+  akTaskOrphanCount?: number;
+  akTaskRenderedCount?: number;
+  rendererVisibilityTransitionCount?: number;
+  controllerPid?: number;
+  panelPid?: number | null;
+  panelExpanded?: boolean;
+  /** Optional observational extension; absent on older controllers, never input/AK authority. */
+  ribbonDiagnostics?: {
+    controllerStartupSourceSha256: string | null;
+    expectedPrivateProtocol: number;
+    panelBuild: {
+      state: string;
+      binarySha256?: string;
+      processStartTicks?: string;
+      privateProtocol?: number | null;
+      receiptedSourceSha256?: string | null;
+    };
+    visibilityReason: string;
+    panelBuildObservedAt?: number | null;
+    focus: string;
+    contextValid: boolean;
+    eligible: boolean;
+    interactionEpoch: number;
+    keyboardAuthorization: "none" | "hover" | "explicit";
+    captureExpiry: string;
+  };
+  clickThrough?: boolean;
+  panelMoveCount?: number;
+  panelActivationCount?: number;
+  panelJumpCount?: number;
+  panelRestartCount?: number;
+  lastMovedCardId?: string | null;
+  warnings?: string[];
+  error?: string | null;
+}
+
+export interface BrokerResponse {
+  ok?: boolean;
+  type?: string;
+  snapshot?: BrokerSnapshot;
+  runtimeStatus?: ActivityStripRuntimeStatus;
+  error?: string;
+}
+
+export interface BrokerClientOptions {
+  expectReply?: boolean;
+  timeoutMs?: number;
+  socketPath?: string;
+}
+
+export interface SessionStoreOptions {
+  staleAfterMs?: number;
+  maxSessions?: number;
+}
+
+export interface ActivityStripBrokerOptions {
+  socketPath?: string;
+  socketDir?: string;
+  store?: {
+    snapshot(): BrokerSnapshot;
+    upsert(session: Partial<SessionSnapshot> | Record<string, unknown>): boolean;
+    remove(sessionId: string, publisherId?: string): boolean;
+  };
+  getRuntimeStatus?: () => ActivityStripRuntimeStatus | undefined;
+  focusSession?: (targetId: string) => Promise<{
+    ok: boolean;
+    error?: string;
+    windowId?: number;
+    presented?: boolean;
+    verified?: boolean;
+  }>;
+  focusStrip?: () => Promise<{ ok: boolean; error?: string }>;
+}
+
+export interface ToolCallDescription {
+  state: "tool" | "waiting";
+  phase: string;
+  detail: string;
+  toolTarget?: string;
+}
+
+export interface ToolResultSummary {
+  state: "thinking" | "error";
+  phase: string;
+  detail: string;
+  errorMessage?: string;
+}
+
+export interface TelemetryPiLike {
+  getSessionName?: () => string | undefined;
+}
+
+export interface SessionStartContextLike {
+  cwd?: string;
+  hasUI?: boolean;
+  ui?: {
+    notify?: (message: string, level?: "info" | "warning" | "error") => void;
+    editor?: (title: string, text: string) => Promise<unknown>;
+  };
+  sessionManager?: {
+    getSessionId?: () => string;
+  };
+}
+
+export interface BeforeAgentStartEventLike {
+  prompt?: string;
+}
+
+export interface TurnStartEventLike {
+  turnIndex?: number;
+}
+
+export interface TurnEndEventLike {
+  turnIndex?: number;
+  message?: unknown;
+}
+
+export interface AssistantMessageEventLike {
+  type?: string;
+  delta?: unknown;
+}
+
+export interface MessageUpdateEventLike {
+  assistantMessageEvent?: AssistantMessageEventLike;
+}
+
+export interface ToolExecutionEventLike {
+  toolName?: string;
+  args?: Record<string, unknown>;
+  partialResult?: unknown;
+  result?: unknown;
+  isError?: boolean;
+}
+
+export interface SessionTelemetryOptions {
+  pi?: TelemetryPiLike;
+  cwd?: string;
+  sessionName?: string;
+  env?: NodeJS.ProcessEnv;
+  stdinIsTTY?: boolean;
+  resolveTerminalIdentity?: (options: {
+    env?: NodeJS.ProcessEnv;
+    hasUI?: boolean;
+    stdinIsTTY?: boolean;
+    ttyPath?: string;
+    processId?: number;
+    ancestorExecutable?: string;
+  }) => {
+    terminalKind: "ghostty-surface" | "unbound";
+    terminalKey: string;
+    terminalFamily: string;
+    terminalSurfaceId: string;
+  };
+  transport?: {
+    publish: (session: SessionSnapshot) => Promise<unknown>;
+    remove: (session: { sessionId: string; publisherId: string }) => Promise<unknown>;
+  };
+}
+
+export interface ActivityStripCompatibilityReport {
+  ok: boolean;
+  backend: string;
+  displayServer: "wayland" | "x11" | "headless" | "unknown";
+  windowManager: string | null;
+  displayCount: number | null;
+  alignmentMode: "layer-shell";
+  primaryDisplayOnly: boolean;
+  clickThroughDefault: boolean;
+  tabInventory?: { available: boolean; detail: string };
+  blockers: string[];
+  warnings: string[];
+}

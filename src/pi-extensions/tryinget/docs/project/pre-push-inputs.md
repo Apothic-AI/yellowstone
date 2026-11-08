@@ -1,0 +1,223 @@
+---
+summary: "Commit-gate input admission, explicit build preparation, and safe shared-checkout landing."
+read_when:
+  - "A pre-push gate reports a toolchain mismatch or stale package install."
+  - "Preparing a clean checkout or gate-required generated outputs."
+---
+
+# Pre-push inputs
+
+## Admission, not automatic machine repair
+
+`npm run quality:pre-push` enters `scripts/ci/full.sh`. Before tests it checks:
+
+1. Exact Node/npm versions from the existing `policy/ci-toolchain-lock.json`.
+2. Authored Pi host pins.
+3. Tracked install roots' lockfiles, installed package names/versions and npm's
+   installed-lock provenance metadata, then existing direct/transitive local links.
+
+A mismatch names its owner and repair; the gate never runs `npm ci` automatically.
+Coordinate explicit installs with live Pi sessions and other test runners: `npm ci`
+removes the existing installation and may run a package's `prepare` script.
+
+Install discovery covers the dependency-free root, `packages/*`, and immediate
+package-group children. Generated manifests, test fixtures, and untracked roots
+are not installation subjects. Dependency-bearing subjects need a tracked v3 lock.
+External `file:` target snapshots in a consumer lock do not override the target's
+own lock. Missing optional dependencies are allowed (including incompatible
+OS/CPU binaries); present optional dependencies must match. Development
+requirements are not optional merely because a production install omitted them.
+
+This is consistency admission, **not** cryptographic verification of installed
+code or complete detection of arbitrary extra files in `node_modules`. Hidden
+locks do not override actual installed versions. CI's existing `PI_SKIP_PACKAGES`
+split also skips the fleet-install preflight, since dedicated package jobs own
+those dependencies; it does not skip toolchain admission.
+
+## Keeping live installs synchronized (warning-only)
+
+Run `bash scripts/install-hooks.sh` from the canonical checkout. It installs
+`post-checkout`, `post-merge`, and `post-rewrite` checks in the tracked hook lane
+or adds only missing post-hook links to the already-enabled UBS chain. Existing
+UBS pre-commit/pre-push bytes and hook-path configuration are preserved. Unknown
+hook directories or occupied post-hook entries are refused, not overwritten.
+If an external hook owner rebuilds its chain, rerun this installer.
+
+Each post hook checks the **current tracked working tree**, even for file-only
+checkouts and rewrites whose commit IDs do not reveal all working-tree changes.
+This deliberately scans after every such operation, not only a historical lock
+hash change. It can report pre-existing drift; it does not claim Git caused it.
+Healthy state is quiet. Stale installs or unavailable checks produce a warning
+but never fail the Git operation. No installs, builds, lock edits, state stamps,
+Pi settings changes, or session reloads occur automatically.
+
+Use `node scripts/package-install-health.mjs` for a focused read-only check. It judges only
+packages that own an install (`node_modules` present) and names the rest as not installed here,
+so it answers "is what this checkout owns consistent" rather than "is every sibling installed".
+`node scripts/agent-doctor.mjs` (also included in `just doctor`) reports the same
+result as `info.installConsistency` in JSON and exits nonzero on inconsistency
+or an unavailable checker. This is separate from Pi install-source provenance;
+`--no-drift` does **not** disable install consistency.
+
+Warnings name affected packages and give shell-quoted `npm ci --prefix ...`
+commands. First reconcile any authored manifest/lock mismatch, select the pinned
+toolchain below, coordinate a pause with live Pi/test readers, then explicitly run
+the selected repair from the checkout root. `npm ci` removes `node_modules` and
+can rebuild `dist` in lifecycle scripts. Reload/restart affected Pi sessions
+following the coordinated sync. The checker retains the existing metadata/version
+consistency boundary; it does not prove installed-code integrity.
+
+The canonical UBS chain may contain absolute canonical-checkout pre-hooks, and
+its relative `.git/ubs-chain-hooks` path does not resolve in linked worktrees.
+This installer does not reinterpret that owner contract. In an isolated worktree,
+use the documented explicit `git -c core.hooksPath=.githooks ...` lane; post hooks
+resolve the active checkout, never the symlink's canonical source directory.
+
+## Moving the canonical checkout (the live Pi runtime)
+
+Pi settings load packages from this checkout's working tree, so any change here changes
+what every new Pi session runs. On 2026-09-27 a `git reset --hard origin/main` brought a
+TypeScript 7 import without its install; no hook runs on reset, and every Pi start failed
+for ~25 minutes (AK6069; design in softwareco/infra/workstation
+`docs/project/2026-09-27-live-runtime-promotion-design.md`).
+
+- `scripts/land-canonical.sh <ref>` moves it: fetch, fast-forward (or `--reset`, refused
+  while tracked files are modified), `npm ci --prefix` for every package whose manifest or
+  lock changed (pinned toolchain via `select-gate-node.sh`), install health for the packages
+  that own an install here, then a Pi smoke
+  (`pi --no-session -p ""`, which loads every extension and calls no model; `--list-models` does not fail on a broken extension). On any failure it moves
+  back with `git reset --keep`, reinstalls the previous versions and smokes again. It prints
+  a JSON receipt. Installs happen because an agent ran it, never because of a Git event.
+
+Install health at landing is decided by **ownership, not by the shape of the diff**: a tracked
+package whose `node_modules` exists owns an install and must agree with its lock, while a
+package this checkout never installed has no state that can be stale and is reported rather
+than failed. This is why a landing no longer has to install every sibling first, and why the
+landing gate cannot be narrowed by what a change happens to touch — an unrelated root or
+`scripts/` change contributes nothing to the rule, so it can neither widen nor skip the check.
+The live-runtime half of the AK6069 invariant is enforced by the smoke, which fails on any
+extension Pi cannot load. The stricter reading is unchanged where it belongs: the build gate
+`scripts/validate-package-installs.mjs` still fails an uninstalled tree, because there absence
+means the tree was not prepared before gating.
+- `.githooks/pre-commit` runs `scripts/commit-install-guard.mjs`: in the canonical checkout
+  only, a commit that stages a package's `package.json` or `package-lock.json` is refused
+  until this checkout's installs satisfy it. Linked worktrees are exempt; drift in packages
+  the commit does not touch stays the post-hooks' warning.
+
+## Toolchain setup (pinned versions)
+
+The pin is Node **22.23.4**, npm **12.0.2**. Do not change the pin merely to admit
+ambient machine drift. A Node distribution may bundle an unsuitable npm.
+
+Gate entry points (`scripts/ci/full.sh`, `scripts/prepare-gate-builds.sh`) source
+`scripts/select-gate-node.sh` before admission. When the ambient `node` differs from
+the pin, it puts an **already-installed** exact Node first on PATH, checking in order
+`PI_GATE_NODE_BIN` and `~/.local/opt/node-v<version>-<platform>/bin/node` (an
+unpacked nodejs.org tarball), and uses a candidate only if its `--version` matches.
+Only `node` is shimmed; npm stays the one on PATH and is still admitted exactly.
+Nothing is downloaded or installed: with no candidate, admission fails as before.
+So after a system Node upgrade a plain `git push` keeps working, provided
+Node 22.23.4 is unpacked under `~/.local/opt` or named by `PI_GATE_NODE_BIN`.
+
+If npm also differs, provision npm 12.0.2 in a separate prefix as CI does; do not
+replace the active shared installation silently. Gate scratch honors
+`PI_EXTENSIONS_TMPDIR`, then `TMPDIR`, before its home-directory fallback.
+
+### Next Node line (advisory)
+
+`nextNodeVersion` in `policy/ci-toolchain-lock.json` (currently **26.9.0**) names the
+line the pin moves to next. The `node-next` workflow runs every package's tests on it
+after each push to `main`; its jobs are `continue-on-error`, so it reports without
+gating. `PI_GATE_NODE_LANE=next` admits that version for such runs only; the commit
+gates force the pinned lane, so a `next` left exported in a shell never admits a push. Move the pin once the next line is
+green here and has reached LTS, changing `nodeVersion`, the workflows, and
+`nextNodeVersion` in one commit (`scripts/workflow-action-pins.test.mjs` enforces
+that only `node-next.yml` runs the next line).
+
+Any pin move, a patch release included, also updates the compatibility canary's exact
+Node lists in that same commit. In
+`scripts/pi-host-compatibility-canary/selected-tests-protocol.mjs`, add the version to
+`SUPPORTED_EVENT_NODE_VERSIONS`, and to `NODE22_DIALECT` when it is a 22.x release (every
+other supported version is read as the Node 26 dialect), but only after observing that it
+emits the same test events as a version already in that dialect. Add it to
+`SUPPORTED_NODE_VERSIONS` in `completion-fixture-closure.mjs`. The canary tests derive their
+version cases from these lists. `scripts/gate-inputs.test.mjs` fails while either list
+refuses the pinned Node, or while this page names another pin. The frozen
+`ADMITTED_NODE_VERSIONS` and `completion-fixture-inputs.json` are not widened by a pin move.
+
+## Tracked file budgets
+
+The root hard-fail audit and package push/CI audits use `--tracked`, selecting
+NUL-delimited Git-index paths rather than walking untracked scratch. Existing
+thresholds and owner-scoped exceptions remain enforced. Missing tracked source
+files fail; symlink targets are not followed. The ordinary advisory/pre-commit
+audit still walks the working tree so newly authored files receive feedback.
+
+This selects **tracked working-tree content**, not immutable commit blobs. Other
+checks also consume working-tree sources. It does not certify that a concurrent
+shared checkout equals the pushed commit. Use the isolated recipe below when
+that distinction matters; these changes do not claim whole-gate hermeticity.
+
+## Source-test prerequisites
+
+A package may declare repo-relative source owners in `policy/test-source-dependencies.json`
+(`version: 1`, `packages: [{path, reason}]`). This is a **test setup** declaration, not an npm
+runtime dependency or release-propagation edge. Use it when integration fixtures import a
+sibling's source and require that owner's development/runtime installation. List all such
+owners explicitly, including their required local `file:` owners. An omitted linked owner
+is refused rather than treating a valid link as proof of its installation. This is not
+automatic discovery of arbitrary source imports.
+
+The root `validate-test-source-dependencies.mjs` checks each declared owner's tracked manifest,
+lock and installed metadata through the existing install validator. Targeted package
+`test`, `pre-push` and `ci` stages run it before tests. Unrelated uninstalled packages do not
+block a selected package. Missing/stale inputs report the consumer → owner edge and an
+explicit `npm ci --prefix` repair; the check never installs, builds or relinks. As with the
+fleet checker, this checks metadata/versions, not installed-code integrity. Existing individual
+Pi-host links remain an explicit host-owned exception; borrowing a foreign package root or
+its whole `node_modules` is refused.
+
+Prepare from the selected checkout's locks after coordinating readers. Installing only the
+consumer does not hydrate source-imported siblings. Little-helpers' exact preparation recipe
+is in [its local engineering guidance](../../packages/pi-little-helpers/docs/engineering.local.md#source-test-prerequisites-in-a-fresh-worktree).
+Its two historical worktree failures were missing ASC and peer-messaging installations, not
+an inherent worktree/host-linking limitation; neither is an accepted failure after preparation.
+
+## Generated outputs: explicit preparation
+
+Before full validation of a fresh checkout, or after relevant source changes:
+
+```sh
+bash scripts/prepare-gate-builds.sh
+npm run quality:pre-push
+```
+
+The preparation command checks toolchain/installs, then invokes only the owner
+builds: ASC `build:runtime`, orchestrator and little-helpers `task-session:build`,
+and telemetry `build:review-runtime`. It does not invoke `prepack`, whose manifest
+rewrites are inappropriate as implicit gate preparation. Existing release checks
+still validate `files[]` and `pi.extensions` outputs; their presence alone does
+not establish freshness. Preparation must be rerun when its inputs change.
+
+**Do not prepare builds under concurrent live readers.** ASC and telemetry delete
+and rebuild `dist/`; use a clean detached checkout for isolated preparation.
+
+## Isolated landing when the shared checkout is busy
+
+Run multi-GiB install/build work through:
+
+```sh
+heavy-job run --label ak5787-gate --task 5787 -- <owned-preparation-command>
+```
+
+Inside that job, create a detached worktree of the exact commit under its
+`TMPDIR`, select the pinned toolchain, run `npm ci` in every tracked install root
+(the root itself remains dependency-free), then run `prepare-gate-builds.sh`.
+Push with `git -c core.hooksPath=.githooks push origin HEAD:main` so the checked-in
+hook actually runs: `.git/ubs-chain-hooks` does not resolve in linked worktrees.
+Never disable hooks. Retain logs and the subject commit, and check main CI.
+
+The registry's explicit `npm run environment:health` lane retains live fleet
+and profile drift checks (AK5788); commit tests use fixtures. Package test-file
+timeouts and broker teardown are retained from AK5789. Report any unrelated gate
+blocker instead of bypassing it.

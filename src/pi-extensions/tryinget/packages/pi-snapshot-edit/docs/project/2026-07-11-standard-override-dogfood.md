@@ -1,0 +1,71 @@
+---
+summary: "Dogfood plan and prior evidence for default guarded standard read/edit ownership."
+read_when:
+  - "Evaluating local standard-tool override behavior."
+  - "Preparing Protocol B live verification."
+system4d:
+  container: "A bounded implementation and live-runtime verification note."
+  compass: "Promote only behavior that survives real tool selection and exact-byte inspection."
+  engine: "Install -> reload -> verify default ownership and host selection -> read/edit disposable file -> inspect."
+  fog: "Mock registration can pass while provider serialization or argument preparation fails live."
+---
+
+# Standard read/edit override dogfood — 2026-07-11
+
+## Current Protocol B command
+
+After installing the package in the intended Pi runtime and reloading, extension loading replaces positively identified built-in `read` and `edit` at `session_start` without changing the host's active-tool selection:
+
+```bash
+pi --no-extensions \
+  -e packages/pi-snapshot-edit/extensions/snapshot-edit.ts \
+  --tools read,edit -p '<scenario>'
+```
+
+Use `PI_SNAPSHOT_EDIT_OVERRIDE=0`, `false`, `off`, or `no` to retain namespaced-only operation. The legacy `PI_SNAPSHOT_EDIT_OVERRIDE=1`, `--snapshot-edit-override`, and `/snapshot-edit override` surfaces remain explicit activation paths and may add `read` and `edit` to the active-tool selection.
+
+When an implicit startup uses a deliberate `--tools` allowlist that omits either built-in owner, the extension keeps host-callable `snapshot_read` / `snapshot_edit` active and does not claim standard names. The explicit environment, flag, and command activation paths still refuse missing built-in owners.
+
+The expected read result is one `revision:<alias>` header plus raw UTF-8 text with no gutters. Standard `edit` uses `{path,base,edits}` with `oldText` replacement or `anchorText` insertion selectors and an optional 1-indexed `occurrence` only when the selector is unique.
+
+Candidate worktrees must report the install command and must not mutate the controller Pi install.
+
+## Protocol B deterministic coverage
+
+Package tests cover:
+
+- namespaced registration, default standard replacement, and all four namespaced-only opt-out values;
+- exact preservation of host active-tool selection during default startup;
+- host-callable namespaced tools under a restricted allowlist that omits built-in `edit`;
+- explicit legacy activation of standard tools;
+- raw token-lean read and edit preview output without line gutters;
+- unique-selector occurrence omission and duplicate occurrence selection;
+- partial-line and multi-line exact selectors;
+- anchored insertion and immutable batch resolution;
+- overlap, shared insertion-point, and replacement-boundary rejection;
+- selector/new-text CRLF normalization with BOM and mode preservation;
+- stale bytes, replaced inode, hard-link, cancellation, and no-op rejection;
+- top-level legacy and resumed line-coordinate reread diagnostics;
+- nested Protocol B `oldText` surviving standard argument preparation;
+- clipboard `pi-clipboard-*` tmpdir placeholders lifted to `ImageContent` on `input`, with outside-tmpdir, symlink-escape, non-image, and opt-out refusals.
+
+## Historical Protocol A dogfood
+
+Before AK #3619, live dogfood exercised numbered reads and line-coordinate edits. It discovered two extension integration failures that remain relevant:
+
+1. Startup override activation must occur at `session_start`; action APIs are not lawful while the extension factory loads.
+2. Unsupported standard reads must fail closed rather than constructing a local reader that could bypass a remote or sandbox owner.
+
+That run also led to positive built-in owner identification and refusal to displace visible non-built-in owners. Current tests apply conflict checks independently to both `read` and `edit`; missing built-ins degrade only implicit restricted startup to namespaced-only operation, while every explicit takeover path still refuses them. Its line-coordinate payloads and line-number output are retired and are not current examples.
+
+## Protocol B live verification
+
+After local installation, three fresh Pi processes ran the guarded standard override with `gpt-5.6-sol`:
+
+1. **Raw duplicate/batch test:** `read` returned `revision:amber` plus raw text with no `N│` gutters. One standard `edit` call replaced occurrence 2 of duplicate `repeat` and inserted `done\n` after unique anchor `tail\n`. Exact output was `alpha\nrepeat\nchosen\ntail\ndone\n`.
+2. **CRLF/BOM test:** standard `read` plus unique-selector `edit` changed `two` to `second`. Exact bytes remained UTF-8 BOM + `one\r\nsecond\r\n`.
+3. **Stale-base test:** standard `read` captured `amber`; `bash` then replaced the file; standard `edit` using `amber` failed with `Stale revision 'amber'`. External bytes remained unchanged and no retry occurred.
+
+The local package was installed from `packages/pi-snapshot-edit`. Raw Pi JSONL and disposable files were deleted after content-free evidence extraction. Reload the controller session to activate Protocol B there; a later reload restores whichever tool owners the runtime selects.
+
+Permanent canonical ownership still belongs in Pi core if arbitrary remote/sandbox operation adapters must be preserved. This package remains a reversible local carrier.

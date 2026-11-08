@@ -1,0 +1,103 @@
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { emitTypeScript } from "../../scripts/emit-typescript.mjs";
+
+const HELPERS_DIR = fileURLToPath(new URL(".", import.meta.url));
+export const PACKAGE_ROOT = path.resolve(HELPERS_DIR, "..", "..");
+const PACKAGE_TMP_ROOT = path.join(PACKAGE_ROOT, ".tmp-test");
+const PROCESS_TEMP_DIRS = new Set();
+process.once("exit", () => {
+  for (const tempDir of PROCESS_TEMP_DIRS) rmSync(tempDir, { recursive: true, force: true });
+});
+
+export function createPackageTempDir(prefix) {
+  mkdirSync(PACKAGE_TMP_ROOT, { recursive: true });
+  const tempDir = mkdtempSync(path.join(PACKAGE_TMP_ROOT, prefix));
+  PROCESS_TEMP_DIRS.add(tempDir);
+  return tempDir;
+}
+
+function linkPackageDependency(tempDir, packageName, packageRoot) {
+  const destination = path.join(tempDir, "node_modules", ...packageName.split("/"));
+  mkdirSync(path.dirname(destination), { recursive: true });
+  symlinkSync(packageRoot, destination, "dir");
+}
+
+export function createTranspiledModuleHarness({
+  prefix,
+  files,
+  linkedPackages = [],
+  moduleStubs = {},
+}) {
+  const tempDir = createPackageTempDir(prefix);
+
+  for (const linkedPackage of linkedPackages) {
+    linkPackageDependency(tempDir, linkedPackage.packageName, linkedPackage.packageRoot);
+  }
+
+  for (const [relativePath, source] of Object.entries(moduleStubs)) {
+    const outputPath = path.join(tempDir, relativePath);
+    mkdirSync(path.dirname(outputPath), { recursive: true });
+    writeFileSync(outputPath, source, "utf8");
+  }
+
+  // Owner-contract constants are generated and imported transitively by both
+  // vaultTypes and vaultSchema. Always project them into isolated harnesses so
+  // individual tests cannot silently depend on the checked-in runtime JS.
+  const generatedContract = "src/generatedPromptVaultContract.ts";
+  const projectedFiles = new Set(files);
+  if (existsSync(path.join(PACKAGE_ROOT, generatedContract))) {
+    projectedFiles.add(generatedContract);
+  }
+
+  const typeScriptFiles = [...projectedFiles].filter((file) => file.endsWith(".ts"));
+  emitTypeScript(
+    typeScriptFiles.map((file) => path.join(PACKAGE_ROOT, file)),
+    tempDir,
+  );
+
+  for (const relativePath of projectedFiles) {
+    const sourcePath = path.join(PACKAGE_ROOT, relativePath);
+    const source = readFileSync(sourcePath, "utf8");
+    const outputPath = path.join(tempDir, relativePath.replace(/\.ts$/, ".js"));
+    mkdirSync(path.dirname(outputPath), { recursive: true });
+
+    if (relativePath.endsWith(".ts")) continue;
+
+    writeFileSync(outputPath, source, "utf8");
+  }
+
+  return {
+    tempDir,
+    async importModule(relativePath) {
+      return import(
+        `${pathToFileURL(path.join(tempDir, relativePath)).href}?t=${Date.now()}-${Math.random()}`
+      );
+    },
+    async importStableModule(relativePath) {
+      return import(pathToFileURL(path.join(tempDir, relativePath)).href);
+    },
+    cleanup() {
+      rmSync(tempDir, { recursive: true, force: true });
+      PROCESS_TEMP_DIRS.delete(tempDir);
+    },
+  };
+}
+
+export async function withTranspiledModuleHarness(options, run) {
+  const harness = createTranspiledModuleHarness(options);
+  try {
+    return await run(harness);
+  } finally {
+    harness.cleanup();
+  }
+}

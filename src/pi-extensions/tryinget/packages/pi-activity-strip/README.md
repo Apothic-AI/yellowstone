@@ -1,0 +1,267 @@
+---
+summary: "Native Niri layer-shell activity ribbon for live Pi sessions."
+read_when:
+  - "Starting work in this package workspace."
+  - "Installing or verifying the Activity Strip in Pi."
+system4d:
+  container: "Monorepo package with a Node telemetry broker/controller and native GTK4 layer-shell panel."
+  compass: "Show exact workspace-local Pi activity without changing normal terminal workflows or mutating compositor configuration."
+  engine: "Pi telemetry -> local broker -> Niri workspace projection -> native layer-shell panel."
+  fog: "Main risks are native ABI availability, stale-session identity, and unverified multi-output behavior."
+---
+
+# @tryinget/pi-activity-strip
+
+A screen-top activity ribbon for the coding agents running in your Ghostty tabs. Pi sessions publish their own telemetry; other terminal agents such as Claude Code are discovered from the process table.
+
+The runtime is Electron-free. A Node controller retains the tested telemetry, identity, ordering, and exact-focus logic; a small Rust/Relm4/GTK4 panel owns rendering and the Wayland layer-shell surface.
+
+## What it does
+
+- auto-starts with interactive Pi TUI sessions
+- shows one card per admitted Ghostty terminal on the focused Niri workspace, including tabs hidden behind another tab of their Ghostty window
+- covers Pi sessions and other terminal agents (Claude Code, Codex, Gemini, Cursor's `agent`, nodecode, angel and more) found in Ghostty tabs
+- restores tiled windows left at the wrong height when its reserved band appears or disappears
+- draws itself in Ghostty's own theme and follows the desktop between light and dark
+- sits on the same gap rhythm and corner radius as tiled windows, rather than as a bar on the screen edge
+- aggregates independent publishers beneath stable terminal cards
+- shows the AK task a session is working on: read-only `ak` output is joined onto cards, clicking the task reference focuses the claiming terminal, and claims that outlive their session or deferred tasks appear as non-clickable badges
+- displays repo, phase, tool, detail, elapsed time, and freshness
+- marks the exact currently focused terminal card and prefixes hidden-tab cards with `⧉`
+- labels each card with its Niri window id (`#43`), so a window an agent or tool names by id can be found on the ribbon
+- keeps monitoring-success cards beside the Activity tile, then active and settled cards
+- expands rich details only on actual pointer hover or explicit keyboard-mode entry
+- supports Left/Right navigation and Shift+Left/Right manual movement
+- focuses the exact matching Ghostty window on click or Enter, presenting a hidden tab first
+- stays up while an agent terminal or a presence app has focus: any Ghostty window (agent or not) and 1Password by default, so a quick password lookup or a plain shell does not make it vanish
+- hides when a browser, Obsidian, or any other app outside that set has focus, and on workspaces without tracked cards
+- teaches its own keyboard shortcut progressively: every card and brand tooltip names it, the window list says what the keyboard would do right now, and keyboard mode shows its key map in the brand block
+- releases its 84px exclusive zone automatically when hidden or crashed
+
+## Architecture
+
+```text
+Pi publisher streams
+  -> Node Unix-socket broker and session store
+  -> exact terminal identity + Niri workspace projection
+  -> versioned NDJSON child protocol
+  -> Rust / Relm4 / GTK4 panel
+  -> wlr-layer-shell top surface with an 84px exclusive zone
+```
+
+The **private controller/panel** NDJSON protocol is now `protocol: 2`; this does not change Pi publisher or broker message envelopes. The controller requires `panelProtocol: 2` in the artifact receipt and checks the actual child readiness/event version before sending any view or command. The panel rejects incompatible input with a diagnostic and exit 1. Separately receipted older overrides therefore fail closed rather than silently misreading ownership claim ids as data revisions. Optional card fields remain additive; incompatible private changes require a version change.
+
+Layer-shell replaces the old floating Electron window and dynamic Niri-config strut helper. The package no longer edits `~/.config/niri/config.kdl`, resets tiled heights, or requires Electron.
+
+The compact surface is 84px tall and sits inset by an 8px margin on the top, left and right, matching the compositor's window gaps, with the same 12px corner radius as tiled windows. It therefore reserves 92px in total. One engaged card expands the surface to at least 276px, taller when its detail rows wrap, while the reservation is unchanged, so detail overlays content without repeatedly resizing tiled windows.
+
+## Supported host
+
+The packaged native artifact currently supports:
+
+- Linux x86_64
+- Wayland
+- a compositor implementing `wlr-layer-shell` (dogfooded on Niri 26.04)
+- GTK4 and gtk4-layer-shell runtime libraries
+
+On Arch Linux:
+
+```bash
+sudo pacman -S gtk4 gtk4-layer-shell
+```
+
+Multi-output replication remains unimplemented. The current surface is single-output and must not be described as multi-monitor complete.
+
+## Installation
+
+```bash
+cd ~/ai-society/softwareco/owned/pi-extensions/packages/pi-activity-strip
+pi install "$PWD"
+```
+
+Reload already-running Pi tabs with `/reload`. New tabs load the package automatically.
+
+## Commands
+
+```bash
+npm run strip:open
+npm run strip:status
+npm run strip:doctor
+npm run strip:snapshot
+npm run strip:fix-top
+npm run strip:stop
+```
+
+Direct CLI:
+
+```bash
+node ./bin/pi-activity-strip.mjs open
+node ./bin/pi-activity-strip.mjs focus-strip
+node ./bin/pi-activity-strip.mjs focus-session <full-pi-session-id>
+node ./bin/pi-activity-strip.mjs status
+node ./bin/pi-activity-strip.mjs doctor
+node ./bin/pi-activity-strip.mjs snapshot
+node ./bin/pi-activity-strip.mjs manifest
+node ./bin/pi-activity-strip.mjs claude-hooks
+node ./bin/pi-activity-strip.mjs stop
+```
+
+`stop` returns once the runtime has exited and released its lock, waiting up to 15 seconds and exiting non-zero if it has not, so `npm run strip:stop && npm run strip:open` restarts cleanly. Pi's `/activity-strip stop` and `/activity-strip-stop` wait the same way. An `open` that finds the lock still held by a runtime that never answers says so instead of timing out silently.
+
+`fix-top` is now a compatibility no-op: layer-shell placement is compositor-owned.
+
+A broker pong alone does not establish overlay readiness. Launcher/startup waiting and CLI
+`status` succeed only with explicit `runtimeStatus.state: ready`. CLI `open` reports unknown
+or starting readiness as non-success without stopping or replacing that live runtime. A ready
+ribbon may correctly be hidden while a non-agent window is focused; visibility is not startup
+readiness. This check does not itself approve the controller/panel artifact pair.
+
+`manifest` is a separate read-only recovery inventory CLI: it includes registry/process observations
+missing from the broker-only `snapshot`, per-link provenance, uncertainty and coverage counts.
+Paths are redacted by default; no transcript body, title or prompt text is emitted. Process-only
+rows are not counted as established session identities. It never starts the ribbon or reopens a
+session. See the [schema, invocation and evidence limits](docs/project/recovery-manifest.md).
+The panel's existing discovery and AK-chip behavior is unchanged.
+
+### Read-only ribbon diagnostics
+
+`status` also explains controller focus eligibility and reserved keyboard authorization
+(`none`, `hover`, `explicit`), flags expansion reports as stale on hidden surfaces, and
+shows sampled panel-PID executable/receipt/protocol hashes. Samples run asynchronously;
+`pending`, unavailable, incompatible and changed-during-observation states are explicit.
+The controller startup-source fingerprint is a source-tree observation, not proof of every
+loaded byte; a matched receipt is integrity metadata, not approval or original-child custody.
+Older controllers report missing diagnostics rather than guessed facts.
+
+This optional broker observation is separate from the recovery `manifest`: it creates no AK
+claim or custody. It emits no typed query, prompt, credential or executable path. A reserved
+grant is not proof of actual capture. Exact expiry remains **not observed** because private
+protocol2 does not report GTK's monotonic deadline; expansion cause is likewise not inferred
+from an expanded bit alone. Nothing in diagnostics authorizes restart, repair or activation.
+
+
+## Keyboard-only entry
+
+Bind a Niri key to the fail-closed CLI entrypoint:
+
+```kdl
+binds {
+    Mod+Shift+A repeat=false allow-inhibiting=false hotkey-overlay-title="Toggle Pi Activity Ribbon keyboard mode" { spawn "/usr/bin/node" "/home/tryinget/ai-society/softwareco/owned/pi-extensions/packages/pi-activity-strip/bin/pi-activity-strip.mjs" "focus-strip"; }
+}
+```
+
+The shortcut enters explicit exclusive keyboard mode (or upgrades an existing hover grab); a second shortcut exits. On entry the card under the pointer is selected, else the focused window's card, else the first card fully in view, so entering never scrolls the row away from what you are looking at. Left/Right wraps through cards, Shift+Left/Right moves the selected card with wraparound, Enter focuses its exact Ghostty terminal and exits, and Escape exits without activation. Space does not activate a card. Hover-and-type navigation is also available below; it does not inherit explicit mode's arrow navigation or ability to jump to unlisted windows. Empty workspaces and click-through mode reject both entry paths.
+
+The ribbon reads the bound chord from the Niri config (`$NIRI_CONFIG`, else `$XDG_CONFIG_HOME/niri/config.kdl`, else `~/.config/niri/config.kdl`), finds the bind that spawns `focus-strip`, and shows it as `Super+Shift+A`; `PI_ACTIVITY_STRIP_HOTKEY` overrides it. If no bind is found, the hints name keyboard mode without inventing a chord. The hints come in three steps, each shown once you are already doing the step before it:
+
+1. **Hovering anything:** card and brand tooltips end with the shortcut (`Super+Shift+A drives the strip from the keyboard`); the brand tooltip also carries the whole key map.
+2. **Hovering the expanded ribbon:** the window list's status line says what the keyboard can do now — `Click or Super+Shift+A to type` before it may capture keys, `Type a name or number · ⏎ go` once it may.
+3. **In keyboard mode:** the brand block shows `⌨ KEYBOARD MODE` and `←→ move · ⏎ open · Esc` where the project and folder normally are, and returns to them on exit.
+
+## Interaction contract
+
+- **Workspace locality:** Niri focus events and workspace list changes trigger immediate reprojection; bounded polling remains a fallback.
+- **Hide/reclaim:** the ribbon is eligible while the focused window on the focused workspace is either exactly one admitted agent card's window or a presence app (`PI_ACTIVITY_STRIP_PRESENCE_APP_IDS`, default every Ghostty window and 1Password). A presence app is a neutral source: the strip stays up, accepts the shortcut and hover typing, and a jump from it is checked against that same window, but no card is claimed as "you are here". Other non-agent focus, missing/ambiguous ownership, or zero cards unmaps the surface and releases its exclusive zone. A controller-reserved hover or explicit keyboard request may preserve eligibility through Niri's transient NULL focused window on that same workspace; a known non-agent focus always revokes it, even if an old panel acknowledgement arrives later. Returning starts compact, unless there is actual pointer hover or a new explicit shortcut. Hiding, losing keyboard ownership, and pointer leave outside explicit keyboard mode clear stale hover, brand, search and keyboard engagement and revoke delayed callbacks.
+- **Crash behavior:** panel lifetime is bound to the Node controller through Linux parent-death signaling and stdin EOF. Unexpected panel exits are restarted with bounded backoff; a dead surface cannot retain an exclusive zone.
+- **Exact focus:** card activation returns to Node, which performs existing fail-closed terminal identity resolution and Niri focus.
+- **Hidden tabs:** a Ghostty window title only names its active tab. A bound surface whose title is not visible is placed through its Ghostty host process: one host window is exact containment; several host windows use the window remembered for that tab. Memory comes from titles seen while the strip runs and from a read-only AT-SPI inventory of tab labels, and is persisted per Niri instance under `~/.pi/agent/state/pi-activity-strip/surface-bindings.json`. A tab whose window has never been observed stays unplaced rather than guessed; `status` reports that count. Activating a hidden-tab card calls the host process's `present-surface` action on the session bus, then focuses the window, and reports success only after the title proves the tab is visible.
+- **Window ids:** agents and tools name windows by their Niri window id (`agent-window` prints `window_id`, continuity receipts carry it). Each card shows that id as a quiet `#43` chip at the start of its footer; a hidden tab has no window of its own, so its chip shows the window hosting it. Hover or keyboard detail adds a `window` row with the workspace number the operator sees, Niri's workspace `idx` and never its internal workspace id, for example `#43 · workspace 2` or `host #43 · workspace 2` for a hidden tab. The tooltip and accessible label name the window too. Off Niri there is no window id, so no chip is drawn.
+- **Agent tabs:** a tab is admitted as an agent when the process owning its terminal is a recognized agent CLI, never on a window title alone, so plain terminal programs are not cards. Claude Code tabs are identified exactly through the per-session scratchpad the process holds open, which yields the session id and the title Claude Code put on the terminal; that title places the tab in its window and is remembered so the tab stays placed once hidden.
+- **AK task references:** cards can show the Agent Kernel task their session is working on. The controller reads the read-only `ak` CLI (`ak task list --status claimed --format json --all --verbose` every 15 seconds, then `ak task deferred --format json --all` at most every 5 minutes, since every AK call holds one workstation-wide lock and the full deferral list held it 3 s of every 15; AK7943) and joins claims by exact Pi session id under the AK5700 claim semantics: only `session-<uuid>` claims count, and an expired lease is vacant custody that renders nothing. Chips sit in the card's footer as bare task numbers (`AK5701`, title in the tooltip and the expanded inspector), one per card with the rest folded into a `+N` count, so the folder name keeps the header. A card whose session holds a live claim shows a clickable chip that reuses the card's own activation, so clicking it focuses the exact Ghostty window of the claiming session, presenting hidden tabs first. Claims whose lease has not lapsed but whose claiming session no longer exists ("claim outlives session") and tasks carrying an active deferral are joined by task repo onto cards working inside that repo and render as inert badges, never buttons — there is no live window to focus and no AK action is ever offered. Because the deferral list is reused, a new deferral badge can appear, or a resumed task's badge linger, up to about five minutes late; a resumed task that a Pi session claims again rereads the list within one claim tick, since AK never lets a deferred task be claimed. `status` shows when the list was read. Ambiguous session matches (one logical session resumed into two terminals), a missing `ak` binary, or malformed output bind nothing: fail closed, no chip, no invented state, strip behavior unchanged. The strip never writes AK state and never touches the society database directly.
+- **Codex telemetry:** Codex keeps a thread index naming every session's rollout file, working directory and title. A process binds to its thread by an open rollout descriptor, or, before any task has run, by being the only session created in that directory after the process started; anything ambiguous binds nothing. The rollout tail then reports the running tool and its command, turn count, approval and sandbox policy, prompt and reply. Reading the index needs the runtime's built-in SQLite, and a host without it degrades to a process-only card.
+- **Claude Code telemetry:** cards read live state from the tail of the session transcript, giving the topic, current tool and its target, last prompt, latest reply, turn count and activity clock with no configuration. That format is internal to Claude Code and can change between releases, so a transcript that no longer parses degrades to a process-only card rather than inventing activity. Optional hooks add the one state a transcript cannot express, that a session is blocked waiting for you; run `claude-hooks` for the settings fragment. Only low-frequency events are hooked, so nothing runs per tool call. OpenTelemetry is deliberately not used: it reports aggregate usage and cost, not which tool a session is running now.
+- **You are here:** the block at the ribbon's left names the focused window's project in large type with its folder beneath (home written as `~`, cut from the front so the deepest folder stays visible), and the matching card carries a solid accent ring. When the panel itself takes the keyboard, Niri briefly reports no focused window; the ring and the block keep the last focused window on that same workspace instead of blanking, so nothing reflows under the pointer. A workspace change still clears them.
+- **Window list and jump by number:** while expanded, the brand column lists every admitted agent window across workspaces, alphabetically by project, with its workspace (`ws2`) and Niri window number (`#432`). The current window is ringed and its card scrolls into view once the pointer has left the ribbon and it no longer holds the keyboard; while you point at or type into the row it never scrolls on its own. Brand hover opens every card's details; card hover opens only that card. **Hover, type a project name or listed agent window number, then Enter** to focus that exact target. Matching is case-insensitive and Backspace edits. Real pointer entry requests permission from the controller before the panel captures keys; GTK focus alone cannot authorize capture. Body, card, brand and directory crossings form one interaction region. Hover cannot jump to an unlisted window. Leaving the region, Escape, activation/jump, or loss of eligible focus ends the engagement: keyboard, query and list are released and the ribbon collapses. About three seconds without relevant typing releases only the keyboard and clears the query—even a nonempty query—while the card or list under a still pointer stays open. Periodic telemetry cannot recapture it: leave/re-enter or click for fresh intent. An unsupported key (including an arrow/shortcut) interrupts hover: it releases the keyboard and leaves whatever is open under the pointer open; that interrupting key is **not replayed** to another application, but subsequent typing goes there. The explicit shortcut (`focus-strip`) upgrades hover and retains Left/Right and Shift+Left/Right card navigation/manual movement; only explicit mode can jump to an existing unlisted number. Clicks still activate exact cards or directory entries, including hidden tabs. Every activation/jump returns the keyboard immediately.
+- **Appearance:** the ribbon reads the same theme files Ghostty reads. It resolves the `theme` setting for the desktop's current colour scheme, including the `light:…,dark:…` form, and takes colours set directly in the config over the theme file, exactly as Ghostty layers them. State colours reuse the terminal's own meanings, so green is settled, yellow is working, red failed, and the cursor colour marks a session waiting for you. The panel derives every shade from eight named colours, so a theme change is a handful of values and one stylesheet reload rather than a restart. A theme that cannot be read falls back to a neutral palette.
+- **Height repair:** showing or hiding the ribbon changes the output working area, and a window whose height is not automatic keeps the old value. After each change the strip compares window heights before and after, and resets to automatic only those windows still sitting at a height the moving windows just vacated. A height nobody vacated is never touched, each window is reset at most once per height, and a pass is bounded.
+- **Two identity keys:** a Ghostty surface id is a per-process handle that can drift away from the value a long-lived Pi process captured at startup, while the 32-hex session token in the same title never does. Memory therefore stores both, and lookups prefer the exact surface. A session token that two windows claim is ambiguous and binds nothing; two terminals resuming one logical session in the same window are both placed there.
+- **Ordering:** monitoring, active, and settled groups refresh on a calm 15-second clock. A regroup waits while the pointer is over the ribbon or it holds the keyboard, so cards never trade places under the pointer. Manual moves survive until regroup or restart.
+- **Accessibility:** cards expose native GTK labels, selected/expanded state, activation descriptions, and GTK accessible announcements.
+
+## Environment controls
+
+- `PI_ACTIVITY_STRIP_AUTO_START=0` disables extension autostart.
+- `PI_ACTIVITY_STRIP_CLICK_THROUGH=1` installs an empty Wayland input region and disables keyboard entry.
+- `PI_ACTIVITY_STRIP_NATIVE_PANEL_BIN=/absolute/path` selects another receipted panel artifact. A nonempty selection is binding: if missing or nonexecutable, startup fails instead of silently falling back to the packaged panel, including with the development escape hatch.
+- `PI_ACTIVITY_STRIP_SOCKET_DIR` and `PI_ACTIVITY_STRIP_SOCKET_PATH` isolate broker fixtures and nested-compositor tests.
+- `PI_ACTIVITY_STRIP_TAB_INVENTORY=0` disables the read-only AT-SPI tab inventory; hidden tabs are then placed only from titles seen while the strip runs.
+- `PI_ACTIVITY_STRIP_AK_TASKS=0` disables AK task reference joining.
+- `PI_ACTIVITY_STRIP_AK_BIN=/absolute/path` selects the `ak` binary used for the read-only task queries (default `ak` on `PATH`).
+- `PI_ACTIVITY_STRIP_PRESENCE_APP_IDS` edits the set of Niri app ids that keep the ribbon up while focused. A comma-separated list adds ids to the defaults (`com.mitchellh.ghostty`, `com.tryinget.ghosttysidequest`, `com.onepassword.OnePassword`, `1Password`), `-id` removes one, `none` empties the set (strict agent-only behaviour), and `*` keeps the ribbon up for every app.
+- `PI_ACTIVITY_STRIP_HOTKEY="Super+Shift+A"` sets the shortcut the hints name, instead of reading it from the Niri config.
+- `PI_ACTIVITY_STRIP_AGENT_TABS=0` disables discovery of non-Pi agent tabs.
+- `PI_ACTIVITY_STRIP_AGENT_KINDS_DISABLED=claude,codex` excludes named agent kinds from discovery.
+- `CODEX_HOME` selects a non-default Codex home when reading its thread index (default `~/.codex`).
+- `PI_ACTIVITY_STRIP_PYTHON` selects the interpreter for the tab inventory (default `python3`).
+- `PI_ACTIVITY_STRIP_HEIGHT_REPAIR=0` disables restoring windows stranded at the previous working-area height.
+- `PI_ACTIVITY_STRIP_COLOR_SCHEME=light|dark` pins the ribbon to one scheme instead of following the desktop.
+
+Unverified native binaries are rejected unless `PI_ACTIVITY_STRIP_ALLOW_UNVERIFIED_PANEL=1` is explicitly set for development fixtures. That flag does **not** bypass the private-protocol receipt or actual readiness version checks.
+
+## Verification
+
+```bash
+npm run native:build   # exact Rust 1.98 build, tests, staged artifact receipt
+npm run check          # canonical Node/package quality gate
+npm run native:check   # Rust formatting and tests
+npm run release:check  # full packed install and native-artifact smoke
+```
+
+The staged artifact receipt binds:
+
+- binary SHA-256
+- Cargo lock SHA-256
+- complete Rust/CSS source SHA-256
+- Rust compiler version
+- glibc symbol floor
+- required shared libraries
+
+For isolated GUI checks, use the canonical `nested-niri-gui-isolation` skill's helper (`up`, `env`, `check`, `down`) with an owned state directory under `$TMPDIR`, never a bare compositor/terminal helper. Scope every client and IPC call to that nested display/socket; never address operator windows. The panel is unique per Wayland display.
+
+Do not run GTK under a private session bus while sharing the host AT-SPI runtime socket: a second accessibility bus can take it over and leave the desktop's bridge dead. The isolated fixture in `tests/support/isolated-niri-check.mjs` instead uses a private `XDG_RUNTIME_DIR` and session bus **and** disables the bridge with `GTK_A11Y=none` / `NO_AT_BRIDGE=1`; accessibility is explicitly untested there. It requires the owned helper's `state.json` and matching nested environment before launching any GUI. See [independent-review repair evidence](docs/project/2026-10-16-ak7114-independent-review-repair.md) for current commands and coverage limits; the [prior focus/hover record](docs/project/2026-10-15-ak7114-focus-hover.md) preserves the superseded pointer-only choice.
+
+Live verification must inspect Niri layers rather than regular windows:
+
+```bash
+niri msg -j layers | jq '[.[] | select(.namespace == "pi-activity-strip")]'
+```
+
+## Current scope
+
+Implemented:
+
+- local broker and telemetry publishers
+- native GTK4 layer-shell rendering
+- workspace-local Niri projection
+- hide/reclaim and restore
+- pointer and keyboard card interaction
+- exact Ghostty activation, including hidden tabs via `present-surface`
+- hidden Ghostty tab placement through host process containment and learned window memory
+- clickable AK task references joined from read-only `ak` output, with claim-outlives-session and deferred badges
+- Niri window id on every card, and its workspace number in the detail
+- non-Pi agent tab discovery with an exact Claude Code adapter
+- live Claude Code telemetry from its transcript, with optional hooks for blocked-on-you states
+- live Codex telemetry from its thread index and rollout files
+- Ghostty theme following, light and dark
+- repair of windows stranded at the previous working-area height
+- bounded panel restart and parent-death cleanup
+- click-through input region
+
+Not implemented:
+
+- placement of a tab whose window has never been observed, on a host without the AT-SPI inventory (Ghostty exposes no surface listing of its own)
+- distinguishing two terminals that resume one logical session when only the drifted session token is available; both are placed in the one window that claims that token
+- live phase and tool detail for agents other than Claude Code and Codex, which have no adapter yet; their cards show the agent, directory, elapsed time and pid
+- placement of an agent other than Claude Code whose tab is hidden inside a multi-window Ghostty process, since only Claude Code exposes a per-tab title identity
+- one panel per output
+- historical timeline
+- any AK mutation from the strip (unclaim, land, reconstruct, apply); the ribbon is a read-only projection by construction
+- persisted manual ordering
+- remote observers via `pi-server`
+
+## References
+
+- [Project vision](docs/project/vision.md)
+- [Project resources](docs/project/resources.md)
+- [Verification evidence](docs/project/verification.md)
+- [Superseded adaptive-strut design investigation](docs/project/2026-08-31-adaptive-niri-space-design.md)

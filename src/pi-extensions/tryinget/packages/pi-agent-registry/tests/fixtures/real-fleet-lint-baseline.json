@@ -1,0 +1,40 @@
+{
+  "schema": "ai-society.agent-fleet-lint-baseline/1",
+  "observedAt": "2026-09-07T00:00:00.000Z",
+  "stateSha256": "b0c2bf10507bd8f07524ee314f78d6a178e62b0f85828bfa1d68ebc679e42b4f",
+  "reportSha256": "7bad19b118e078958028b3da355ab6451170ee3b3737bb2ea267e63789a0ccaf",
+  "profileSource": {
+    "commit": "d6c670097bee2f00bebce30da25f119ec77268f7",
+    "rawSha256": "b60d156d3001b78f1c5ef8ba2130690575a529be04028a3ca4c232e1fcad3473"
+  },
+  "summary": {
+    "candidateRepositories": 4,
+    "manifests": 1,
+    "errors": 7,
+    "warnings": 7
+  },
+  "repositories": {
+    "agents/agent-adoption-steward": {
+      "commit": "dc354723482f0470ad287d1de3e067a72cd99a85",
+      "codes": [
+        "manifest.creation_task_missing",
+        "manifest.role_missing",
+        "prompt.compiled_stale",
+        "skill.extra_revision_unbound",
+        "template.provenance_missing"
+      ]
+    },
+    "agents/agent-consent-steward": {
+      "commit": "03020e14320d218df1b9211b1ed47089629abf02",
+      "codes": ["fleet.manifest_missing", "lifecycle.stale_candidate", "template.revision_unbound"]
+    },
+    "agents/agent-health": {
+      "commit": "d6b7b08534d2f2c02dddb0a97799def43d1aa4be",
+      "codes": ["fleet.manifest_missing", "lifecycle.stale_candidate", "template.revision_unbound"]
+    },
+    "agents/agent-triage": {
+      "commit": "5c4794c04b6f40df0afa29742397b81d688c7316",
+      "codes": ["fleet.manifest_missing", "lifecycle.stale_candidate", "template.revision_unbound"]
+    }
+  }
+}

@@ -1,0 +1,361 @@
+{
+  "schemaVersion": 1,
+  "hostPackage": "@earendil-works/pi-coding-agent",
+  "hostCompanionPackages": [
+    "@earendil-works/pi-ai",
+    "@earendil-works/pi-tui",
+    "@earendil-works/pi-agent-core"
+  ],
+  "trackedChangelog": "https://github.com/earendil-works/pi/blob/main/packages/coding-agent/CHANGELOG.md",
+  "defaultProfile": "current",
+  "profiles": {
+    "current": {
+      "description": "Run against the root-owned pinned Pi host contract that defines the current canary baseline for this monorepo.",
+      "host": {
+        "version": "1.1.0",
+        "reviewAnchor": "npm:@earendil-works/pi-coding-agent@1.1.0"
+      }
+    },
+    "upgrade": {
+      "description": "Run against an explicit candidate Pi host release to validate upgrade readiness before repo-wide dependency bumps or rollout.",
+      "host": {
+        "versionFromEnv": "PI_HOST_COMPAT_HOST_VERSION",
+        "reviewAnchorFromEnv": "PI_HOST_COMPAT_CHANGELOG_REF"
+      }
+    }
+  },
+  "scenarios": [
+    {
+      "id": "interaction-runtime-coexistence",
+      "title": "pi-interaction + PTX coexistence smoke",
+      "owner": "monorepo-root",
+      "why": "Protect the brownfield interaction-runtime path where PTX depends on pi-interaction trigger surfaces without taking editor ownership itself.",
+      "profiles": [
+        "current",
+        "upgrade"
+      ],
+      "packages": [
+        "packages/pi-interaction/pi-editor-registry",
+        "packages/pi-interaction/pi-interaction",
+        "packages/pi-interaction/pi-interaction-kit",
+        "packages/pi-interaction/pi-runtime-registry",
+        "packages/pi-interaction/pi-trigger-adapter",
+        "packages/pi-prompt-template-accelerator"
+      ],
+      "upstreamSurfaces": [
+        "custom editor mount semantics",
+        "shared trigger broker behavior",
+        "input transform flow"
+      ],
+      "cwd": "packages/pi-prompt-template-accelerator",
+      "command": [
+        "npm",
+        "run",
+        "test:compat:interaction-runtime"
+      ],
+      "notes": "Seed canary uses the deterministic non-UI mixed-extension smoke already maintained by PTX."
+    },
+    {
+      "id": "vault-live-trigger-contract",
+      "title": "pi-vault-client live trigger contract",
+      "owner": "monorepo-root",
+      "why": "Protect the cross-package live-trigger seam between pi-vault-client and pi-interaction support packages without requiring a full vault session.",
+      "profiles": [
+        "current",
+        "upgrade"
+      ],
+      "packages": [
+        "packages/pi-interaction/pi-interaction-kit",
+        "packages/pi-interaction/pi-runtime-registry",
+        "packages/pi-interaction/pi-trigger-adapter",
+        "packages/pi-vault-client"
+      ],
+      "upstreamSurfaces": [
+        "shared trigger broker behavior",
+        "live trigger registration",
+        "picker fallback contract"
+      ],
+      "cwd": "packages/pi-vault-client",
+      "command": [
+        "npm",
+        "run",
+        "test:compat:live-trigger-contract"
+      ]
+    },
+    {
+      "id": "session-compaction-model-registry-contract",
+      "title": "pi-session-compaction public ModelRegistry completion contract",
+      "owner": "pi-session-compaction",
+      "why": "Execute the custom compaction completion adapter against the selected host's real extension-facing ModelRegistry so internal/runtime-only model APIs cannot masquerade as public compatibility.",
+      "profiles": [
+        "current",
+        "upgrade"
+      ],
+      "packages": [
+        "packages/pi-session-compaction"
+      ],
+      "upstreamSurfaces": [
+        "ExtensionContext.modelRegistry",
+        "ModelRegistry.complete public completion seam",
+        "normalized thinking to API-specific public options",
+        "fail-closed unknown API option mapping",
+        "host-owned provider and authentication routing"
+      ],
+      "cwd": "packages/pi-session-compaction",
+      "command": [
+        "node",
+        "--test",
+        "tests/host-completion.test.mjs"
+      ],
+      "notes": "Executable extension-facing contract: imports and instantiates ModelRegistry from the exact selected host, proves complete() delegation plus API-specific thinking translation, and rejects both the internal completeSimple assumption and unverified API option shapes without making a provider request or requiring credentials. Live compaction remains a separate activation/runtime proof."
+    },
+    {
+      "id": "code-mode-extension-factory-contract",
+      "title": "pi-eval-kernel exact ExtensionFactory contract",
+      "owner": "pi-eval-kernel",
+      "why": "Compile the extension factory against the selected exact Pi host without persisting the host's shrinkwrapped dependency tree in ordinary package development installs.",
+      "profiles": [
+        "current",
+        "upgrade"
+      ],
+      "packages": [
+        "tools/pi-eval-kernel-host-contract-fixture"
+      ],
+      "upstreamSurfaces": [
+        "ExtensionFactory and ExtensionAPI assignability",
+        "TypeBox tool schema registration",
+        "tool result and command handler contracts"
+      ],
+      "cwd": "packages/pi-eval-kernel",
+      "command": [
+        "bash",
+        "-c",
+        "npm ci >/dev/null && npm run test:compat:pi-host"
+      ],
+      "notes": "Compile-only host contract. The non-login Bash command hydrates pi-eval-kernel's lockfile-defined development toolchain before compile; dedicated CI runs on ubuntu-latest, and local mirrors need Bash. The runner separately installs the exact host set into the dependency-isolated fixture and restores that fixture's lockfile-declared host absence afterward; this does not execute eval or provide code isolation."
+    },
+    {
+      "id": "parallel-tool-event-correlation",
+      "title": "ASC parallel tool event correlation",
+      "owner": "monorepo-root",
+      "why": "Protect the extension most exposed to Pi 0.58 parallel tool-call semantics by proving tool_call/tool_result correlation still preserves actual bash command tracking.",
+      "profiles": [
+        "current",
+        "upgrade"
+      ],
+      "packages": [
+        "packages/pi-autonomous-session-control"
+      ],
+      "upstreamSurfaces": [
+        "tool_call preflight ordering",
+        "tool_result correlation",
+        "parallel tool execution"
+      ],
+      "cwd": "packages/pi-autonomous-session-control",
+      "command": [
+        "npm",
+        "run",
+        "test:compat:parallel-tool-events"
+      ]
+    },
+    {
+      "id": "asc-settlement-and-thinking-contract",
+      "title": "ASC settled-run and thinking-level host contract",
+      "owner": "pi-autonomous-session-control",
+      "why": "Protect the Pi 0.80 settled-run lifecycle, max thinking level, and legacy raw-JSON compatibility boundary used by dispatch_subagent and rewind finalization.",
+      "profiles": [
+        "current",
+        "upgrade"
+      ],
+      "packages": [
+        "packages/pi-autonomous-session-control"
+      ],
+      "upstreamSurfaces": [
+        "agent_settled finality",
+        "agent_end retry compatibility",
+        "session idle settlement",
+        "max thinking level",
+        "rewind finalization timing"
+      ],
+      "cwd": "packages/pi-autonomous-session-control",
+      "command": [
+        "node",
+        "--test",
+        "--experimental-strip-types",
+        "--test-name-pattern",
+        "^(?!end-to-end: raw stdout noise does not satisfy startup readiness$).*",
+        "tests/rewind-runtime.test.mjs",
+        "tests/subagent-transport-live.test.mjs",
+        "tests/startup-noise-host-contract.test.mjs",
+        "tests/dispatch-subagent-lifecycle-control.test.mjs"
+      ],
+      "notes": "Runs the broad lifecycle suite while replacing the scheduler-sensitive 250ms single-write startup-noise assertion with a dedicated repeated-noise host contract that preserves the same fail-closed readiness invariant under loaded CI runners."
+    },
+    {
+      "id": "prompt-mode-base-composition-parity",
+      "title": "pi-modes custom-base prompt composition parity",
+      "owner": "pi-modes",
+      "why": "Protect replace_base semantics against Pi host drift by comparing complete output with the pinned host's custom-base system-prompt builder.",
+      "profiles": [
+        "current",
+        "upgrade"
+      ],
+      "packages": [
+        "packages/pi-modes"
+      ],
+      "upstreamSurfaces": [
+        "BuildSystemPromptOptions shape",
+        "custom base prompt composition",
+        "project context and skill formatting",
+        "read-unavailable skill omission",
+        "before_agent_start system prompt replacement"
+      ],
+      "cwd": "packages/pi-modes",
+      "command": [
+        "node",
+        "--import",
+        "tsx",
+        "--test",
+        "--test-name-pattern",
+        "replace_base has (complete-output|no-read skill-omission) parity with the pinned Pi host builder",
+        "tests/modes.test.ts"
+      ],
+      "notes": "Focused read-enabled and no-read complete-output parity checks. Mode activation remains prompt-only and does not continue turns, dispatch agents, or start campaigns."
+    },
+    {
+      "id": "autoresearch-runtime-packet-contract",
+      "title": "pi-autoresearch runtime status and packet export contract",
+      "owner": "pi-autoresearch",
+      "why": "Protect the direct pi-autoresearch runtime/status/export scenario where receipts become closeout, candidate-result, learning, and owner-routed adapter packets without mutating AK/KES/evidence authorities.",
+      "profiles": [
+        "current",
+        "upgrade"
+      ],
+      "packages": [
+        "packages/pi-autoresearch"
+      ],
+      "upstreamSurfaces": [
+        "runtime receipt projection",
+        "runtime status packet export",
+        "candidate-result packet export seam",
+        "learning packet export seam"
+      ],
+      "cwd": "packages/pi-autoresearch",
+      "command": [
+        "node",
+        "../../scripts/pi-host-compatibility-canary/selected-tests.mjs",
+        "--cwd",
+        ".",
+        "--import",
+        "tsx",
+        "--case",
+        "tests/runtime-closeout-adapters.test.ts",
+        "segment closeout summarizes empirical decisions and candidate bindings",
+        "--case",
+        "tests/runtime-status-actions.test.ts",
+        "autoresearch_runtime_status can request closeout, setup, and finalize packets"
+      ],
+      "notes": "Requires exactly two passing top-level bodies through structured selection proof on a supported Node version; zero selection or a missing/duplicate/skipped body fails. Uses the authored closeout-adapters and status-actions files, not the obsolete runtime.test.ts location. Tests write temporary packet exports and invoke a Node example consumer; they do not launch peers, write AK/KES authority, or promote candidates. Provision tsx/dependencies before candidate alignment; selection proof alone is not SDK-consumption or isolation proof."
+    },
+    {
+      "id": "orchestrator-autoresearch-supervision-contract",
+      "title": "orchestrator autoresearch live supervision contract",
+      "owner": "pi-society-orchestrator",
+      "why": "Protect the pi-society-orchestrator supervision/report choreography where start_campaign, status polling, terminal closeout review, and owner-visible handoff calls wrap pi-autoresearch packets without taking packet ownership.",
+      "profiles": [
+        "current",
+        "upgrade"
+      ],
+      "packages": [
+        "packages/pi-autonomous-session-control",
+        "packages/pi-autoresearch",
+        "packages/pi-society-orchestrator"
+      ],
+      "upstreamSurfaces": [
+        "TypeBox tool schema compatibility",
+        "start_campaign/status/closeout supervision seam",
+        "registered tool execution result details",
+        "supervision report rendering for pi-autoresearch packet handoffs"
+      ],
+      "cwd": "packages/pi-society-orchestrator",
+      "command": [
+        "node",
+        "../../scripts/pi-host-compatibility-canary/selected-tests.mjs",
+        "--cwd",
+        ".",
+        "--case",
+        "tests/live-control-plane/sessions-and-start-campaign.test.mjs",
+        "autoresearch_live_supervision start/status/stop manages a live running session",
+        "--case",
+        "tests/live-control-plane/sessions-and-start-campaign.test.mjs",
+        "autoresearch_live_supervision start_campaign delegates execution then supervises",
+        "--case",
+        "tests/live-control-plane/matrix-campaign-review.test.mjs",
+        "autoresearch_live_supervision review_matrix_campaign aggregates managed cell waves"
+      ],
+      "notes": "Requires exactly three passing top-level bodies through structured selection proof on a supported Node version; zero selection or a missing/duplicate/skipped body fails. Provision all dependencies, including pi-autoresearch and local ASC, independently before baseline capture and candidate alignment. Missing dependencies fail; never install in the scenario. Local ASC avoids raw Node stripping published TypeScript under node_modules; these mjs entries need no tsx import. Scheduling and observation use mocks, but start_campaign launches real synthetic benchmark and check scripts through pi-autoresearch and writes temporary receipts; matrix review writes temporary packets. Extension registration can mkdir under HOME: use synthetic HOME/TMPDIR. Selection proof is not SDK-consumption, isolation, peer-launch, authority-write, or promotion qualification."
+    },
+    {
+      "id": "orchestrator-autoresearch-matrix-closeout",
+      "title": "orchestrator autoresearch matrix closeout contract",
+      "owner": "monorepo-root",
+      "why": "Protect the highest-stack supervised campaign path where pi-society-orchestrator registers TypeBox-backed tools and reports matrix/candidate-wave closeout handoffs over pi-autoresearch packet seams.",
+      "profiles": [
+        "current",
+        "upgrade"
+      ],
+      "packages": [
+        "packages/pi-autonomous-session-control",
+        "packages/pi-autoresearch",
+        "packages/pi-society-orchestrator"
+      ],
+      "upstreamSurfaces": [
+        "TypeBox tool schema compatibility",
+        "registered tool execution result details",
+        "extension report rendering for nested owner-route payloads"
+      ],
+      "cwd": "packages/pi-society-orchestrator",
+      "command": [
+        "node",
+        "../../scripts/pi-host-compatibility-canary/selected-tests.mjs",
+        "--cwd",
+        ".",
+        "--case",
+        "tests/live-control-plane/matrix-campaign.test.mjs",
+        "autoresearch_live_supervision plan_matrix_campaign makes matrix cells the implementation-wave substrate",
+        "--case",
+        "tests/live-control-plane/matrix-campaign.test.mjs",
+        "autoresearch_live_supervision plan_matrix_campaign fails closed against level-2 packet-only narrowing",
+        "--case",
+        "tests/live-control-plane/matrix-campaign-review.test.mjs",
+        "autoresearch_live_supervision review_matrix_campaign aggregates managed cell waves",
+        "--case",
+        "tests/live-control-plane/matrix-campaign-review.test.mjs",
+        "autoresearch_live_supervision review_matrix_campaign blocks proof-only review packet closure without downgrade",
+        "--case",
+        "tests/live-control-plane/candidate-wave-review.test.mjs",
+        "autoresearch_live_supervision review_candidate_wave compares measured lanes for owner selection"
+      ],
+      "notes": "Requires exactly five passing top-level bodies through structured selection proof on a supported Node version; preserves all five bodies selected by the former plan_matrix_campaign|review_matrix_campaign|review_candidate_wave compares regex, including both fail-closed cases. Provision all dependencies, including pi-autoresearch and local ASC, independently before baseline capture and candidate alignment. Missing dependencies fail; never install in the scenario. Local ASC avoids raw Node stripping published TypeScript under node_modules; these mjs entries need no tsx import. Packet planning/review uses mocked registration and synthetic candidate data; matrix reviews write temporary packets and extension registration can mkdir under HOME: use synthetic HOME/TMPDIR. Selection proof is not SDK-consumption, isolation, benchmark, peer-launch, authority-write, or promotion qualification."
+    },
+    {
+      "id": "host-dev-pin-drift",
+      "title": "Pi host contract drift guard",
+      "owner": "monorepo-root",
+      "why": "Every package's dependencies, devDependencies, and optionalDependencies for the four governed Pi host contract packages must equal the canary policy's current host version, matching lockfile toolchain entries must not float, and nested lock copies under non-contract packages must not drift.",
+      "profiles": [
+        "current"
+      ],
+      "packages": [],
+      "upstreamSurfaces": [
+        "host contract version uniformity across package manifests"
+      ],
+      "cwd": ".",
+      "command": [
+        "node",
+        "./scripts/pi-host-compatibility-canary/check-dev-pin-drift.mjs"
+      ],
+      "notes": "Read-only repo-root check with no host preparation: fails closed listing every off-contract dependencies/devDependencies/optionalDependencies pin, lockfile packages[\"\"]/direct node_modules mismatch, and nested lock copies under non-contract packages. Companion-package nested closures are ignored. Refuses to pass vacuously when no package manifests are found."
+    }
+  ]
+}

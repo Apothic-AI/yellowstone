@@ -1,0 +1,104 @@
+---
+summary: "Pre-ranking index for the v3 source-selection refinement experiment."
+read_when:
+  - "Implementing or reviewing the v3 positive-evidence and eligibility-cost experiment."
+type: "reference"
+system4d:
+  container: "Pre-ranking evidence index for one fresh source-selection refinement experiment."
+  compass: "Keep treatment and cost gates frozen before fresh cases or rankings exist."
+  engine: "Preregister -> review -> author cases -> prepare -> review -> rank once -> decide."
+  fog: "A treatment prototype or bounded-output probe can be mistaken for production adoption evidence."
+---
+
+# Source-selection refinement experiment — 2026-07-25 v3
+
+## Current state
+
+**REJECTED at the independent pre-run integrity gate. Ranking is permanently forbidden for v3; no ranking or result exists.**
+
+Prepared evidence:
+
+- 50/50 complete SCI receipts with trace and cleanup evidence;
+- prepared gzip SHA-256 `29cb2b91f398e935baf3ab092d836b249859208723548d7746ae043e9fa9531b`;
+- uncompressed input SHA-256 `cb5e2a8f4c6799c07ff2ff988ab03c58e4b7bbcb2c878dd6313a5ffaefa6a94f`;
+- trace bundle SHA-256 `48270861e414bb2f92fc9963e4dc87dad7c7d44919473708fd25740d363639a8`; and
+- `SHA256SUMS.pre-review` binds the 31-file review surface.
+
+Independent review `dispatch-1785039595040` rejected the first ranking run because the exactly-five cost budget had already been exhausted by a discarded collector attempt, imported evaluator dependencies were not checksum-bound, the standalone runner bypassed one-shot enforcement, and pooled totals were missing. See `pre-run-integrity-review.md`. These blockers require a new experiment identity and cannot be repaired in place.
+
+The v2 owner decision was **REFINE**, with automatic `source-list` invocation and production wiring still **REJECTED**. V3 is a fresh non-production experiment under AK task `4207`; it does not rerun or overwrite v2.
+
+Canonical preregistration:
+
+- `../../../docs/project/2026-07-25-source-selection-refinement-preregistration.md`
+- independent preregistration review: `dispatch-1784989187975` — ACCEPT after exact cost formulas were frozen
+
+Candidate case source:
+
+- `canonical-case-source.generated.json`
+- SHA-256: `d2a19efd67058d54d250371860a2ec08af07eebc744a393dff00600b9f6cd6e5`
+- 5 repositories / 50 cases / 50 unique normalized questions / 50 unique truth sets
+- deterministic exact-commit validator: `validate-cases.mjs`
+- authoring sessions: `dispatch-1784989778336`, `dispatch-1784989778336-1`, `dispatch-1784989778337`, `dispatch-1784989778338`, `dispatch-1784989778339`
+
+Case authors did not inspect rankings or compute scores. Independent repository reviews are recorded in `pre-ranking-review.md`; all five cohorts are accepted after bounded corrections.
+
+## Frozen hypothesis
+
+The existing source-list treatment always fills `maxItems`, including deterministic path-ordered candidates after remaining candidates have zero path and metadata evidence. V3 preregisters one primary revision:
+
+```text
+source_list_positive:
+  preserve existing tokenization, scores, ordering, universe, and maxItems
+  retain only candidates with pathScore + metadataScore >= 1
+  never backfill zero-evidence candidates
+  permit underfill or empty selection
+```
+
+`source_list_full` preserves v2-style behavior as a comparator. `paths` remains the adoption baseline. SCI structural and fusion arms remain diagnostics and cannot substitute for the primary source-list gate.
+
+## Separate eligibility-cost question
+
+V3 also measures the existing `source-list.v1` page contract with `--page 1 --page-size 100 --json`. The owner implementation performs complete inventory/metadata work before slicing output, so this is a bounded-output observation—not a claimed low-cost production preflight.
+
+Automatic invocation remains rejected unless the preregistered quality and eligibility/cost gates both pass.
+
+The retained five-pair observations already make the eligibility-cost gate **not demonstrated**:
+
+- all 25 retained pairs were valid;
+- Agent Scripts and Engineering Core were conclusive eligible decisions;
+- DSPx, pi-extensions, and Agent Kernel were `unknown` from the first 100 records;
+- equal-eligible-repository median tax was `66.5721%`, above the `10%` maximum;
+- equal-control median reduction was `1.3106%`, below the `20%` minimum; and
+- no conclusive false-eligible or false-ineligible decision occurred.
+
+Automatic invocation and production wiring cannot be adopted from v3. The retained cost arithmetic is internally consistent but is not confirmatory evidence because the exactly-five execution budget was violated. Exact observations remain preserved for audit only. No v3 quality ranking may be executed.
+
+## Frozen repositories
+
+| Repository | Commit | Planned cases | Initial role; preparation revalidates coverage |
+|---|---|---:|---|
+| agent-scripts | `36792de9195c86e6e8ae521efb5c952492278088` | 10 | small eligible |
+| engineering-core | `f084fcc4981339893c302e13c8266313233a0e2b` | 10 | small eligible |
+| DSPx | `326b2a555aac9f24ff54afcfd4adc87293b5218f` | 10 | large eligible |
+| pi-extensions | `61ef4d2874e8ed3807667ae9edbc2e8c262575d5` | 10 | large ineligible control |
+| agent-kernel | `8b9264a4032a79ff2194b6413de62f9ca410385c` | 10 | large ineligible control |
+
+No metadata changes or cohort replacement are allowed after case authoring.
+
+## Stage gates
+
+1. Commit preregistration, treatment code, tests, and this index — complete.
+2. Independent review accepts the frozen treatment and cost interpretation — complete.
+3. Author 50 fresh cases with no v2 per-case ranking leakage — complete.
+4. Independent reviewers accept questions and truth before preparation — complete; see `pre-ranking-review.md`.
+5. Collect exact full/probe observations and independent metadata-staleness review — complete; cost gate not demonstrated.
+6. Collect 50 SCI receipts/trace evidence and build prepared bytes without ranking — complete.
+7. Commit strict pre-review hashes while the result path is absent — complete.
+8. Independent pre-run review — **REJECT** (`dispatch-1785039595040`).
+9. Final `SHA256SUMS` and ranking — forbidden; do not execute.
+10. Successor work requires a new experiment identity and fresh review.
+
+## Non-authorizations
+
+This directory is a frozen, unranked rejection record. It authorizes no further preparation, checksum freeze, ranking, production wiring, provider registration, metadata editing, source-owner mutation, SCI expansion, or result claim.

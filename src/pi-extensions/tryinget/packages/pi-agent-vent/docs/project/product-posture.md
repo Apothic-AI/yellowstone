@@ -1,0 +1,193 @@
+---
+summary: "Product posture for pi-agent-vent: promise, maturity, trust gates, boundaries, and next bets."
+read_when:
+  - "Before choosing the next pi-agent-vent product or implementation slice."
+  - "When deciding whether vent review, escalation drafting, retention, or routing belongs in pi-agent-vent."
+  - "When aligning pi-agent-vent with ASC/self, toolbox, AK, GitHub, incidents, or evidence surfaces."
+type: "reference"
+system4d:
+  container: "Package-local product posture for agent frustration diagnostics and operator review."
+  compass: "Make recurring agent pain actionable without turning local diagnostics into authority."
+  engine:
+    invariants:
+      - "Capture minimized local vents before they disappear."
+      - "Group recurrence and route review without automatic escalation."
+      - "Keep tasks, issues, incidents, evidence, and publication with their owner surfaces."
+  fog:
+    risks:
+      - "A convenient vent log can become hidden incident/task/evidence authority."
+      - "Raw logs or private payloads can leak into diagnostic records."
+      - "Noisy one-off complaints can bury recurring maintenance signal."
+---
+
+# Product posture — `@tryinget/pi-agent-vent`
+
+## Vision relation
+
+The package north star lives in [vision.md](./vision.md). This posture file is the current bridge from that vision into promise, maturity, trust gates, boundaries, strategic line, and next product bets.
+
+## Product promise
+
+`pi-agent-vent` turns repeated agent frustration into a local, reviewable maintenance inbox.
+
+Short form:
+
+```text
+surface pain; review before authority
+```
+
+## Primary users
+
+- Pi operators who want recurring agent friction surfaced instead of lost in chat history.
+- Controller agents that need a safe place to record repeated tool/runtime/workflow pain.
+- Package/runtime maintainers reviewing patterns before deciding whether to file issues or tasks.
+- Future adapter authors that may generate human-approved owner-surface draft text.
+
+## Job to be done
+
+When an agent keeps hitting the same bug, missing affordance, brittle workflow, context-loss pattern, or tool failure, I want it captured locally, grouped with similar observations, and presented for operator review without silently creating incidents, tasks, issues, evidence, or telemetry.
+
+## Current product maturity
+
+- maturity: `local diagnostic alpha, review-and-retention safety hardened; privacy, review-command, outcome-follow-up, review-filter, review-compare, follow-up-scope, export-scope, export-follow-up, review-decision-legibility, destructive-selection, retention-history, public-contract parity, unpacked-artifact contract, installed-command smoke, installed shadow registered-tool smoke, and release-metadata alignment membranes verified`
+- current capability baseline: local append-only vent capture with optional local tool/package facets, recurrence grouping, local facet summary, local operator review queue with fail-closed-before-store-read command syntax and read-only category/tag/tool/package facet filters, read-only per-state review outcome follow-up buckets, read-only cross-state review comparison without archive/restore tokens, explicit derived local decision-posture projections, curation-aware recurrence resolution for review-state commands and record feedback, filter-preserving supported follow-up commands including record/state-scoped facet export, export-local-follow-up guidance without archive/restore tokens, read-only reviewed-group retention candidate planning without archive tokens, read-only retention receipt history with rollback-candidate restore command reconstruction, advisory human-review hints, quoted state-aware local next-action guidance that round-trips legacy recurrence keys, bounded representative-sample detail, review-state events, append-only recurrence curation projections with remove/undo events, diagnostic-state load membrane with privacy metadata recomputation, facet-aware draft-only owner-surface text generation, lifecycle stats/export projections, lock/hash-guarded confirmation-gated retention archive/restore with duplicate-id-safe record selection, local backup receipts, and rollback safeguards, advisory candidate-incident heuristic, redaction/minimization, `/agent_vent` inspection command, toolbox discovery, ASC/self companion routing, self-contained public-artifact validation for advertised package scripts/docs, no-auth installed-artifact shadow registered-tool `agent_vent path` release smoke with isolated npm prefix/cache and vent storage, installed-tarball local-path package-discovery `/agent_vent path` release smoke with isolated Pi settings, npm prefix/cache, and vent store, explicit local `npm:<tarball>` install-source validation, and package-local release metadata alignment checks for `repository.directory`, `x-pi-template.workspacePath`, and `x-pi-template.releaseComponent`
+- release posture: first published package release is `0.1.0` on npm; `0.1.1` removed the `/agent-vent` command alias and kept runtime-facing naming singularly `agent_vent`; source/package version `0.1.2` hardens extension load against stale review-state imports during reload; unpacked tarball contract has artifact-local `npm install && npm run check` proof, artifact-only quick release checks install the packed tarball into an isolated npm prefix and execute the installed artifact's registered `agent_vent` tool `action=path` through a shadow import against isolated vent storage without Pi auth, full release checks additionally validate local `npm:<tarball>` as the install source and smoke the installed packed artifact through local-path Pi package discovery by running `/agent_vent path` with isolated Pi settings, isolated npm prefix/cache, and isolated vent storage, and package-local structure validation fails closed on release metadata drift against `.copier-answers.yml`; post-publication registry smoke installed `@tryinget/pi-agent-vent@0.1.0` into an isolated npm prefix and verified the installed artifact and shadow registered-tool `path` behavior
+- current strategic line: harden the local review workflow before adding owner-surface escalation adapters
+
+## Product success criteria
+
+The package is product-healthy when:
+
+1. an agent can record a minimal vent without leaking secrets or raw user payloads;
+2. an operator can see the top recurring pain points quickly;
+3. recurrence groups separate repeated maintenance signal from one-off complaints;
+4. candidate-incident language remains advisory and never implies an incident was declared;
+5. review state, retention, export, and deletion behavior are explicit before data volume grows;
+6. escalation surfaces generate drafts only and require human approval before owner-system mutation;
+7. ASC/self, toolbox, AK, GitHub, incident, and evidence boundaries remain explicit.
+
+## Current landed capability baseline
+
+The package currently owns:
+
+- `agent_vent` tool with `record`, `summary`, `list`, `path`, `facets`, `review`, `outcomes`, `compare`, `set_review`, `curate`, `draft`, `stats`, `export`, and `retention` actions, including read-only local facet filters for review queues, outcome follow-up, cross-state comparison, retention-candidate planning, and read-only retention receipt history;
+- `/agent_vent` command for local inspection and recurrence review, with no `/agent-vent` runtime alias;
+- schema-versioned local JSONL storage at `~/.pi/agent/agent-vent/vents.jsonl`, local review events at `~/.pi/agent/agent-vent/review-events.jsonl`, local curation events at `~/.pi/agent/agent-vent/curation-events.jsonl`, local retention receipts at `~/.pi/agent/agent-vent/retention-events.jsonl`, and retention backups under `~/.pi/agent/agent-vent/backups/`, overridable via `PI_AGENT_VENT_DIR`;
+- conservative redaction for common secret/token/password shapes;
+- recurrence key derivation and grouping;
+- advisory candidate-incident heuristic based on repetition/severity;
+- malformed JSONL line tolerance, oversized-line/file guards, read-time schema normalization/redaction with privacy metadata recomputation, and semantic curation quarantine during reads;
+- package-local tests for redaction, privacy metadata recomputation, record creation, JSONL round trip, recurrence summaries, local facet summaries, review filtering/detail/hints/next-action guidance, review decision-posture projection, curation-aware recurrence resolution for review state and record feedback, outcome follow-up buckets, explicit per-state outcome/compare limits, read-only cross-state comparison without archive/restore tokens, filter-preserving compare follow-ups and record/state-scoped facet export, export follow-up command quoting without archive/restore tokens or owner-routing claims, read-only retention-candidate planning without archive tokens, read-only retention-history restore-candidate reconstruction without active-store reads, fail-closed review/outcome/compare/export/retention-candidate/history command syntax before store reads (including empty filters), quoted legacy recurrence-key command round trips, review/curation/draft/retention projections, hostile legacy JSONL redaction, curation-cycle quarantine, file/line-size guards, confirmation-gated archive/restore, duplicate-id retention selection, complete token-input requirements, stale token/restore failures, path-escape/symlink backup failures, receipt-failure rollback, stale lock cleanup, quoted rollback commands, and extension registration;
+- `pi-toolbox-discovery` integration through the same-named `agent_vent` bundle;
+- ASC/self capability-routing text that points frustration diagnostics to `agent_vent` instead of self/ASC state.
+
+## Product non-goals
+
+`pi-agent-vent` must not become:
+
+- an automatic incident declaration system;
+- a direct AK task/evidence writer;
+- a GitHub issue creator without explicit human approval;
+- a telemetry collector or team sync daemon by default;
+- a replacement for ASC/self operational introspection;
+- a canonical evidence, publication, KES, Prompt Vault, or ROCS owner;
+- a dumping ground for ordinary progress updates or emotional noise with no maintenance signal.
+
+## Trust gates
+
+A vent-derived recommendation is trustworthy only when:
+
+1. **Minimization** — summary/evidence are short and avoid raw logs or private payloads.
+2. **Privacy** — known secret shapes are redacted and the operator still treats records as local diagnostic user data.
+3. **Recurrence** — repeated groups are visible by stable recurrence key rather than just timestamp order.
+4. **Review state** — operator review status is explicit before escalation.
+5. **Owner seam** — draft escalation names the target owner surface but does not mutate it automatically.
+6. **Boundary report** — output says what was not done: no task, issue, incident, evidence, telemetry, or ASC/self state mutation.
+
+## Current strategic line
+
+Prioritize review quality over escalation power.
+
+The highest-leverage product line is:
+
+```text
+local vent capture -> operator review queue -> draft-only owner routing -> human-approved escalation
+```
+
+For visible self-evolution work, keep `agent_vent` as recurrence memory and review queue only. The DRY routing map lives in the root `docs/project/visible-self-evolution-spine.md` spine; orchestrator may project verified evidence, while AK/society owner surfaces retain durable authority.
+
+Do not add automatic GitHub/AK/incident writers. The local facet summary, fail-closed facet-filtered local review queue, per-state review outcome follow-up, read-only cross-state review comparison, explicit local decision posture, filter-preserving supported follow-up commands, record/state-scoped facet export, export-local-follow-up guidance, read-only retention-candidate planning, read-only retention-history receipt projection, advisory human-review hints, quoted state-aware next-action guidance, bounded review-detail samples, curation-aware recurrence resolution, facet-aware draft-only routing, retention archive/restore, and privacy membrane now have package validation; remaining product depth should refine operator comprehension only where it does not broaden authority. Hard-delete beyond backup-backed archive is decided out of v0.1: permanent removal remains operator-owned filesystem/data-lifecycle control unless a future decision accepts a narrower purge design.
+
+Current proof: `npm run check` passes with 80 package tests plus release dry-run, packaged Markdown link checks, an unpacked-tarball `npm install && npm run check` contract smoke that runs the packaged fallback gate from inside the artifact, an artifact-only no-auth installed shadow registered-tool `agent_vent path` no-store-read smoke, and a full installed-tarball local-path package-discovery `/agent_vent path` smoke using isolated `PI_CODING_AGENT_DIR`, isolated npm prefix/cache, and `PI_AGENT_VENT_DIR`; docs strict check passes, `git diff --check` passes, and historical dogfood covered curation resolution, export posture, and live `pi install` reload behavior. Validation now covers quoted rollback commands, complete retention token inputs, stale-token/stale-restore failures, path-escape/symlink backup failures, receipt-failure rollback, retention-history restore-candidate reconstruction without active-store reads, export follow-up command quoting without archive/restore tokens or owner-routing claims, review decision-posture projection without resolution/assignment/evidence/incident claims, curation-aware recurrence resolution for review state and record feedback, stale lock cleanup, backup restore, duplicate-id-safe retention archive selection, retention-candidate planning without archive tokens, retention-candidate and compare tool-schema/command-contract parity, filter-preserving supported compare follow-ups, record/state-scoped facet export without owner-routing claims, mixed-group export non-broadening, empty export filters failing closed before store reads, tag/facet privacy metadata recomputation, hostile legacy JSONL privacy recomputation, fail-closed review/outcome/compare/export/retention-candidate/history syntax before store reads including empty filters, invalid review category/state handling, explicit per-state outcome/compare limits, quoted legacy recurrence-key command round trips, tool-only maintainer-note hints, reference-style packaged Markdown links, fail-closed `files[]` wildcard handling, public artifact script viability, release metadata alignment with `.copier-answers.yml`, local `npm:<tarball>` install-source validation, isolated installed-command smoke output, local-path package-discovery loading from the installed artifact, shadow registered-tool execution from the installed artifact, and registered-tool `path` no-store-read/no-store-write behavior with symlinked active stores.
+
+## Next product bets
+
+### Bet 1 — Operator review queue — landed baseline
+
+The local review surface turns recurrence groups into an inbox:
+
+```text
+new -> acknowledged | dismissed | escalation_drafted
+```
+
+The landed baseline lists groups by recurrence priority, supports fail-closed read-only category/tag/tool/package facet filters, shows advisory human-review hints, shows explicit local decision posture, shows quoted state-aware local next-action guidance that remains safe for legacy recurrence keys, shows representative summaries/sample ids through recurrence projections, offers bounded read-only representative-sample expansion for a single group, records append-only local review-state events without mutating owner systems, provides read-only outcome follow-up buckets for `new`, `acknowledged`, `dismissed`, and `escalation_drafted` groups, compares review-state buckets with filter-preserving supported follow-up commands, exports filtered local diagnostic projections with safe local follow-up guidance, and supports retention receipt history. Remaining product depth is contract-parity polish only unless fresh discovery shows a concrete gap; owner-system mutation stays human-approved and external.
+
+### Bet 2 — Retention, export, and deletion controls — non-destructive baseline landed
+
+Make local data lifecycle explicit before records accumulate:
+
+- show store size/count — landed via `stats`;
+- export JSON or markdown diagnostic projections — landed via `export`;
+- list reviewed groups for archive planning — landed through read-only `retention candidates` with state/facet filters, exact preview commands, and no archive confirmation tokens;
+- archive reviewed groups with confirmation — landed through `retention preview|archive` with exact store/review/curation-hash tokens, local lock coordination with vent appends, duplicate-id-safe selected-record removal, local backups, append-only receipts, and receipt-failure rollback;
+- rediscover archive/restore receipts — landed through read-only `retention history`, which reconstructs rollback-candidate restore commands from archive receipts without reading active vents/backups and without implying rollback already happened;
+- restore archived groups from package backups — landed through `retention restore` with derived exact tokens, real backup-directory containment, current-store hash checks, and quoted rollback command support;
+- delete reviewed groups without backup — decided out of the v0.1 package surface by [ADR 2026-05-22](../adr/2026-05-22-agent-vent-retention-delete-policy.md); archive remains the destructive package lifecycle baseline;
+- document backup/restore posture — covered by explicit paths, lifecycle stats, and retention command output;
+- keep corruption behavior fail-soft and visible — landed for malformed lines, oversized lines, invalid entries, semantic curation quarantine, and fail-closed symlink/oversized-file checks.
+
+### Bet 3 — Recurrence curation — merge/rename baseline landed
+
+Improve signal quality without over-modeling:
+
+- merge recurrence groups — landed as append-only local curation projection events;
+- rename recurrence keys — landed as append-only local curation projection events;
+- undo local curation aliases — landed as append-only `remove` curation events;
+- dismiss noisy groups — already covered by local review state;
+- show top categories/tags/tools/packages — landed as read-only local facet summaries; owner hints are intentionally local diagnostic/draft hints only, not package-owned routing truth;
+- preserve append-only source records while treating curated summaries as local projections — landed; raw vents are not rewritten.
+
+### Bet 4 — Draft-only owner escalation — landed baseline
+
+Generate human-reviewable drafts for likely owner surfaces:
+
+- GitHub issue draft — landed;
+- AK task draft — landed;
+- incident review draft — landed;
+- package maintainer note — landed.
+
+These drafts do not submit automatically. The package prepares local text, local diagnostic facet hints, and exact next-step guidance; the owner system performs any mutation only after explicit human/operator action. Producing a draft does not automatically mark review state; operators can set `escalation_drafted` explicitly when useful. This clarified the provenance seam: draft text is a local diagnostic projection, not evidence, task truth, issue truth, incident truth, or owner-routing truth.
+
+## Next frontier guidance
+
+The next highest-leverage slice should assume the facets/review/outcomes/compare/filter/hint/detail/draft/curation/retention-candidate/retention-history/retention-archive/export/export-follow-up/review-decision-posture and public-runtime-artifact smoke membranes are the baseline and should not broaden authority. Retention now has transaction-oriented safeguards (store/review/curation-hash tokens, append/archive locking, duplicate-id-safe selected-record removal, stale-lock cleanup, receipt-failure rollback, derived restore tokens, realpath backup containment, quoted rollback commands, retention-history receipt rediscovery, and stale-restore checks) plus read-only reviewed-candidate, receipt-history, export follow-up, decision-posture, and cross-state comparison surfaces that preserve supported follow-up scope without owner-surface mutation. Local facet labels, filters, curation aliases, outcome states, comparison buckets, hints, generated commands, export snapshots, history receipts, decision posture, and draft text are diagnostic projections only; filtered export is record/state-scoped and is not evidence, publication, owner routing, or owner assignment. The clarified source-owner seam is that export/history/review scope may focus local diagnostic data but cannot make that data canonical evidence or publication, and curation-aware recurrence keys are local projection identity rather than owner-system identity; local release smoke and release metadata checks may prove package-loading and repo-local metadata alignment but cannot prove npm publication/provenance; Prompt Vault, AK, GitHub, incident, evidence, ROCS, ASC/self, toolbox surfaces, and npm publication/provenance remain separate owners. The latest contract-parity frontier is maintaining source checkout versus public runtime artifact proof together: `npm pack` contents, README/package scripts, packaged docs, release checks, installed package settings, isolated npm installation state, no-auth installed shadow registered-tool smoke, installed command smoke, local tarball install-source validation, local-path Pi package-discovery smoke, and release metadata alignment must be validated as consumed, not only from the monorepo checkout. Discovery showed local `npm:<tarball>` is useful as a Pi install input but is not a documented runtime package-discovery source like `npm:@scope/pkg@1.2.3`; the package now fails closed against falsely claiming that proof. The remaining release frontier is ongoing provenance/release-process evidence for future versions, not more unlabeled local package smoke for `0.1.0`. npm publish, AK/GitHub/incident/evidence creation, and hard-delete remain out of scope unless explicitly authorized. Preserve the contract-parity lesson from this iteration: command grammar, LLM tool schema, README examples, posture docs, package `files[]`, release checks, artifact-local scripts, smoke scripts, and tests must change together; unknown syntax must fail closed before store reads even when values are empty. Do not spend the next slice on hard-delete unless a new decision explicitly supersedes [ADR 2026-05-22](../adr/2026-05-22-agent-vent-retention-delete-policy.md).
+
+## Ownership map
+
+| Concern | Owner |
+|---|---|
+| Local vent records, recurrence grouping, review queue/outcome projections, local curation events, retention receipts/backups, draft text projections, diagnostic-state membrane | `packages/pi-agent-vent` |
+| Tool discovery/activation | `packages/pi-toolbox-discovery` |
+| Operational self mirror and subagent runtime | `packages/pi-autonomous-session-control` |
+| Durable task/evidence/direction truth | AK / society authority surfaces |
+| GitHub issues and repo issue policy | Target repo / GitHub owner workflow |
+| Real incident declaration | Incident owner surface / human operator |
+| Prompt/procedure reuse | Prompt Vault |
+| Shared ontology/controlled semantics | ROCS / ontology owner repos |
+
+## Read map
+
+- Vision / north star: [vision.md](./vision.md)
+- Design: [2026-05-21-agent-vent-design.md](./2026-05-21-agent-vent-design.md)
+- Implementation plan: [2026-05-21-agent-vent-implementation-plan.md](./2026-05-21-agent-vent-implementation-plan.md)
+- Extension SOP: [extension-sop.md](./extension-sop.md)

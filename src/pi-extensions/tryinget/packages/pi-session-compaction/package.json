@@ -1,0 +1,99 @@
+{
+  "name": "@tryinget/pi-session-compaction",
+  "version": "0.6.1",
+  "description": "Dedicated Pi package for custom session compaction summaries.",
+  "type": "module",
+  "license": "SEE LICENSE IN LICENSE",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tryingET/pi-extensions.git",
+    "directory": "packages/pi-session-compaction"
+  },
+  "bugs": {
+    "url": "https://github.com/tryingET/pi-extensions/issues"
+  },
+  "homepage": "https://github.com/tryingET/pi-extensions/tree/main/packages/pi-session-compaction",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "compaction",
+    "session-summary"
+  ],
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "fix": "bash ../../scripts/package-quality-gate.sh fix .",
+    "lint": "bash ../../scripts/package-quality-gate.sh lint .",
+    "typecheck": "bash ../../scripts/package-quality-gate.sh typecheck .",
+    "test": "bash ../../scripts/package-quality-gate.sh test .",
+    "quality:pre-commit": "bash ../../scripts/package-quality-gate.sh pre-commit .",
+    "quality:pre-push": "bash ../../scripts/package-quality-gate.sh pre-push .",
+    "quality:ci": "bash ../../scripts/package-quality-gate.sh ci .",
+    "check": "npm run quality:ci",
+    "prepack": "node ../pi-interaction/scripts/prepare-publish-manifest.mjs prepack",
+    "postpack": "node ../pi-interaction/scripts/prepare-publish-manifest.mjs postpack",
+    "release:check": "npm pack --dry-run --json",
+    "release:check:quick": "npm pack --dry-run --json",
+    "loop-doctor": "bash -lc 'node --version; npm --version; npm pkg get name version >/dev/null; git status --short -- . || true; exit 0'",
+    "loop-verify-fast": "npm run quality:pre-commit",
+    "loop-impact-plan": "bash -lc 'echo \"loop-impact-plan: package-local impact planner is coarse; run npm run loop-impact-run for the full package gate.\"; git status --short -- . || true'",
+    "loop-impact-run": "npm run check",
+    "loop-impact-wide": "npm run check",
+    "loop-landing-check": "npm run check"
+  },
+  "files": [
+    "extensions",
+    "docs",
+    "README.md",
+    "AGENTS.md",
+    "LICENSE"
+  ],
+  "pi": {
+    "extensions": [
+      "./extensions/session-compaction.js"
+    ]
+  },
+  "exports": {
+    "./branch-summary": "./extensions/session-compaction/branch-summary.js",
+    "./continuity-state": "./extensions/session-compaction/continuity-state.js",
+    "./files-touched": "./extensions/session-compaction/files-touched.js",
+    "./handler": "./extensions/session-compaction/handler.js",
+    "./handoff-generation": "./extensions/session-compaction/handoff-generation.js",
+    "./handoff-prompt": "./extensions/session-compaction/handoff-prompt.js",
+    "./model-resolver": "./extensions/session-compaction/model-resolver.js",
+    "./recall": "./extensions/session-compaction/session-recall.js",
+    "./registration": "./extensions/session-compaction/registration.js",
+    "./user-prompts": "./extensions/session-compaction/user-prompts.js",
+    "./prompt-selection": "./extensions/session-compaction/prompt-selection.js"
+  },
+  "dependencies": {
+    "@tryinget/pi-model-selection": "file:../pi-model-selection",
+    "@tryinget/pi-telemetry": "file:../pi-telemetry"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  },
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-coding-agent": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.4.4",
+    "@earendil-works/pi-agent-core": "1.1.0",
+    "@earendil-works/pi-coding-agent": "1.1.0",
+    "typebox": "1.3.7"
+  },
+  "x-pi-template": {
+    "scaffoldMode": "simple-package",
+    "workspacePath": "packages/pi-session-compaction",
+    "releaseComponent": "pi-session-compaction",
+    "releaseConfigMode": "component"
+  }
+}

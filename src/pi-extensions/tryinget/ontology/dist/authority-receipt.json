@@ -1,0 +1,81 @@
+{
+  "command_files": {
+    "validate": "authority-receipt.validate.json"
+  },
+  "commands": {
+    "validate": {
+      "authoritative": true,
+      "authority_mode": "strict_ref_resolution",
+      "ci_profile": null,
+      "command": "validate",
+      "layer_sources": [
+        {
+          "binding": {
+            "ontology_tree": "51fb4ad233dd1e0ba6db6a0f79df94eec0d1f432",
+            "requested_ref": "main",
+            "resolved_commit": "6f6ae61bc70d8cf4dbd0f0c2b9b44609b736b74e"
+          },
+          "kind": "ref",
+          "locator_kind": "repo",
+          "name": "company",
+          "origin": "<repo:softwareco/ontology@main>",
+          "source": "workspace",
+          "source_contract": "legacy"
+        },
+        {
+          "binding": {
+            "ontology_tree": "80e050c0de548aef3519e8a11ddf9aaf65eaf920",
+            "requested_ref": "main",
+            "resolved_commit": "60790d43ba0f4cfea946df9b07865b877432a7dd"
+          },
+          "kind": "ref",
+          "locator_kind": "repo",
+          "name": "core",
+          "origin": "<repo:core/ontology-kernel@main>",
+          "source": "workspace",
+          "source_contract": "ontology-markdown-v1"
+        },
+        {
+          "kind": "path",
+          "locator_kind": "path",
+          "name": "repo",
+          "origin": "ontology/src",
+          "source": "path",
+          "source_contract": "legacy"
+        }
+      ],
+      "locator_kinds_present": [
+        "path",
+        "repo"
+      ],
+      "loose_workspace_ref_layers_used": 0,
+      "ok": true,
+      "profile": "repo-dev",
+      "ref_layer_count": 2,
+      "ref_layers_present": true,
+      "repo": "/home/tryinget/ai-society/softwareco/owned/pi-extensions",
+      "resolve_refs_requested": true,
+      "result": {
+        "error_count": 0,
+        "finding_count": 0,
+        "warning_count": 0
+      },
+      "schema_version": 3,
+      "source_contract_conformance": {
+        "complete": true,
+        "corpus_digest": "sha256:543c86459ec2765ed656d98401a0017bcc3f78527e40e29a26519437390b7cfc",
+        "document_count": 159,
+        "operation": "validate",
+        "schema": "rocs-source-contract-conformance.v1",
+        "scope": "source-contract/schema/reference",
+        "source_contract": "ontology-markdown-v1"
+      },
+      "version": "0.4.6",
+      "workspace_ref_mode": "strict"
+    }
+  },
+  "last_command": "validate",
+  "repo": "/home/tryinget/ai-society/softwareco/owned/pi-extensions",
+  "schema_version": 3,
+  "version": "0.4.6"
+}

@@ -1,0 +1,352 @@
+/*
+ * Every colour here derives from the handful of names the controller defines from Ghostty's own
+ * theme, so the ribbon follows the terminal into light and dark without a second palette to keep
+ * in sync. mix() against the background and alpha() against the foreground both invert correctly
+ * between schemes: a raised surface is lighter on a dark theme and darker on a light one.
+ */
+
+/* biome-ignore lint/correctness/noUnknownTypeSelector: GTK CSS uses widget node names. */
+window {
+  background: transparent;
+  color: @pi_foreground;
+  font-family: "IBM Plex Sans", "Inter", "Segoe UI", sans-serif;
+}
+
+/* One surface on the same rhythm and radius as tiled windows, so it reads as a peer of them. */
+.band {
+  /* Solid: the ribbon is the one surface that never dims, so it reads as the fixed ground. */
+  background: @pi_background;
+  border: 1px solid alpha(@pi_foreground, 0.16);
+  border-radius: 12px;
+  padding: 0 14px 0 16px;
+}
+
+.brand {
+  border-right: 1px solid alpha(@pi_foreground, 0.12);
+  margin-right: 12px;
+  padding: 11px 14px 11px 0;
+}
+
+.brand-eyebrow,
+.meta,
+.card-state,
+.card-window,
+.card-tool,
+.card-elapsed,
+.inspector-key {
+  font-family: "IBM Plex Mono", "JetBrains Mono", monospace;
+}
+
+.brand-eyebrow {
+  color: alpha(@pi_accent, 0.9);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 1.4px;
+}
+
+.brand-title {
+  color: @pi_foreground;
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: -0.2px;
+}
+
+.meta {
+  color: alpha(@pi_foreground, 0.56);
+  font-size: 9px;
+}
+
+/* biome-ignore lint/correctness/noUnknownTypeSelector: GTK CSS uses widget node names. */
+.cards-panel,
+.cards-panel > viewport {
+  background: transparent;
+  padding: 0;
+}
+
+/* biome-ignore lint/correctness/noUnknownTypeSelector: GTK CSS uses widget node names. */
+.cards-panel scrollbar {
+  opacity: 0;
+  min-width: 0;
+  min-height: 0;
+}
+
+.card {
+  color: @pi_foreground;
+  background: mix(@pi_background, @pi_foreground, 0.07);
+  border: 1px solid alpha(@pi_foreground, 0.1);
+  border-left: 3px solid alpha(@pi_foreground, 0.35);
+  border-radius: 12px;
+  padding: 7px 11px 7px 10px;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease;
+}
+
+.card:hover,
+.card:focus-visible,
+.card.open {
+  background: mix(@pi_background, @pi_foreground, 0.14);
+  border-color: alpha(@pi_accent, 0.5);
+}
+
+/*
+ * The tab the compositor is actually showing: the card the brand block names. A solid accent ring
+ * rather than a tint, so it never reads as the hover state and survives soft light themes.
+ */
+.card.current {
+  background: mix(@pi_background, @pi_accent, 0.14);
+  border-color: @pi_accent;
+  box-shadow: inset 0 0 0 1px @pi_accent;
+}
+
+.card.hidden-tab {
+  background: alpha(@pi_background, 0.55);
+  border-style: dashed;
+}
+
+.card.hidden-tab .card-repo {
+  color: alpha(@pi_foreground, 0.78);
+}
+
+.card.stalled {
+  opacity: 0.62;
+}
+
+.card.stalled .card-phase {
+  text-decoration-line: line-through;
+}
+
+.card.state-thinking {
+  border-left-color: @pi_thinking;
+}
+.card.state-tool {
+  border-left-color: @pi_tool;
+}
+.card.state-waiting {
+  border-left-color: @pi_waiting;
+}
+.card.state-success {
+  border-left-color: @pi_success;
+}
+.card.state-error {
+  border-left-color: @pi_error;
+}
+
+.card-repo {
+  color: @pi_foreground;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.card-phase,
+.inspector-value {
+  color: alpha(@pi_foreground, 0.74);
+  font-size: 10px;
+}
+
+/* A quiet pill: the state is carried mostly by the card's left edge. */
+.card-state {
+  background: alpha(@pi_foreground, 0.07);
+  border: 1px solid alpha(@pi_foreground, 0.16);
+  border-radius: 999px;
+  color: alpha(@pi_foreground, 0.68);
+  font-size: 8px;
+  letter-spacing: 0.4px;
+  padding: 3px 7px;
+}
+
+.state-thinking .card-state {
+  background: alpha(@pi_thinking, 0.14);
+  border-color: alpha(@pi_thinking, 0.38);
+  color: @pi_thinking;
+}
+.state-tool .card-state {
+  background: alpha(@pi_tool, 0.14);
+  border-color: alpha(@pi_tool, 0.38);
+  color: @pi_tool;
+}
+.state-waiting .card-state {
+  background: alpha(@pi_waiting, 0.16);
+  border-color: alpha(@pi_waiting, 0.42);
+  color: @pi_waiting;
+}
+.state-success .card-state {
+  background: alpha(@pi_success, 0.14);
+  border-color: alpha(@pi_success, 0.38);
+  color: @pi_success;
+}
+.state-error .card-state {
+  background: alpha(@pi_error, 0.16);
+  border-color: alpha(@pi_error, 0.44);
+  color: @pi_error;
+}
+
+.card-tool,
+.card-elapsed,
+.inspector-key {
+  color: alpha(@pi_foreground, 0.55);
+  font-size: 8px;
+}
+
+/*
+ * The Niri window id, for finding a window an agent or tool names by id. A tint rather than a
+ * border and no vertical padding, so it reads as a chip without growing the footer line.
+ */
+.card-window {
+  background: alpha(@pi_foreground, 0.09);
+  border-radius: 999px;
+  color: alpha(@pi_foreground, 0.7);
+  font-size: 8px;
+  padding: 0 5px;
+}
+
+.inspector {
+  border-top: 1px solid alpha(@pi_foreground, 0.12);
+  padding-top: 9px;
+}
+
+.inspector-value {
+  line-height: 1.3;
+}
+
+.activation {
+  color: alpha(@pi_foreground, 0.7);
+  font-size: 9px;
+}
+
+.activation.success {
+  color: @pi_success;
+}
+
+.activation.error {
+  color: @pi_error;
+}
+
+/*
+ * AK task references. An active chip is the one clickable element inside a card besides the card
+ * itself: it reuses the card's activation, so it carries the accent colour and a pointer cursor.
+ * Badge states (a claim that outlives its session, a deferred task) are deliberately inert pills.
+ */
+/* Footer-sized: a bare task number with no vertical padding, like the window chip beside it. */
+.ak-task {
+  background: alpha(@pi_foreground, 0.07);
+  border: 1px solid alpha(@pi_foreground, 0.16);
+  border-radius: 999px;
+  color: alpha(@pi_foreground, 0.68);
+  font-family: "IBM Plex Mono", "JetBrains Mono", monospace;
+  font-size: 8px;
+  padding: 0 5px;
+}
+
+.ak-task.ak-active {
+  background: alpha(@pi_accent, 0.14);
+  border-color: alpha(@pi_accent, 0.42);
+  color: @pi_accent;
+}
+
+.ak-task.ak-active:hover {
+  background: alpha(@pi_accent, 0.26);
+}
+
+.ak-task.ak-orphaned {
+  background: alpha(@pi_error, 0.12);
+  border: 1px dashed alpha(@pi_error, 0.4);
+  color: alpha(@pi_error, 0.92);
+}
+
+.ak-task.ak-deferred {
+  background: alpha(@pi_tool, 0.12);
+  border: 1px dashed alpha(@pi_tool, 0.4);
+  color: alpha(@pi_tool, 0.92);
+}
+
+.ak-overflow {
+  color: alpha(@pi_foreground, 0.5);
+  font-family: "IBM Plex Mono", "JetBrains Mono", monospace;
+  font-size: 8px;
+}
+
+/*
+ * The brand block's window list: every agent window on every workspace, as its card's first line
+ * and its Niri window number. The number is the thing you type, so it carries the accent.
+ */
+.directory {
+  border-top: 1px solid alpha(@pi_foreground, 0.12);
+  padding-top: 7px;
+}
+
+.jump-line {
+  color: @pi_accent;
+  font-family: "IBM Plex Mono", "JetBrains Mono", monospace;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+/* biome-ignore lint/correctness/noUnknownTypeSelector: GTK CSS uses widget node names. */
+.directory-scroller,
+.directory-scroller > viewport {
+  background: transparent;
+}
+
+/* Same as the card row: scrolls by wheel or touchpad without a visible bar. */
+/* biome-ignore lint/correctness/noUnknownTypeSelector: GTK CSS uses widget node names. */
+.directory-scroller scrollbar {
+  opacity: 0;
+  min-width: 0;
+  min-height: 0;
+}
+
+.directory-header {
+  color: alpha(@pi_foreground, 0.5);
+  font-family: "IBM Plex Mono", "JetBrains Mono", monospace;
+  font-size: 8px;
+  letter-spacing: 1px;
+  margin-top: 5px;
+}
+
+.directory-row {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: @pi_foreground;
+  min-height: 0;
+  padding: 2px 6px;
+}
+
+.directory-row:hover,
+.directory-row:focus-visible {
+  background: mix(@pi_background, @pi_foreground, 0.1);
+}
+
+/* The window you are in: the same accent ring as its card. */
+.directory-row.current {
+  border-color: @pi_accent;
+}
+
+.directory-label {
+  font-size: 11px;
+}
+
+.directory-id {
+  color: @pi_accent;
+  font-family: "IBM Plex Mono", "JetBrains Mono", monospace;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.directory-empty {
+  color: alpha(@pi_foreground, 0.5);
+  font-size: 10px;
+}
+
+/* Which workspace a row's window is on; quieter than the number you type. */
+.directory-workspace {
+  color: alpha(@pi_foreground, 0.5);
+  font-family: "IBM Plex Mono", "JetBrains Mono", monospace;
+  font-size: 9px;
+}
+
+/* The row Enter would open: a typed name always shows where it leads. */
+.directory-row.chosen {
+  background: alpha(@pi_accent, 0.16);
+}

@@ -1,0 +1,24 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "noEmitOnError": true,
+    "allowImportingTsExtensions": false,
+    "rewriteRelativeImportExtensions": true,
+    "rootDir": ".",
+    "outDir": "./dist",
+    "declaration": true,
+    "declarationMap": false,
+    "sourceMap": false
+  },
+  "include": [
+    "execution.ts",
+    "attachments.ts",
+    "extensions/self/subagent-attachment-viewer.ts",
+    "extensions/self/subagent-pi-json-filter.ts",
+    "extensions/self/subagent-pi-json-filter-v2.ts",
+    "extensions/self/subagent-raw-supervisor-v1.ts",
+    "extensions/self/subagent-cockpit-child.ts",
+    "extensions/self/subagent-protocol-v2.ts"
+  ]
+}

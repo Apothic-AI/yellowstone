@@ -1,0 +1,388 @@
+---
+summary: "Overview and quickstart for monorepo package @tryinget/pi-little-helpers."
+read_when:
+  - "Starting work in this package workspace."
+system4d:
+  container: "Monorepo package for small Pi helper workflows."
+  compass: "Keep package behavior useful for daily operator work while aligning to monorepo contracts."
+  engine: "Implement focused package changes -> validate package -> validate monorepo root when needed."
+  fog: "Main risk is drifting from the legacy package behavior during migration into the monorepo."
+---
+
+# @tryinget/pi-little-helpers
+
+Canonical monorepo home for the former standalone `pi-little-helpers` extension package.
+
+- Workspace path: `packages/pi-little-helpers`
+- Release component key: `pi-little-helpers`
+- Legacy standalone source: `~/programming/pi-extensions/pi-little-helpers`
+
+## Extensions
+
+| Extension | Description |
+|---|---|
+| `session-closeout` | `/session-closeout` starts the Vault closeout procedure with exact host identity; `session_closeout` gates a declared-scope receipt on immutable findings, fresh AK/Git readback and independent typed operator approval. See [session closeout](docs/project/session-closeout.md). |
+| `code-block-picker` | Pick a code block from the conversation and copy it safely to the clipboard |
+| `codex-reset` | Owns `/resets status\|use\|manage` capability routing and the compatible `/codex-reset` account-bound, confirmed redemption flow |
+| `limits` | Runway subscription cockpit: compare supported provider quotas, key allowance/wallet balances and reset timelines; inspect or explicitly switch |
+| `reset-inventory` | `subscription_resets` read-only machine query for exact-provider reset counts and expiry; no redemption or login |
+| `html-output-browser` | Auto-open written/edited HTML files in the browser, append clickable `file://` links to tool output, and expose `/artifacts` / `/show-artifacts` plus `Ctrl+Shift+S` to pick an openable artifact from the workspace or recently written outside it |
+| `package-update-notify` | Check for updates to pinned npm/git packages in Pi settings |
+| `session-presence` | Publish exact Pi session identity for Steve's Ghostty/Niri hourly observation and hot restore flow |
+| `sidequest` | Human slash command to fork the current Pi session, requesting a receiver-correlated Ghostty tab when supported (placement is not proven); also owns troubleshooting-only `/subagents diagnose observer` for read-only ASC dispatch/loop progress |
+| `fresh-handoff` | Generate a self-contained handoff from the current conversation and auto-submit it as the sole initial user message in a fresh clean Pi session, requesting a receiver-correlated Ghostty tab when supported, or a separately selected new-window route; tab inspection refusal does not fall back; model-callable counterpart: `fresh_handoff_spawn` |
+| `scoutpeer` | Launch a clean visible read-only scout/review peer in the current workspace |
+| `parallelquest` | Human slash command to launch a clean visible candidate peer in an isolated git worktree |
+| `visible-loop` | Launch a clean visible Ghostty Pi tab for each iteration and submit a six-step real-prompt plan one frontier at a time: bound design/implementation, completion audit, governed deep review, consolidated Nexus fixup, posture refresh, and commit; `--delegate-commit` resolves `/commit` and delegates it to `dispatch_subagent` instead of running commit inline |
+| `nexus-loop` | Launch the same machinery with four real prompts: governed `deep-review` through `vault_execute_template`, one consolidated Nexus fixup that may use at most one non-Prompt-Vault read-only reviewer when available and useful before atomic completion, posture refresh, and a resolved `/commit` prompt delegated to `dispatch_subagent` |
+| `stash` | Persist and restore stashed editor content across sessions |
+
+## Exact-task session capability (Decision151)
+
+The additive emitted `pi-task-session` CLI, `task_session` Pi tool and
+[`task-session` skill](skills/task-session/SKILL.md) expose one read-only discovery/plan/
+inspection/classification and account-bound identity surface. **Launch requires installed owner publication:** exact separate-worker/configuration/closure pins, namespace enrollment, profile preflight and native admission. Missing, disabled or mismatched configuration refuses; no ordinary-worker or legacy fallback. No live deployment is claimed.
+Independent sealed SDK/Codex/state/native components are tested synthetically; this is not
+installed or enrolled launch proof. The emitted host/viewer and full synthetic startup tests do not establish native AK effects. See the repo
+[implementation evidence](../../docs/project/2026-09-07-visible-task-session-pi-implementation.md) and
+[current public binding contract](../../docs/project/2026-09-07-visible-task-session-public-implementation.md).
+Requested aliases require a private, content-addressed owner model source bound by the selected profile;
+no ambient registry, inferred Astra mapping or endpoint/auth fallback is used. Requested and resolved
+identities remain separate in observations and receipts.
+Use `pi-task-session profiles` to discover existing profile hashes and exact requested/resolved labels.
+It reports profile preflight only, not producer/task readiness, and does not publish or activate anything.
+Build with `npm run task-session:build`; focused isolated tests: `npm run task-session:test`.
+Linux x64 N-API support is built at package build time, never on runtime fallback.
+
+<a id="automatic-asc-execution-observer"></a>
+
+## Native existing-child tabs
+
+ASC owns `/subagents` (default: running current-session children only) and attachment tickets.
+`/subagents <name>` opens one child including terminal history; `/subagents status` stays read-only.
+There is no separate dashboard/inspect/observer command or legacy overlay. Advanced observer
+maintenance is explicitly reached through `/subagents diagnose observer [status]`, using the
+content-free `asc:subagent-observer:diagnose:v1` event with exact current-session/cwd checks.
+
+The standard `sidequest` extension hosts `asc:subagent-tabs:request:v1` via owner callbacks,
+without an ASC package dependency. It requests one **view-only native Pi** tab per existing
+attempt: no child JSONL resume, execution tools, model dispatch, discovered resources or MCP.
+Durable ASC claims prevent duplicate launches across listeners/reloads; reuse launches nothing,
+and blocked/indeterminate requests are never retried automatically. Controller-only Ghostty
+receiver correlation has no wrapper/new-window fallback. A native-ready ACK proves bootstrap
+and input handlers, **not** visible painting or same-window placement. Those require real
+parent-owned proof, not a positive surface ID. See the [host contract](docs/project/2026-10-12-native-subagent-tabs-host.md).
+
+## Troubleshooting-only ASC execution observer
+
+**Build/publication boundary:** `scripts/task-session-build.mjs` emits the shared resolver
+from `extensions/sidequestGhostty.ts` as `dist/task-session/shared-ghostty.js` and hashes it
+into the aggregate build identity. Preserving Decision151 source does not preserve rebuilt
+artifact, profile or publication identity. Any future build/pack needs fresh hashes,
+closure checks and owner proof; old publication evidence is historical, not proof for a
+rebuilt artifact. Runtime, activation, CI and landing remain **HOLD** for this reconciliation.
+This is not a blanket freeze on separately owner-authorized observer-renderer maintenance:
+AK6626 admits renderer-only verification, canonical landing and activation without rebuilding
+Decision151 artifacts or changing task-session publication/enrollment. AK6867 separately admits
+observer-controller settlement handling with the declared package pre-push gate, isolated live
+proof, staged hooks and canonical loading smoke; full CI packaging remains blocked because its
+prepack rebuilds task-session artifacts. That bounded admission
+does not release the shared-resolver/task-session reconciliation hold.
+
+Targeting reconciliation: a tab request now requires a valid controller PID with readable
+executable identity matching the configured absolute executable after path normalization,
+a coherent user-bus snapshot, a positive nonzero uint64 surface ID and the selected receiver's enabled
+`new-tab` action with `(tas)` parameters. An independently named originator wins; only a
+controller with matching executable readback and no unique bus name may use a distinct daemon
+with the same normalized executable path. These are resolved-path comparisons, not binary
+content/build hashes or proof of process incarnation; "nameless stub" is a receiver-selection
+inference, not proof of placement.
+Inspection failure, ambiguous identity or receiver refusal does not fall through to a
+native tab or new window. A window selected before tab resolution remains a separate
+route. Launch refusal's `confirmed_no_effects` concerns this session-dispatch attempt,
+not capability-inspection processes, earlier worktree/admission effects or global state.
+No `+new-tab` capability probe is used on this path: read-only `Describe` inspects the
+exact action receiver, followed by identity revalidation. This replaces the CLI flag
+probe for D-Bus activation; it does not assert that any CLI supports `--surface-id`.
+Zero (including leading-zero/hex aliases) is refused because the receiver interprets it
+as no target. A missing or stale **nonzero** surface can also trigger the receiver's
+focused/new-window fallback. `Describe` does not establish surface existence; this remains
+an unresolved placement/staleness limitation, not an unconditional no-wrong-window guarantee.
+Neither readbacks nor transport success prove actual surface ownership or placement.
+For enabled staggering, the dispatch slot remains held through action inspection and
+final identity recheck, and is released only at transport invocation (or refusal).
+Older linked launch-contract descriptions of untargeted tabs are historical where they
+conflict with this stricter refusal policy and require owner documentation reconciliation.
+
+By default the `sidequest` extension retains valid bounded `asc.execution_observation.v1` telemetry only in TUI memory: no observer files, reservation, probes or automatic tab. Run `/subagents diagnose observer` in the main TUI to request the detached troubleshooting observer from retained progress, or arm it for the next valid progress event if none remains. `/subagents diagnose observer status` only inspects; it never arms or launches. Retained replay preserves observation age, excludes content, and uses the same 128-group/64-phase bounds and expiry as active observation. The command preserves the current Pi session identity; it neither forks nor waits for agent idle. It reports `armed` (no launch yet), `pending`/`unconfirmed` (no verified startup), `launched` (verified renderer ACK only), `failed`/`closed` (no reusable session launch slot), or `disabled`/`unavailable`/`disposed`, including transport disposition and bounded failure/note when available. Its wait is bounded even if transport settlement hangs; repeat invocation never redispatches an attempt. A read-only progress tab is requested only when the originating Ghostty receiver (or nameless-controller daemon fallback) passes the PID/executable-path/bus correlation and enabled `Describe` capability checks above, with the controller's positive nonzero uint64 surface ID. This admits a targeted request, not proof that an observer tab exists or occupies the originating window. One controller session requests **one shared observer tab across every dispatch and loop**, including parallel groups and later/resumed batches. Per-group ASC identity and execution truth stay separate. A private, bounded startup receipt must match the session, random controller instance/token, renderer PID/start identity and exact renderer command before `observer.launchStatus` becomes `launched`; D-Bus acceptance alone leaves it pending, then `unconfirmed`. A late verified ACK may confirm the same attempt, including an `effect_indeterminate` transport outcome, never launch another. A genuine `confirmed_no_effects` rejection stays failed. A thrown callback or unsuccessful result without explicit no-effects proof stays `effect_indeterminate`, so a verified immediate/late ACK can confirm that same attempt without redispatch. This proves renderer startup and its first frame write, not surface visibility or placement. The renderer shows status, phase, latest tool, usage, a renewable telemetry-liveness lease, semantic-activity age, and quiet/suspected-stall cues without receiving prompts, objectives, assistant output, stderr, session paths, or receipt paths.
+
+The executing helper remains headless and ASC-owned. Closing the observer does not cancel work, Ghostty launch is not execution proof, and observer failure falls back to normal headless execution. Detached observers do not dispatch an untargeted wrapper tab or choose a new-window retry: when receiver correlation or capability inspection fails, the current Pi session receives one warning and execution continues without an external observer. An admitted request can still reach a receiver whose stale or missing nonzero surface triggers focused/new-window fallback; the adapter does not prove surface existence, same-window placement or a no-wrong-window guarantee. RPC/JSON/print/non-TUI sessions have no command or observation effects even when they report UI or inherit Ghostty variables. Unset/`auto` now requires the explicit command; `PI_ASC_OBSERVER=ghostty` (also `on`, `1`, `true`) retains legacy automatic opt-in for valid TUI progress. Set `PI_ASC_OBSERVER=off` to disable even the command. Neither command nor override waives receiver correlation, capability inspection, ACK or singleton protections. The shared viewer stays open while its controller is live, even when every group is terminal or between batches. Manual closure is recorded as `closed` and never relaunches, even on explicit command or extension reload. An exclusive private 4-KiB-bounded reservation persists per Pi session ID; only a different session ID gets a new launch slot. Unsafe/unreadable reservation state denies launch rather than resetting it. Session shutdown fences the renderer and detaches any unresolved transport settlement instead of waiting indefinitely. Up to 128 groups/64 phases per group are retained; terminal/inactive group expiry is applied on subsequent events and republishes aggregate membership even when that event's progress is redundant. Existing private per-group v1 snapshots and `statePathFor()` remain available, while the viewer reads a generation-specific session snapshot. See [ASC execution observer contract](docs/project/2026-08-04-asc-execution-observer-contract.md) for lifecycle and verification limits. The real Ghostty assertion requires a parent-provided isolated surface/session bus and `PI_ASC_OBSERVER_LIVE_ISOLATED=1`, with the live nested-compositor/private-bus identity preflight; it does not authorize tests on the operator desktop.
+
+## Visible peer tools
+
+The `sidequest` extension owns the visible peer and loop helper capability. Slash commands and model-callable peer tools are registered by the extension as standard tooling during Pi startup. `/fresh-handoff` and `fresh_handoff_spawn` share one clean-session handoff implementation; `/visible-loop` and `/nexus-loop` remain command-only surfaces. The loop commands also have a narrow pi-little-helpers-owned `pi.sendUserMessage` bridge for extension-originated whole-message inputs; this does not bridge arbitrary slash commands. The toolbox bundle exposes the same manifest for catalog/test alignment. Both projections are governed by one capability manifest in [`src/capabilityManifest.ts`](src/capabilityManifest.ts), including the machine-readable `LITTLE_HELPERS_TOOL_COMMAND_PROJECTIONS` map for tool-to-slash equivalents; see [Visible peer and loop capability contract](docs/project/2026-05-05-visible-peer-capability-contract.md) when debugging registration, package-export drift, or visible-loop prompt expansion.
+
+Visible-loop first renders a persistent operator widget for the complete iteration plan. Plan visibility is not queue authority: only the exact frontier step is submitted, and the next step is submitted with Pi-native `deliverAs: "followUp"` only after the frontier's exact user text is observed at `message_start` and that run reaches `agent_settled`. This remains correct under Pi `followUpMode=all` because multiple runnable prompts are never placed in the native queue. Since `sendUserMessage` has no delivery acknowledgement, the widget distinguishes submitted/pending from observed/running and never converts submission into a positive `hostQueuedCount` claim. The schema-5 per-session active snapshot binds a plan id to its exact iteration, lifecycle, single frontier, settled cursor, and governed call/receipt for recovery only. Cross-session exclusion comes from a separate run-global iteration lease under an exclusive run lock: it binds ACTIVE ownership to the exact session/process incarnation, token-gates LAUNCHING handoff, permits one FAILED recovery, and retains a COMPLETED tombstone. Same-process extension reload renders and resumes without duplicate submission; fresh-process restart, corrupt state, token replay, or an indeterminate `submitting` effect fails closed explicitly rather than replaying or stalling.
+
+The deep-review step is not a slash-template expansion: exactly one governed call may satisfy the barrier. It correlates one `tool_execution_start`/`tool_execution_end` pair by tool-call id, rejects a second matching call instead of overwriting correlation, requires the exact governed template name and objective, rejects top-level tool errors, and accepts only `details.ok=true`, `executionSurface=workflow_execute`, a non-empty Vault `handoffId`, and `status=done`; missing or failed receipts release nothing downstream and stop the loop before Nexus, posture refresh, commit, or completion. Raw `deep-review.md` files are neither required nor accepted as execution. The default visible loop replaces three context-free continuation turns with one design-membrane completion audit, then uses one consolidated Nexus fixup for the review findings, at most one optional non-Prompt-Vault read-only review when reviewer tooling is available and a separate review would materially reduce risk, focused revalidation, and atomic completion. That fixup explicitly forbids a second `deep-review` or `vault_execute_template` call in the same iteration. Prompt Vault use in that fixup is limited to optional non-review `text_ok` grounding; gated workflows are skipped. Ordinary slash prompts such as `/commit` still resolve from `<cwd>/.pi/prompts` before `~/.pi/agent/prompts`, with repo-local templates overriding global templates and unresolved templates failing closed. `/nexus-loop` wraps the resolved `/commit` content in a bounded `dispatch_subagent` objective; `/visible-loop --delegate-commit` opts into the same delegation while ordinary `/visible-loop` keeps inline `/commit` plus the normal completion checkpoint. The ordinary completion checkpoint is not sent for delegated commit steps; after the delegated worker succeeds, the child calls `visible_loop_child_complete`. Completion cannot be recreated from config alone: it requires the persisted terminal plan step to be running with every preceding step settled. Pi package/settings/CLI prompt-template bodies remain unavailable to this extension through the public API.
+
+| Tool | Purpose | Mutation boundary |
+|---|---|---|
+| `fork_peer_spawn` | Canonical tool for launching a visible peer that inherits the current Pi conversation/context. Supports explicit intercom report-back with `reportBack: "intercom"` and exact `parentPeerTarget`; otherwise remains manual-visible by default. | Same forked-context family as `/sidequest`; use only when inherited context is intended. |
+| `scout_peer_spawn` | Launch a clean visible scout/review peer in the controller's current/requested workspace. Defaults to intercom report-back and requires an exact `parentPeerTarget` unless `reportBack` is explicitly `manual` or `none`. | Read-only by prompt contract only; editable shared-cwd work remains manual `/sidequest`. |
+| `candidate_peer_spawn` | Create an isolated git worktree and launch a clean visible candidate peer for bounded mutation. Defaults to intercom report-back and requires an exact `parentPeerTarget` unless `reportBack` is explicitly `manual` or `none`. | Before Git mutation it consumes exactly one owner-authorized lifecycle-v2 admission permit bound to repository, objective, task, actor, inventory digest, capacity reservation, configuration, and expiry. |
+| `candidate_peer_cleanup` | Read-only dry-run projection of historical registry-v1 cleanup packets. | Execution is permanently quarantined by Decision 59. Exact cleanup must use lifecycle-v2 review, disposition, proof, restoration archive, authorization, and terminal receipts. |
+| `candidate_peer_closeout` | Resolve exact peer-run aliases to lifecycle-v2 resource generations, project the next closeout step, execute already-authorized cleanup, or run a repository-bounded janitor. | `status` and `plan` are read-only. Execution delegates to lifecycle-v2 locks, archive verification, expiring authorization, drift checks, and effect receipts; peer reports, integration status, and age are never authority. |
+
+Candidate worktree placement is explicit and fail-closed. A request-level `workspaceRoot` wins placement selection, but it never bypasses repository-pollution safety. Otherwise, the compatibility default `PI_CANDIDATE_WORKSPACE_PLACEMENT=state` (or an unset value) uses the absolute `$XDG_STATE_HOME/pi-quests/worktrees/<repo-key>`. Set `PI_CANDIDATE_WORKSPACE_PLACEMENT=preserve-ancestry` to place new worktrees at `<repo-parent>/.pi-candidates/<repo-key>/<candidate-name>`, preserving applicable ancestor project/company instructions while remaining outside the source checkout. Any selected root inside an enclosing Git checkout must already be ignored there; a known but unverifiable checkout or an unignored root fails before directory/worktree creation rather than silently falling back. Unknown placement values fail closed. Existing worktrees are never migrated or deleted automatically, and changing the environment requires a fresh Pi process rather than `/reload` alone. `reuseExisting=true` admits only one exact linked worktree of the authorized parent: canonical Git common-directory identity, a regular linked-worktree `.git` file and back-reference, symbolic branch and HEAD, and one complete parent porcelain-list record must all agree. Foreign, detached, bare, prunable, malformed, or ambiguous paths produce a real Pi tool error, release the preparation-stage permit, and do not publish peer registry state or launch Ghostty.
+
+Clean peer surfaces (`scout_peer_spawn`, `candidate_peer_spawn`, `/scoutpeer`, and `/parallelquest`) launch a clean Pi session rather than forking the controller conversation; this keeps the boot ACK prompt as the first user turn and avoids inherited controller/tool-result context overriding peer identity. `/fresh-handoff [optional goal]` and `fresh_handoff_spawn` create a clean continuation rather than a peer: little-helpers first captures bounded read-only Git HEAD/status and AK claimed/ready-task readbacks, then `pi-session-compaction` reduces the current branch and uses the active host model registry to generate one self-contained prompt; little-helpers then launches clean Pi without `--fork`, preserves the selected model and thinking level, and passes that prompt once as the automatically submitted initial user message. With no goal argument, it asks the fresh session to continue the current unfinished operator-directed work from the verified next legal step. Unavailable Git/AK readbacks are labeled rather than invented, and the generated handoff requires fresh owner-surface verification before mutation. Generation or launch failures fail closed; Ghostty success proves transport, not task completion. Direct new-window transport detaches long-lived Ghostty GUI processes from the controller's command timeout and reports success only after the terminal shell confirms an exact private command-admission handshake. Killed, timed-out, or unconfirmed launch effects remain indeterminate and are never retried automatically, preventing duplicate peers.
+
+Fork peer surfaces (`fork_peer_spawn` and `/sidequest`) intentionally inherit the current Pi context. `fork_peer_spawn` preserves manual-visible default behavior, but can inject the same bounded `PEER_ACK` / `PEER_FINAL` intercom instructions when called with `reportBack: "intercom"` and an exact `parentPeerTarget`; `/sidequest` remains a manual operator command without automatic report-back. Peer transport starts are staggered by about one second by default to reduce concurrent candidate/scout/fork activation races; spacing does not prove tab readiness or placement; set `PI_SIDEQUEST_LAUNCH_STAGGER_MS=0` to disable or another millisecond value to tune. Controller-spawned intercom report-back must include the exact controller session id, usually from `intercom({ action: "status" })`, so spawned peers do not guess among many same-cwd sessions; `/scoutpeer` uses the current session id for intercom report-back when Pi exposes it, otherwise it falls back to manual visible reporting. `/scoutpeer` launch notifications include the exact `intercom({ action: "peer_watch", peerRunId: "...", waitFor: "final" })` bridge when intercom report-back is active. Intercom prompts prefer the bounded canonical two-message protocol: one `PEER_ACK peer_run_id=...` and one `PEER_FINAL peer_run_id=...`; after `PEER_FINAL`, the peer should stop unless the controller explicitly asks a clarifying question or assigns new work. Legacy `QUEST_ACK quest_id=...` / `QUEST_FINAL quest_id=...` remains a peer-messaging compatibility path, not the preferred beta vocabulary. The tools return launch/worktree facts only; visible peers are parallel cognition, not parallel authority. Intercom report-back is communication, not durable evidence or promotion authority.
+
+Candidate admission is governed by `scripts/candidate-admission-v2.mjs`. Owner-authored configuration defines global and exact-repository limits for unresolved count, measured bytes, age, and active admissions. Authorization binds a fresh inventory and active-reservation digest; any drift before spawn fails closed. The owner-only `expire --input PATH` transition records `status: "expired"` and `expiredAt` for an unreserved authorized permit at or after its canonical `expiresAt`; it rejects unexpired, reserved or bound, released, and already-expired permits. Canary mode admits exactly one owner-authorized candidate while the historical hold remains active. After a successful terminal canary and a separate accepted owner decision, activation preserves the hold artifact as `superseded_by_admission_v2`; it does not delete history or re-enable v1 cleanup. Configuration/hold activation is preflighted and recovery-journaled so partial publication rolls back or completes idempotently on retry.
+
+One historical July 13 cleanup shape predates hardened effect observations. It remains invalid for ordinary `release`; `verifyCleanedCandidateTerminalRecord` is unchanged. The anomaly-only owner flow is `prepare-reconcile-release --request ABSOLUTE_PATH --output ABSOLUTE_PATH`, `verify-reconcile-input --input ABSOLUTE_PATH`, then `reconcile-release --input ABSOLUTE_PATH`. Preparation creates a new canonical owner-only 0600 packet from the small owner request; semantic preflight performs two stable, non-mutating reads of current permit, lifecycle, archive, and Git facts; execution consumes the same unchanged packet. The exact verifier binds both rejected review cycles, the raw ten-entry JSONL SHA-256, archive member bytes, authorization, receipt, and deletion postconditions, and records `hardenedV2Verified: false`. Resource and admission locks make the one permit rewrite atomic and idempotent. This releases admission pressure only; it does not execute cleanup, authorize another candidate, certify lifecycle-v2 hardening, alter the historical hold, or reconcile live state automatically. See [Legacy terminal anomaly reconciliation](docs/project/2026-07-31-candidate-admission-legacy-terminal-reconciliation.md).
+
+Candidate peer worktrees are intentionally left for controller/operator review. Each `candidate_peer_spawn` result includes a persisted registry sidecar under `$XDG_STATE_HOME/pi-quests/peer-registry/<peerRunId>.json` (fallback `~/.local/state/...`) with the exact admission binding plus historical registry-v1 cleanup projection. `candidate_peer_cleanup` may display that projection but refuses `execute=true` regardless of closeout claims. Lifecycle-v2 is the only executable archive and cleanup path.
+
+Use `candidate_peer_closeout` with one of five explicit actions:
+
+- `status` and `plan` require exact `peerRunIds`, resolve each registry alias to one inventory resource and generation, and never mutate lifecycle state. Controller `taskId`, integration-closeout evidence, and cleanup-trigger fields are echoed as non-authorizing planning context only.
+- `execute_authorized` requires the supplied peer aliases to resolve to exactly one lifecycle resource. Before delegation, the lifecycle aliases, repository roots, and branches must exactly equal current registry inventory, and state plus unexpired authorization lineage must match. Admission bind (which precedes visible launch), registry publication, and destructive cleanup share a global mutation lock. Inside that membrane the executor re-reads current inventory and rejects any bound, unpublished same-worktree entrant before performing the full archive, Git, process-lease, and drift checks under the exact resource lock.
+- `janitor_status` requires an absolute normalized `repoRoot`, reports overdue nonterminal resources, and performs no effects.
+- `janitor_execute_authorized` uses the same repository and current-inventory boundary, blocks before effects if any authorization is stale or invalid, and attempts at most one current `cleanup_authorized` resource per invocation. It reports remaining eligible resources for later cycles and never selects work from age, `PEER_FINAL`, registry-v1 packets, or inferred candidate quality.
+
+The janitor does not decide disposition, acceptance, integration, or cleanup authorization. Partial cleanup remains an explicit per-resource owner/controller action rather than an automatic janitor retry.
+
+Do not manually remove candidate worktrees or branches. Use `scripts/candidate-lifecycle-v2.mjs` so exact resource identity, drift checks, restoration-grade archives, authorization expiry, effect receipts, and terminal state remain bound.
+
+Terminal lifecycle storage has a separate, explicit retention path; it is never part of cleanup or age-based janitor execution. `terminal-retention-prepare` accepts one already-terminal resource, re-verifies its exact terminal receipt, and creates an owner-only compressed capsule containing the lifecycle record, full append-only events, exact registry-v1 sidecars, and every restoration-archive byte. Preparation is non-destructive and restoration-tests every capsule member. `terminal-retention-authorize` requires a separate owner actor and canonical expiry no more than 30 minutes away. `terminal-retention-compact` revalidates terminal state, current registry plus bound admissions, capsule, and all source hashes under the registry/resource locks; checks authorization again immediately before durable marker publication; retains registry sidecars for compatibility; and removes only redundant event/archive copies. Ordinary terminal verification switches to capsule evidence only after an exact durable GC receipt. Catchable failures release locks; after a hard process crash, `terminal-retention-recover-locks` requires an owner actor and removes only exact compaction leases whose recorded process is provably absent before retry. Marker-first retries may finish exact remaining removals after authorization expiry, but late aliases, events, archives, or a reappeared worktree block before further GC. `closed_with_retained_effects` remains fail-closed until its own terminal verifier exists. See [Terminal candidate retention compaction](docs/project/2026-08-03-terminal-candidate-retention-compaction.md).
+
+```bash
+node scripts/candidate-lifecycle-v2.mjs terminal-retention-prepare --resource cpr-...
+node scripts/candidate-lifecycle-v2.mjs terminal-retention-authorize --resource cpr-... --input /absolute/owner-authorization.json
+node scripts/candidate-lifecycle-v2.mjs terminal-retention-compact --resource cpr-...
+# Hard-crash recovery only; input JSON is {"actor":"owner:identity"}:
+node scripts/candidate-lifecycle-v2.mjs terminal-retention-recover-locks --resource cpr-... --input /absolute/owner-lock-recovery.json
+node scripts/candidate-lifecycle-v2.mjs terminal-retention-verify --resource cpr-...
+```
+
+The authorization JSON contains only `actor` and `expiresAt`. These commands do not infer terminality from age, peer reports, registry packets, or missing processes; they do not merge, push, publish, prune Git objects, or delete registry lineage. No production terminal resource is compacted merely because this code is installed or reloaded.
+
+### Adopt one existing unregistered worktree
+
+An owner may bring one clean, linked, unregistered Git worktree under lifecycle-v2 control with an expiry-bound JSON authorization:
+
+```json
+{
+  "schemaVersion": 2,
+  "action": "adopt_existing_worktree",
+  "worktreePath": "/absolute/canonical/path/to/candidate",
+  "repoRoot": "/absolute/canonical/path/to/durable-owner-worktree",
+  "gitCommonDir": "/absolute/canonical/path/to/shared/.git",
+  "branchName": "candidate/exact-branch",
+  "headOid": "0123456789abcdef0123456789abcdef01234567",
+  "actor": "owner:identity",
+  "rationale": "why this pre-existing candidate should enter lifecycle-v2",
+  "expiresAt": "2026-07-20T14:00:00.000Z"
+}
+```
+
+The object must contain exactly those keys. Paths, branch, and immutable HEAD must match Git's live identity; `expiresAt` must be a future canonical UTC timestamp. Run:
+
+```bash
+node scripts/candidate-lifecycle-v2.mjs adopt --input /absolute/path/to/owner-adoption.json
+```
+
+Adoption rejects symlink or path ambiguity (including lifecycle publication roots), non-linked/detached/dirty worktrees, registry or lifecycle duplicates, identity drift or mismatches, expiry, and lexical resource/generation/archive collisions including dangling symlinks. It holds the exact resource lock while atomically publishing one owner-only native v2 record at `resourceVersion: 1` in `review_pending` and while re-verifying the bound snapshot, Git identity, registry identity, and expiry, so concurrent lifecycle updates fail closed. A catchable race or post-publication error atomically withdraws the record before releasing that lock. A hard process termination cannot run catchable rollback and may leave the provisional resource plus resource lock fail-closed for explicit owner recovery; it is not claimed as automatic rollback. Adoption does not clean anything and creates no alternate cleanup path: continue only through lifecycle-v2 review, disposition, integration proof when accepted, restoration archive, cleanup authorization, and cleanup.
+
+Shared utilities live in [lib/package-utils.ts](lib/package-utils.ts).
+
+## Limits / Runway
+
+Overview defaults to **soonest displayed quota renewal**, then **lowest Left percentage** for ties. Unknown renewal/remaining values sort last; monetary balances are not ranked against quota percentages. Passed renewal timestamps keep their chronological position and refresh warning. Search and attention filtering preserve this order; the active account stays selected without being pinned to the top.
+
+`/limits` (or `/limits all`) opens **Runway** on its **Overview** tab: one compact row per subscription, so eight accounts fit at 75 columns × 24 terminal rows. Five independent columns show **Subscription · Left · Renews · Banked · Expires**. Left is compact (15 characters at the default table width, capped at 18 on wide tables) rather than stretching across spare space. Quota renewal belongs to the tightest reported primary window shown in the quota cell (week, 5h, etc.), never an unrelated window's earlier date. An unreported renewal stays `unknown`; monetary balances have no quota renewal (`—`). Choose a row, then Enter/→ opens its **Subscription** tab; ← returns to Overview with the same selection. **Horizon** arranges reported quota renewals and Codex credit expiries chronologically. Tab/Shift+Tab moves between all three views without switching subscriptions. Below 64 terminal columns, an explicitly labelled selected-account panel preserves all five fields; ↑↓ chooses another account, and widening restores the table. Very short terminals request more space rather than silently dropping a field. Short table layouts page subscriptions. Subscription and Horizon retain independent scroll positions.
+
+**Banked reset expiry** is separate from quota renewal: `↺3` in **BANKED** means three reported available resets, while `6d 0h` in **EXPIRES** is their earliest reported eligible expiry. The count stays neutral. Only the expiry countdown turns **yellow** with `!` within **3 days (72h)**, or **red** with `!!` within **1 day (24h)**. Passed expiry timestamps stay red with `!!past ↻`; passed quota renewals show `past ↻`. Both require refresh, not an assumption that renewal or consumption happened. `↺?` is unknown count, `↺0` / `none` is known zero, `?` / `unknown` means inventory could not be read, `login` means app sign-in is required, `multi` means separate per-window inventories (inspect details; do not sum counts), and `n/s` marks reset inspection unsupported by this integration (not proof that the provider offers none). `?` beside expiry marks missing dates, including partially dated banks. Check-health prefixes appear before the subscription name independently of all five values: `↻` checking, `…` queued, `~` partial, `!` failed with no quota data, `old` retained data after a failed check. Subscription and Horizon use the same expiry thresholds; individual dates remain in Subscription.
+
+Compact monetary cells use **K** for key allowance and **W** for account wallet (USD), e.g. `K$5.00 W$8.62`. `K∞` means an uncapped **key only**, never an unlimited wallet. `?` is unknown/unavailable, not zero; `~` monetary values are rounded to fit (e.g. `~12.3K` USD). The selected monetary row's footer and `?` help explain the legend; Subscription retains precise amounts.
+
+**Attention** isolates expiring reset credits, low quota, failed checks, partial balances and known empty wallets/key allowances. The compact overview footer identifies the selected provider; full labels, details and separate balance sections remain in Subscription.
+
+Supported identities: Codex (including numbered multi-pass accounts), Claude (`anthropic`), GitHub Copilot, z.ai, Grok (`xai`), OpenCode Go, OpenRouter and Meta Muse (`meta`). The seven non-Codex base providers require an installed sub-core implementing `sub-core:usage-request:v1`; older/missing cores show an actionable unavailable state without breaking Codex. The bridge makes one exact-provider request at a time, never the bulk cache/action API, and introduces no static dependency on a machine-local checkout.
+
+**Different things look different.** Time-window quota has remaining-percent meters. OpenRouter has separate USD **key allowance** and **account wallet** sections, not fake subscription percentages. An uncapped key does not imply an unlimited wallet; unknown is not zero. Banked-reset inventory is available for Codex and through compatible sub-core for Grok/z.ai; missing sign-in and unsupported adapters are explicit, never zero counts. Percentages indicate quota pressure, not equal amounts of work or a predicted number of hours remaining.
+
+| Key | Action |
+| --- | --- |
+| `/`, Ctrl+F | Fuzzy search labels, provider names, plans and status |
+| ↑/↓, j/k | Choose an account in Overview; scroll Subscription or Horizon |
+| Enter, → | Inspect the selected Subscription — **never switches subscriptions** |
+| Tab / Shift+Tab | Cycle Overview → Subscription → Horizon, or reverse |
+| ← | Return to Overview, preserving selection and search |
+| PgUp/PgDn, Ctrl+U/D | Page Overview rows; scroll detailed windows or the timeline |
+| r / Shift+R | Refresh selected / all accounts |
+| s | Switch to the selected subscription, keeping the model if available |
+| a | Reveal the active account |
+| o | Cycle sort: quota renewal + lowest left (default) → credit expiry → active first → most base quota left |
+| ! | Toggle needs-attention filter |
+| t | Open Horizon; press again to return to Overview |
+| Home/End, g/G | First/last account or detail line |
+| ? | Scrollable keyboard guide |
+| Esc, q | Return to Overview first; there clear attention/search filters, then close. In search mode Esc clears and exits search |
+
+`/limits current` prints the active supported subscription, including non-Codex providers. In print/JSON/RPC modes, `/limits` prints all allowed accounts instead of opening a TUI-only component. Configured aliases and the active signed-out subscription stay visible with actionable guidance; unused, unconfigured base providers are omitted.
+
+Browsing/refreshing does not switch accounts, spend reset credits, or persist quota snapshots. Refreshes run at most two accounts concurrently, coalesce duplicate requests, and isolate per-account/per-endpoint failures. Missing values remain unknown; old data retained after a failed refresh is explicitly marked. Closing/reloading aborts dashboard waits and prevents queued checks or late confirmations from dispatching new actions; host-owned authentication or a model switch already dispatched may still finish. Switching is disabled during a running turn and requires confirmation if it would also change the model.
+
+Account discovery uses the live model registry, with labels and exact project `allowedSubs` restrictions projected read-only from multi-pass configuration. Restrictions are checked before account reads and switches, including `/limits current` and queued refreshes; malformed scope fails closed. Close and reopen after changing account configuration. Codex remains account-bound through the host credential resolver. Other providers are **provider-level snapshots**, using sub-core's native credential precedence (which may include CLI credentials), not proof of identity with a custom model's credential override. Numbered non-Codex aliases are shown as unsupported rather than borrowing the base account's quota. Meta Muse is shown as a signed-in subscription with quota **unknown**: Meta publishes no usage endpoint, so no quota, balance, or renewal is invented for it. Gemini/Antigravity/Kiro and optional risky providers are not added by this slice. The dashboard uses existing Pi theme tokens and introduces no new palette or `DESIGN.md` contract.
+
+Grok and OpenCode Go usage endpoints are undocumented and may change. Grok reports subscription OAuth quota, not developer API credit; Go windows are not Zen wallet credit. Provider fetchers and credentials stay owned by sub-core. Dashboard snapshots stay in memory and are not sent as model turns. Explicit `subscription_resets` tool results do enter model context; they omit raw token IDs and credentials.
+
+Because Meta publishes no usage endpoint, Muse spend is measured locally instead: the independent `extensions/meta-usage-ledger.ts` extension appends one line per finalized Muse assistant message to `meta-usage-ledger.jsonl` in the Pi agent dir (usage totals and structured reset timestamps — never message content or provider error text). The Meta detail in `/limits` reads it back as requests/tokens/cost since the first recorded message, per model when several are used. The observed Meta HTTP 429 envelope (`rate_limit_exceeded`, `rate_limit_error`, and `Subscription quota exhausted.`) stamps a run-out marker; ordinary rate limiting does not. The detail shows locally recorded cycle spend and the provider-reported reset timestamp, not a live availability guarantee. Retries with the same model and reset timestamp count as one window. Legacy markers without verified reset metadata retain their original boundaries with an explicit uncertainty warning. An explicit maintenance call to `recordMetaRunOutReset(sourceMessage, ledgerPath)` may append a `v:1` `run-out-reset` annotation for an existing exact timestamp/model marker, using the observed exhaustion error's structured reset. It never replays usage or rewrites original bytes; repeated identical annotations are harmless, conflicting annotations leave legacy boundaries uncertain, and older readers ignore the new annotation kind. This is not automatic session-history scanning or permission to infer missing resets. Preserve the source session/message references in AK evidence when applying maintenance. This counts only Muse traffic through Pi on this machine — Muse use in other apps or on other devices is invisible to it — and whether Meta's credits equal tokens or USD stays unknown until real run-out cycles discriminate.
+
+Accounting can be disabled independently of `/limits`: disable `extensions/meta-usage-ledger.ts` in `pi config`, or exclude it in the package's `extensions` settings filter, then reload Pi. `/limits` remains available and still reads existing ledger history; no new Muse usage is recorded while the accounting extension is disabled. Conversely, disabling `extensions/limits.ts` does not stop accounting.
+
+Reset-credit expiry is distinct from a usage-window reset date; neither is an OAuth token expiry or a subscription cancellation date. Spending is a separate, explicitly confirmed `/codex-reset` operation on the active subscription.
+
+## Subscription resets
+
+`subscription_resets({ provider: "xai" })` is the read-only machine query (omit provider for the active subscription). It returns normalized counts/expiry or typed errors; it cannot log in, inspect browser stores, switch accounts, grant cards, or redeem resets. `/resets status` and `/limits` consume the same sub-core inventory contract for Grok/z.ai. No local HTTP server is started.
+
+`/resets` defaults to read-only **status** for the active subscription. `/resets use` routes to a verified native redemption handler, or explains why native redemption is unavailable. `/resets manage` offers confirmed opening of z.ai/Grok subscription management; headless mode prints the verified URL and instructions. Browser sign-in is not bound to Pi: verify the account before changing it. The dashboard remains read-only; switch explicitly with `s` or `/subs`, then close it and run `/resets`.
+
+See [subscription reset capabilities and provider evidence](docs/project/subscription-resets.md). z.ai/Grok quota renewals and monetary/promotional credits are **not** treated as banked resets. Grok inventory is now live-verified using Pi OAuth and gRPC-Web. z.ai inventory uses the verified ZCode PERSONAL `/reset/status` contract with explicitly provisioned app tokens; without them it reports sign-in required. Native redemption remains disabled for both.
+
+### Codex reset credits
+
+Use `/resets status` or `/codex-reset status` to inspect the active OpenAI Codex subscription account without spending anything. It lists every available banked reset with both relative and absolute expiry times. Use `/codex-reset` or `/codex-reset use` to review that same list and then explicitly confirm spending one credit.
+
+The extracted workflow intentionally improves on the source interaction:
+
+- the command name describes the action instead of hiding it in a settings tab
+- every spend requires a confirmation that shows the subscription label, exact provider, account identity, and before/after credit count
+- print/JSON invocations are status-only and never spend a credit; RPC requires its confirmation response just like the TUI
+- ambiguous transport failures retain the same idempotent request ID and account identity per provider, including after a rejected retry, reload, or reopening the saved session
+- account switching or credential replacement cannot redirect a confirmed reset or unresolved retry; restore the original account to retry
+- both command names share the same lock and pending state; an unresolved reset through another alias of the same account blocks a new spend
+- project multi-pass `allowedSubs` restrictions are checked before authentication and again before requests; malformed scope fails closed
+- the result reports how many windows were reset and refreshes the remaining count
+
+The command supports `openai-codex` and numbered multi-pass providers such as `openai-codex-2`. It reuses Pi's model-registry authentication for the active model, verifies the account identity from the resolved Codex token, and never rotates subscriptions or falls back to the base account. Use `/subs` or `/limits` to switch first, then `/codex-reset status` to inspect that subscription.
+
+Only request IDs and subscription/account identities are saved, never credentials. Spending requires a saved session with at least one completed assistant turn: the recovery entry must be readable from the session file before any POST. Recovery scans the session's entire append-only history, not just its active branch. This is session-scoped recovery, not a cross-session/global spending lock; do not start a separate reset while an earlier one is unresolved. An older unresolved entry without an account identity blocks spending rather than guessing its account; reconcile it against the original account's server-side state before starting a new reset.
+
+## Toolbox bundle
+
+This package exports `@tryinget/pi-little-helpers/toolbox-bundle` for `pi-toolbox-discovery`.
+The sidequest extension registers the visible peer and clean-handoff tool family (`fork_peer_spawn`, `scout_peer_spawn`, `candidate_peer_spawn`, `candidate_peer_cleanup`, `candidate_peer_closeout`, `fresh_handoff_spawn`) as standard model-callable tooling at Pi startup. The toolbox bundle registers the same tool family only for package-owned test/catalog compatibility; command/UI helpers such as `/visible-loop`, `/nexus-loop`, `/codeblocks`, `/artifacts`, `/package-updates`, `/session-presence`, and `/stash` are not part of the model-callable toolbox coverage.
+
+## Steve-specific session presence / hot restore coupling
+
+This package now includes a deliberately **Steve-specific** helper for exact Pi session restore.
+
+The `session-presence` extension does two things:
+
+1. writes a schema-v2 live sidecar JSON for the current Pi process under `$XDG_RUNTIME_DIR/pi-session-presence/` (fallback `~/.local/state/pi-session-presence/`)
+2. admits a terminal binding only for an interactive TUI on a real TTY with a recognized Ghostty ancestor and bounded `GHOSTTY_SURFACE_ID`
+3. sets and briefly re-applies a terminal title such as `π - agent-kernel · gs:main:4660 · 77bc82bb21b84651a0588b6e4d50636c`
+
+The `gs:<family>:<surface>` segment distinguishes two terminal surfaces that resume the same logical Pi session. The full session token remains last so older suffix-based consumers keep working, while inherited Ghostty environment variables cannot make a headless descendant claim the operator's terminal. The title base can still be overridden for special flows such as `/sidequest`.
+
+This lets the workstation hourly observer join:
+
+- the Ghostty/Niri window title
+- the live Pi process metadata
+- the exact session file under `~/.pi/agent/sessions/`
+
+The important restore consequence is:
+
+- use `pi --session <exact-session-file>` for hot restore
+- do **not** fall back to `pi --resume` when the exact session file is already known
+
+Detailed setup note:
+
+- [docs/project/2026-04-12-session-presence-for-steve-hot-restore.md](docs/project/2026-04-12-session-presence-for-steve-hot-restore.md)
+
+## Runtime dependencies
+
+This package expects Pi host runtime APIs and declares them as peer dependencies:
+
+- `@earendil-works/pi-coding-agent`
+- `@earendil-works/pi-ai`
+
+Fresh-session handoff transport also depends on the sibling owner package:
+
+- `@tryinget/pi-session-compaction` through its `handoff-generation` export
+
+When using UI APIs (`ctx.ui`), guard interactive-only behavior with `ctx.hasUI` so `pi -p` non-interactive runs stay stable.
+
+## Package checks
+
+From the package directory:
+
+```bash
+npm install
+npm run check
+npm run release:check:quick
+```
+
+From the monorepo root:
+
+```bash
+bash ./scripts/package-quality-gate.sh ci packages/pi-little-helpers
+```
+
+## Live package activation
+
+**Reconciliation HOLD:** the following is a future owner-admitted activation/verification
+checklist, not permission to install, reload, run CI or land this source proposal. Authored
+stagger refusal/successor and pending-transport/successor regressions require separate effect
+review and admitted execution before behavior acceptance. Fake transport tests cannot prove
+real receiver surface existence or placement; those require separately admitted live evidence.
+
+After that admission, install the package into Pi from this package directory:
+
+```bash
+pi install /home/tryinget/ai-society/softwareco/owned/pi-extensions/packages/pi-little-helpers
+```
+
+Then in Pi:
+
+1. run `/reload`
+2. verify `/codeblocks`, `/codex-reset status`, `/codex-reset` (including cancel-before-spend), `/artifacts`, `/show-artifacts`, `Ctrl+Shift+S`, `/sidequest "test prompt"`, `/fresh-handoff "continue the verified next slice"`, `fresh_handoff_spawn`, `/scoutpeer "test prompt"`, `/parallelquest "test prompt"`, `/visible-loop --count 1`, `/visible-loop --count 1 --delegate-commit`, `/nexus-loop --count 1`, `/session-presence`, the `stash` shortcuts/commands, `fork_peer_spawn`, `scout_peer_spawn`, `candidate_peer_spawn`, `candidate_peer_cleanup` dry-run, `candidate_peer_closeout` status/plan plus a janitor status against a disposable state root, and any `write`/`edit` flow that produces an `.html` file in a real session
+3. verify `/visible-loop --count 2` opens one visible Ghostty Pi tab for iteration 1, shows the six-real-prompt plan widget, submits only one executable frontier, replaces repeated continuation turns with one completion audit, advances only after correlated `message_start` plus `agent_settled`, withholds the consolidated Nexus fixup and all later work until governed deep-review returns the exact successful workflow handoff receipt, survives same-session `/reload` without duplicate delivery, fails closed on fresh restart or indeterminate submission, requires posture refresh and `/commit`, emits `VISIBLE_LOOP_ITERATION` only after the explicit completion checkpoint, then launches iteration 2 in a fresh visible Pi session
+4. verify `/nexus-loop --count 2` uses the same single-frontier behavior with four real prompts: exactly one deep-review call through `vault_execute_template`, one consolidated Nexus fixup that forbids a second governed review and may use at most one non-Prompt-Vault read-only reviewer when available and useful before atomic completion, posture refresh, and a resolved `/commit` delegation prompt that calls `dispatch_subagent`; verify no `deep-review.md` file exists
+5. for `/sidequest`, `/fresh-handoff`, `fresh_handoff_spawn`, `/visible-loop`, `/nexus-loop`, and quest tools, distinguish a receiver-correlated tab request from a window route selected before tab resolution; verify tab inspection/identity refusal produces no session dispatch or fallback. For admitted valid-surface tab requests, observe actual placement separately; include stale/missing nonzero surfaces to characterize receiver fallback without claiming a no-wrong-window guarantee. For both fresh-handoff surfaces, separately verify the launched session is clean, receives exactly one generated initial prompt and starts work automatically
+6. run one real `dispatch_subagent` and one multi-phase `loop_execute` only under separate live admission; with readable matching executable paths, coherent receiver identity, enabled `Describe` capability and a known valid surface, first verify no detached launch by default, then run `/subagents diagnose observer` and observe whether one shared read-only tab is reused across all dispatches and logical loops, and verify latest-tool/activity/quiet-stall state and survival of observer-tab closure without cancelling execution. On receiver-correlation/capability refusal, verify one warning and no adapter-dispatched observer or new-window retry; separately characterize stale nonzero surface receiver fallback. Also verify headless behavior with `PI_ASC_OBSERVER=off`
+7. if observed tab placement differs from the originating window, retain the placement failure as evidence rather than treating transport success as proof; use [historical launch-contract context](docs/project/2026-04-16-sidequest-ghostty-launch-contract.md) subject to the receiver-correlation and staleness limitations above
+
+## Docs discovery
+
+```bash
+npm run docs:list
+npm run docs:list:workspace
+npm run docs:list:json
+```
+
+## Release metadata
+
+This package keeps component metadata in `package.json` under `x-pi-template`:
+
+- `workspacePath`
+- `releaseComponent`
+- `releaseConfigMode`
+
+Monorepo release automation is root-owned; package metadata must stay aligned with the root release-component map.
+
+## Copier lifecycle policy
+
+- Keep `.copier-answers.yml` committed.
+- Do not edit `.copier-answers.yml` manually.
+- Run update/recopy from a clean destination repo (commit or stash pending changes first).
+- Use `copier update --trust` when `.copier-answers.yml` includes `_commit` and update is supported.
+- In non-interactive shells/CI, append `--defaults` to update/recopy.
+- Use `copier recopy --trust` when update is unavailable (for example local non-VCS source) or cannot reconcile cleanly.
+- After recopy, re-apply local deltas intentionally and run `npm run check`.

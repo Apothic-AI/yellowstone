@@ -1,0 +1,745 @@
+// ---
+// summary: exercises intercom adapter actions, formatting, pending replies, and protocol supervision
+// read_when:
+//   - changing intercom adapter behavior or peer and quest protocol compatibility
+// ---
+import assert from "node:assert/strict";
+import test from "node:test";
+import {
+  type DeliveryResult,
+  PeerAskCancelledError,
+  PeerAskInFlightError,
+  PeerAskNoReplyError,
+  type PeerAttachment,
+  type PeerMessage,
+  type PeerMessagingRuntime,
+  type PeerPresence,
+  type PeerRuntimeStatus,
+} from "../index.ts";
+import {
+  createIntercomCompatibleAdapter,
+  type IntercomIncomingMessage,
+  type IntercomToolResponse,
+} from "../src/intercom-adapter.ts";
+import type { PeerProtocolSnapshot } from "../src/intercom-protocol-ledger.ts";
+
+function protocolDetails(response: IntercomToolResponse): Partial<PeerProtocolSnapshot> {
+  return (response.details ?? {}) as Partial<PeerProtocolSnapshot>;
+}
+
+const SELF_PEER = {
+  id: "self-session-12345678",
+  name: "planner",
+  addressLabel: "planner",
+  cwd: "/repo/planner",
+  model: "openai/gpt-4.1",
+  pid: 1,
+  startedAt: 1,
+  lastActivity: 10,
+  status: "idle",
+} satisfies PeerPresence;
+
+const WORKER_A = {
+  id: "worker-session-aaaaaaaa",
+  name: "worker",
+  addressLabel: "worker",
+  cwd: "/repo/worker-a",
+  model: "openai/gpt-4.1",
+  pid: 2,
+  startedAt: 1,
+  lastActivity: 10,
+  status: "busy",
+} satisfies PeerPresence;
+
+const WORKER_B = {
+  id: "worker-session-bbbbbbbb",
+  name: "worker",
+  addressLabel: "worker",
+  cwd: "/repo/worker-b",
+  model: "openai/gpt-4.1",
+  pid: 3,
+  startedAt: 1,
+  lastActivity: 10,
+  status: "idle",
+} satisfies PeerPresence;
+
+function createMessage(
+  text: string,
+  options: {
+    id?: string;
+    replyTo?: string;
+    attachments?: PeerAttachment[];
+    timestamp?: number;
+  } = {},
+): PeerMessage {
+  return {
+    id: options.id ?? `message-${text}`,
+    timestamp: options.timestamp ?? 100,
+    replyTo: options.replyTo,
+    content: {
+      text,
+      attachments: options.attachments,
+    },
+  } satisfies PeerMessage;
+}
+
+class FakePeerMessagingRuntime implements PeerMessagingRuntime {
+  readonly peers: PeerPresence[];
+  readonly sendCalls: Array<{ to: string; message: PeerMessage }> = [];
+  readonly askCalls: Array<{
+    to: string;
+    message: PeerMessage;
+    timeoutMs?: number;
+    signal?: AbortSignal;
+  }> = [];
+  statusValue: PeerRuntimeStatus;
+  sendResult: DeliveryResult = {
+    delivered: true,
+    messageId: "delivery-1",
+  };
+  askResult: PeerMessage = createMessage("All good.", { id: "reply-1", replyTo: "request-1" });
+  askError: Error | null = null;
+
+  constructor(peers: PeerPresence[]) {
+    this.peers = peers;
+    this.statusValue = {
+      connected: true,
+      selfId: peers[0]?.id,
+      activePeerCount: peers.length,
+    } satisfies PeerRuntimeStatus;
+  }
+
+  async listPeers(): Promise<PeerPresence[]> {
+    return this.peers;
+  }
+
+  async send(request: { to: string; message: PeerMessage }): Promise<DeliveryResult> {
+    this.sendCalls.push(request);
+    return this.sendResult;
+  }
+
+  async ask(request: {
+    to: string;
+    message: PeerMessage;
+    timeoutMs?: number;
+    signal?: AbortSignal;
+  }): Promise<PeerMessage> {
+    this.askCalls.push(request);
+    if (this.askError) {
+      throw this.askError;
+    }
+    return this.askResult;
+  }
+
+  async status(): Promise<PeerRuntimeStatus> {
+    return this.statusValue;
+  }
+}
+
+test("adapter delegates ask to the stable core and formats reply attachments", async () => {
+  const runtime = new FakePeerMessagingRuntime([SELF_PEER, WORKER_A]);
+  runtime.askResult = createMessage("Approved.", {
+    id: "reply-22",
+    replyTo: "request-22",
+    attachments: [
+      {
+        type: "snippet",
+        name: "review.ts",
+        language: "typescript",
+        content: "export const approved = true;",
+      },
+    ],
+  });
+  const adapter = createIntercomCompatibleAdapter({ now: () => 1_700_000_000_000 });
+
+  const result = await adapter.execute(runtime, {
+    action: "ask",
+    to: "worker",
+    message: "Should I ship this?",
+    timeoutMs: 250,
+  });
+
+  assert.equal(result.isError, undefined);
+  assert.match(result.content[0]?.text ?? "", /\*\*Reply from worker:/);
+  assert.match(result.content[0]?.text ?? "", /Approved\./);
+  assert.match(result.content[0]?.text ?? "", /review\.ts/);
+  assert.equal(runtime.askCalls.length, 1);
+  assert.equal(runtime.askCalls[0]?.to, "worker");
+  assert.equal(runtime.askCalls[0]?.message.content.text, "Should I ship this?");
+  assert.equal(runtime.askCalls[0]?.timeoutMs, 250);
+});
+
+test("adapter reports a missing reply as a typed no_reply outcome, distinct from a failed send", async () => {
+  const runtime = new FakePeerMessagingRuntime([SELF_PEER, WORKER_A]);
+  const adapter = createIntercomCompatibleAdapter({ now: () => 1_700_000_000_000 });
+
+  runtime.askError = new PeerAskNoReplyError(
+    "timeout",
+    "request-7",
+    'No reply from "worker" within 250ms.',
+  );
+  const noReply = await adapter.execute(runtime, {
+    action: "ask",
+    to: "worker",
+    message: "Still there?",
+    timeoutMs: 250,
+  });
+  assert.equal(noReply.isError, true);
+  assert.equal(noReply.content[0]?.text, 'No reply from "worker" within 250ms.');
+  assert.deepEqual(noReply.details, {
+    outcome: "no_reply",
+    reason: "timeout",
+    messageId: "request-7",
+    to: "worker",
+  });
+
+  runtime.askError = new Error('Message to "worker" was not delivered.');
+  const failed = await adapter.execute(runtime, {
+    action: "ask",
+    to: "worker",
+    message: "Still there?",
+  });
+  assert.equal(failed.isError, true);
+  assert.match(failed.content[0]?.text ?? "", /^Failed: Message to "worker" was not delivered\./);
+  assert.deepEqual(failed.details, {
+    outcome: "send_failed",
+    messageId: runtime.askCalls.at(-1)?.message.id,
+    to: "worker",
+  });
+
+  runtime.askError = new PeerAskInFlightError();
+  const refused = await adapter.execute(runtime, { action: "ask", to: "worker", message: "Too?" });
+  assert.equal(refused.isError, true);
+  assert.deepEqual(refused.details, { outcome: "ask_in_flight", to: "worker" });
+  assert.match(refused.content[0]?.text ?? "", /^Not sent: another ask/);
+
+  runtime.askError = new PeerAskCancelledError("request-8");
+  const cancelled = await adapter.execute(runtime, {
+    action: "ask",
+    to: "worker",
+    message: "Stop",
+  });
+  assert.deepEqual(cancelled.details, {
+    outcome: "cancelled",
+    messageId: runtime.askCalls.at(-1)?.message.id,
+    to: "worker",
+  });
+});
+
+test("adapter forwards the tool's abort signal to the runtime ask", async () => {
+  const runtime = new FakePeerMessagingRuntime([SELF_PEER, WORKER_A]);
+  const adapter = createIntercomCompatibleAdapter({ now: () => 1_700_000_000_000 });
+  const controller = new AbortController();
+  await adapter.execute(runtime, { action: "ask", to: "worker", message: "Hi" }, controller.signal);
+  assert.equal(runtime.askCalls[0]?.signal, controller.signal);
+});
+
+test("adapter surfaces duplicate-name ambiguity with exact session ids", async () => {
+  const runtime = new FakePeerMessagingRuntime([SELF_PEER, WORKER_A, WORKER_B]);
+  runtime.sendResult = {
+    delivered: false,
+    messageId: "delivery-ambiguous",
+    reason: 'Multiple peers matched "worker". Use the exact session id instead.',
+  } satisfies DeliveryResult;
+  const adapter = createIntercomCompatibleAdapter();
+
+  const result = await adapter.execute(runtime, {
+    action: "send",
+    to: "worker",
+    message: "Need an answer.",
+  });
+
+  assert.equal(result.isError, true);
+  assert.match(result.content[0]?.text ?? "", /Multiple peers matched "worker"/);
+  assert.match(result.content[0]?.text ?? "", /worker \(worker-s\) → worker-session-aaaaaaaa/);
+  assert.match(result.content[0]?.text ?? "", /worker \(worker-s\) → worker-session-bbbbbbbb/);
+});
+
+test("adapter tracks inbound messages for pending and reply compatibility", async () => {
+  const received: IntercomIncomingMessage[] = [];
+  const runtime = new FakePeerMessagingRuntime([SELF_PEER, WORKER_A]);
+  const adapter = createIntercomCompatibleAdapter({
+    now: () => 2_000,
+    onIncomingMessage: (entry) => {
+      received.push(entry);
+    },
+  });
+  const inboundMessage = createMessage("Need your review.", { id: "ask-1", timestamp: 1_500 });
+
+  adapter.handleIncomingMessage(WORKER_A, inboundMessage);
+
+  assert.equal(received.length, 1);
+  assert.match(received[0]?.replyCommand ?? "", /action: "reply"/);
+  assert.match(received[0]?.replyCommand ?? "", /replyTo: "ask-1"/);
+
+  const pending = await adapter.execute(runtime, { action: "pending" });
+  assert.equal(pending.isError, undefined);
+  assert.match(pending.content[0]?.text ?? "", /Pending inbound messages/);
+  assert.match(pending.content[0]?.text ?? "", /Need your review\./);
+  assert.equal(pending.details?.pendingInboundCount, 1);
+  assert.deepEqual(pending.details?.pendingInboundMessages, [
+    {
+      fromId: WORKER_A.id,
+      fromLabel: "worker",
+      messageId: "ask-1",
+      receivedAt: 2_000,
+      ageMs: 0,
+      preview: "Need your review.",
+    },
+  ]);
+
+  const reply = await adapter.execute(runtime, {
+    action: "reply",
+    message: "On it.",
+  });
+
+  assert.equal(reply.isError, undefined);
+  assert.equal(runtime.sendCalls.length, 1);
+  assert.equal(runtime.sendCalls[0]?.to, WORKER_A.id);
+  assert.equal(runtime.sendCalls[0]?.message.replyTo, inboundMessage.id);
+  assert.equal(runtime.sendCalls[0]?.message.content.text, "On it.");
+
+  const pendingAfterReply = await adapter.execute(runtime, { action: "pending" });
+  assert.equal(pendingAfterReply.isError, undefined);
+  assert.match(pendingAfterReply.content[0]?.text ?? "", /No unresolved inbound messages/);
+});
+
+test("adapter lists current and other sessions with freshness and pending visibility", async () => {
+  const runtime = new FakePeerMessagingRuntime([SELF_PEER, WORKER_A]);
+  const adapter = createIntercomCompatibleAdapter({ now: () => 2010 });
+  adapter.handleIncomingMessage(WORKER_A, createMessage("Need review.", { id: "pending-list-1" }));
+
+  const result = await adapter.execute(runtime, { action: "list" });
+
+  assert.equal(result.isError, undefined);
+  assert.match(result.content[0]?.text ?? "", /\*\*Current session:/);
+  assert.match(result.content[0]?.text ?? "", /planner/);
+  assert.match(result.content[0]?.text ?? "", /worker/);
+  assert.match(result.content[0]?.text ?? "", /last seen 2s ago/);
+  assert.match(result.content[0]?.text ?? "", /Pending inbound messages: 1/);
+  assert.match(result.content[0]?.text ?? "", /pending-list-1/);
+  assert.match(result.content[0]?.text ?? "", /Need review\./);
+  assert.match(result.content[0]?.text ?? "", /id: worker-session-aaaaaaaa/);
+  assert.equal(result.details?.pendingInboundCount, 1);
+});
+
+test("adapter status includes pending inbound preview details", async () => {
+  const runtime = new FakePeerMessagingRuntime([SELF_PEER, WORKER_A]);
+  const adapter = createIntercomCompatibleAdapter({ now: () => 2_500 });
+  adapter.handleIncomingMessage(
+    WORKER_A,
+    createMessage("Please check the stale candidate before continuing.", {
+      id: "pending-status-1",
+    }),
+  );
+
+  const result = await adapter.execute(runtime, { action: "status" });
+
+  assert.equal(result.isError, undefined);
+  assert.match(result.content[0]?.text ?? "", /Pending inbound messages: 1/);
+  assert.match(result.content[0]?.text ?? "", /pending-status-1/);
+  assert.match(result.content[0]?.text ?? "", /Please check the stale candidate/);
+  assert.equal(result.details?.pendingInboundCount, 1);
+  assert.deepEqual(result.details?.pendingInboundMessages, [
+    {
+      fromId: WORKER_A.id,
+      fromLabel: "worker",
+      messageId: "pending-status-1",
+      receivedAt: 2_500,
+      ageMs: 0,
+      preview: "Please check the stale candidate before continuing.",
+    },
+  ]);
+});
+
+test("adapter status returns verifiable active peer identity proof", async () => {
+  const runtime = new FakePeerMessagingRuntime([SELF_PEER, WORKER_A]);
+  const adapter = createIntercomCompatibleAdapter();
+
+  const result = await adapter.execute(runtime, { action: "status" });
+
+  assert.equal(result.isError, undefined);
+  assert.match(result.content[0]?.text ?? "", /Identity proof: verified/);
+  assert.match(result.content[0]?.text ?? "", /Exact peer target: self-session-12345678/);
+  assert.match(result.content[0]?.text ?? "", /Pending inbound messages: 0/);
+  assert.match(result.content[0]?.text ?? "", /Boundary: communication-only/);
+  assert.equal(result.details?.connected, true);
+  assert.equal(result.details?.pendingInboundCount, 0);
+  assert.deepEqual(result.details?.identityProof, {
+    status: "verified",
+    selfId: SELF_PEER.id,
+    exactPeerTarget: SELF_PEER.id,
+    selfPresence: SELF_PEER,
+    activePeerCount: 2,
+    communicationOnly: true,
+    canonicalAuthority: false,
+  });
+});
+
+test("adapter status fails closed when runtime self id is absent from presence", async () => {
+  const runtime = new FakePeerMessagingRuntime([SELF_PEER, WORKER_A]);
+  runtime.statusValue = {
+    connected: true,
+    selfId: "missing-session-id",
+    activePeerCount: 2,
+  } satisfies PeerRuntimeStatus;
+  const adapter = createIntercomCompatibleAdapter();
+
+  const result = await adapter.execute(runtime, { action: "status" });
+
+  assert.equal(result.isError, undefined);
+  assert.match(result.content[0]?.text ?? "", /Identity proof: mismatch/);
+  assert.equal(
+    (result.details?.identityProof as { status?: string } | undefined)?.status,
+    "mismatch",
+  );
+});
+
+test("adapter classifies quest protocol messages by quest id", async () => {
+  const runtime = new FakePeerMessagingRuntime([SELF_PEER, WORKER_A]);
+  const adapter = createIntercomCompatibleAdapter({ now: () => 2_000 });
+
+  adapter.handleIncomingMessage(
+    WORKER_A,
+    createMessage("QUEST_ACK quest_id=quest-123: started", { id: "ack-1" }),
+  );
+  adapter.handleIncomingMessage(
+    WORKER_A,
+    createMessage("QUEST_FINAL quest_id=quest-123: done", { id: "final-1" }),
+  );
+
+  const result = await adapter.execute(runtime, { action: "quest_status", questId: "quest-123" });
+
+  assert.equal(result.isError, undefined);
+  assert.match(result.content[0]?.text ?? "", /Quest quest-123: final_received/);
+  assert.equal(result.details?.state, "final_received");
+  assert.equal(result.details?.ackCount, 1);
+  assert.equal(result.details?.finalCount, 1);
+  assert.equal(result.details?.duplicateFinalCount, 0);
+});
+
+test("adapter classifies canonical peer protocol messages by peer run id", async () => {
+  const runtime = new FakePeerMessagingRuntime([SELF_PEER, WORKER_A]);
+  const adapter = createIntercomCompatibleAdapter({ now: () => 2_000 });
+
+  adapter.handleIncomingMessage(
+    WORKER_A,
+    createMessage("PEER_ACK peer_run_id=peer-123: started", { id: "peer-ack-1" }),
+  );
+  adapter.handleIncomingMessage(
+    WORKER_A,
+    createMessage("PEER_FINAL peer_run_id=peer-123: done", { id: "peer-final-1" }),
+  );
+
+  const result = await adapter.execute(runtime, { action: "peer_status", peerRunId: "peer-123" });
+
+  assert.equal(result.isError, undefined);
+  assert.match(result.content[0]?.text ?? "", /Peer run peer-123: final_received/);
+  assert.equal(result.details?.peerRunId, "peer-123");
+  assert.equal(result.details?.questId, "peer-123");
+  assert.equal(result.details?.state, "final_received");
+  assert.equal(result.details?.ackCount, 1);
+  assert.equal(result.details?.finalCount, 1);
+  assert.deepEqual(result.details?.coordination, {
+    state: "final_received",
+    source: "peer_message_ledger",
+  });
+  assert.deepEqual(result.details?.executionHealth, {
+    state: "unknown",
+    owner: "pi-autonomous-session-control",
+  });
+  assert.equal(protocolDetails(result).effectDisposition?.state, "unknown");
+  assert.equal(protocolDetails(result).canonicalAuthority?.state, "unverified");
+  assert.deepEqual(protocolDetails(result).lineage?.messageIds, ["peer-ack-1", "peer-final-1"]);
+  assert.match(result.content[0]?.text ?? "", /execution=unknown effects=unknown/);
+});
+
+test("adapter keeps peer protocol state after the inbound reply is resolved", async () => {
+  const runtime = new FakePeerMessagingRuntime([SELF_PEER, WORKER_A]);
+  const adapter = createIntercomCompatibleAdapter({ now: () => 2_000 });
+  const ack = createMessage("PEER_ACK peer_run_id=peer-ledger: started", { id: "peer-ledger-ack" });
+
+  adapter.handleIncomingMessage(WORKER_A, ack);
+
+  const reply = await adapter.execute(runtime, {
+    action: "reply",
+    replyTo: ack.id,
+    message: "Ack seen.",
+  });
+  assert.equal(reply.isError, undefined);
+
+  const pendingAfterReply = await adapter.execute(runtime, { action: "pending" });
+  assert.match(pendingAfterReply.content[0]?.text ?? "", /No unresolved inbound messages/);
+
+  const status = await adapter.execute(runtime, {
+    action: "peer_status",
+    peerRunId: "peer-ledger",
+  });
+
+  assert.equal(status.isError, undefined);
+  assert.equal(status.details?.state, "ack_received");
+  assert.equal(status.details?.ackCount, 1);
+  assert.match(status.content[0]?.text ?? "", /PEER_ACK/);
+});
+
+test("adapter isolates canonical peer and legacy quest protocol ledgers when ids collide", async () => {
+  const runtime = new FakePeerMessagingRuntime([SELF_PEER, WORKER_A]);
+  const adapter = createIntercomCompatibleAdapter({ now: () => 2_000 });
+
+  adapter.handleIncomingMessage(
+    WORKER_A,
+    createMessage("PEER_ACK peer_run_id=shared-run: canonical started", { id: "peer-ack" }),
+  );
+  adapter.handleIncomingMessage(
+    WORKER_A,
+    createMessage("QUEST_FINAL quest_id=shared-run: legacy done", { id: "quest-final" }),
+  );
+
+  const peerStatus = await adapter.execute(runtime, {
+    action: "peer_status",
+    peerRunId: "shared-run",
+  });
+  const questStatus = await adapter.execute(runtime, {
+    action: "quest_status",
+    questId: "shared-run",
+  });
+
+  assert.equal(peerStatus.isError, undefined);
+  assert.equal(peerStatus.details?.vocabulary, "peer");
+  assert.equal(peerStatus.details?.state, "ack_received");
+  assert.equal(peerStatus.details?.ackCount, 1);
+  assert.equal(peerStatus.details?.finalCount, 0);
+  assert.doesNotMatch(peerStatus.content[0]?.text ?? "", /QUEST_FINAL/);
+
+  assert.equal(questStatus.isError, undefined);
+  assert.equal(questStatus.details?.vocabulary, "quest");
+  assert.equal(questStatus.details?.state, "final_received");
+  assert.equal(questStatus.details?.ackCount, 0);
+  assert.equal(questStatus.details?.finalCount, 1);
+  assert.doesNotMatch(questStatus.content[0]?.text ?? "", /PEER_ACK/);
+});
+
+test("adapter treats visible-loop iteration messages as allowed peer progress", async () => {
+  const runtime = new FakePeerMessagingRuntime([SELF_PEER, WORKER_A]);
+  const adapter = createIntercomCompatibleAdapter({ now: () => 2_000 });
+
+  adapter.handleIncomingMessage(
+    WORKER_A,
+    createMessage("PEER_ACK peer_run_id=visible-loop-1: started", { id: "visible-ack-1" }),
+  );
+  adapter.handleIncomingMessage(
+    WORKER_A,
+    createMessage("VISIBLE_LOOP_ITERATION peer_run_id=visible-loop-1: completed iteration 1/1", {
+      id: "visible-progress-1",
+    }),
+  );
+  adapter.handleIncomingMessage(
+    WORKER_A,
+    createMessage("PEER_FINAL peer_run_id=visible-loop-1: done", { id: "visible-final-1" }),
+  );
+
+  const result = await adapter.execute(runtime, {
+    action: "peer_status",
+    peerRunId: "visible-loop-1",
+  });
+
+  assert.equal(result.isError, undefined);
+  assert.equal(result.details?.state, "final_received");
+  assert.equal(result.details?.ackCount, 1);
+  assert.equal(result.details?.finalCount, 1);
+  assert.equal(result.details?.progressCount, 1);
+  assert.equal(result.details?.violationCount, 0);
+  assert.match(result.content[0]?.text ?? "", /VISIBLE_LOOP_ITERATION/);
+  assert.match(result.content[0]?.text ?? "", /PROGRESS=1/);
+});
+
+test("adapter deduplicates redelivery by message id without losing exact-run lineage", async () => {
+  const runtime = new FakePeerMessagingRuntime([SELF_PEER, WORKER_A]);
+  const adapter = createIntercomCompatibleAdapter({ now: () => 2_000 });
+  const ack = createMessage("PEER_ACK peer_run_id=peer-redelivery: started", { id: "same-ack" });
+
+  adapter.handleIncomingMessage(WORKER_A, ack);
+  adapter.handleIncomingMessage(WORKER_A, ack);
+
+  const result = await adapter.execute(runtime, {
+    action: "peer_status",
+    peerRunId: "peer-redelivery",
+  });
+  assert.equal(result.details?.ackCount, 1);
+  assert.equal(result.details?.duplicateAckCount, 0);
+  assert.equal(result.details?.duplicateDeliveryCount, 1);
+  assert.deepEqual(protocolDetails(result).lineage?.messageIds, ["same-ack"]);
+});
+
+test("bounded protocol history reserves exact ACK and FINAL lineage after progress saturation", async () => {
+  const runtime = new FakePeerMessagingRuntime([SELF_PEER, WORKER_A]);
+  const adapter = createIntercomCompatibleAdapter({ now: () => 2_000 });
+  for (let index = 0; index < 128; index += 1) {
+    adapter.handleIncomingMessage(
+      WORKER_A,
+      createMessage(`VISIBLE_LOOP_ITERATION peer_run_id=bounded-run: ${index}`, {
+        id: `progress-${index}`,
+      }),
+    );
+  }
+  adapter.handleIncomingMessage(
+    WORKER_A,
+    createMessage("PEER_ACK peer_run_id=bounded-run: started", { id: "bounded-ack" }),
+  );
+  adapter.handleIncomingMessage(
+    WORKER_A,
+    createMessage("PEER_FINAL peer_run_id=bounded-run: done", { id: "bounded-final" }),
+  );
+
+  const result = await adapter.execute(runtime, {
+    action: "peer_status",
+    peerRunId: "bounded-run",
+  });
+  assert.equal(result.details?.ackCount, 1);
+  assert.equal(result.details?.finalCount, 1);
+  assert.equal(protocolDetails(result).lineage?.ackFinalRetained, true);
+  assert.equal(protocolDetails(result).lineage?.droppedMessageCount, 2);
+  assert.ok(protocolDetails(result).lineage?.messageIds.includes("bounded-ack"));
+  assert.ok(protocolDetails(result).lineage?.messageIds.includes("bounded-final"));
+});
+
+test("adapter reports quest protocol duplicates and violations", async () => {
+  const runtime = new FakePeerMessagingRuntime([SELF_PEER, WORKER_A]);
+  const adapter = createIntercomCompatibleAdapter({ now: () => 2_000 });
+
+  adapter.handleIncomingMessage(
+    WORKER_A,
+    createMessage("QUEST_ACK quest_id=quest-dup: started", { id: "ack-1" }),
+  );
+  adapter.handleIncomingMessage(
+    WORKER_A,
+    createMessage("QUEST_ACK quest_id=quest-dup: duplicate", { id: "ack-2" }),
+  );
+  adapter.handleIncomingMessage(
+    WORKER_A,
+    createMessage("QUEST_NOTE quest_id=quest-dup: extra chatter", { id: "note-1" }),
+  );
+
+  const result = await adapter.execute(runtime, { action: "quest_status", questId: "quest-dup" });
+
+  assert.equal(result.details?.state, "protocol_violation");
+  assert.equal(result.details?.ackCount, 2);
+  assert.equal(result.details?.duplicateAckCount, 1);
+  assert.equal(result.details?.violationCount, 1);
+});
+
+test("adapter peer_watch waits for final while legacy quest_watch remains compatible", async () => {
+  const runtime = new FakePeerMessagingRuntime([SELF_PEER, WORKER_A]);
+  const adapter = createIntercomCompatibleAdapter();
+
+  const peerWatch = adapter.execute(runtime, {
+    action: "peer_watch",
+    peerRunId: "peer-watch",
+    waitFor: "final",
+    timeoutMs: 1_000,
+  });
+
+  setTimeout(() => {
+    adapter.handleIncomingMessage(
+      WORKER_A,
+      createMessage("PEER_ACK peer_run_id=peer-watch: started", { id: "peer-ack-1" }),
+    );
+  }, 10);
+  setTimeout(() => {
+    adapter.handleIncomingMessage(
+      WORKER_A,
+      createMessage("PEER_FINAL peer_run_id=peer-watch: done", { id: "peer-final-1" }),
+    );
+  }, 20);
+
+  const peerResult = await peerWatch;
+
+  assert.equal(peerResult.isError, undefined);
+  assert.equal(peerResult.details?.state, "final_received");
+  assert.equal(peerResult.details?.timedOut, false);
+  assert.match(peerResult.content[0]?.text ?? "", /Peer run peer-watch: final_received/);
+
+  const legacyTimeout = await adapter.execute(runtime, {
+    action: "quest_watch",
+    questId: "missing-quest",
+    waitFor: "ack",
+    timeoutMs: 1,
+  });
+
+  assert.equal(legacyTimeout.isError, undefined);
+  assert.equal(legacyTimeout.details?.state, "no_messages");
+  assert.equal(protocolDetails(legacyTimeout).coordination?.state, "unknown");
+  assert.equal(legacyTimeout.details?.timedOut, true);
+  assert.equal(legacyTimeout.details?.observationEnded, "timeout");
+  assert.equal(legacyTimeout.details?.executionAffected, false);
+});
+
+test("adapter cancellation ends only protocol observation", async () => {
+  const runtime = new FakePeerMessagingRuntime([SELF_PEER, WORKER_A]);
+  const adapter = createIntercomCompatibleAdapter();
+  const cancellation = new AbortController();
+  const watch = adapter.execute(
+    runtime,
+    {
+      action: "peer_watch",
+      peerRunId: "cancelled-watch",
+      waitFor: "final",
+      timeoutMs: 10_000,
+    },
+    cancellation.signal,
+  );
+  cancellation.abort();
+
+  const result = await watch;
+  assert.equal(result.isError, undefined);
+  assert.equal(result.details?.observationEnded, "cancelled");
+  assert.equal(result.details?.executionAffected, false);
+  assert.equal(protocolDetails(result).executionHealth?.state, "unknown");
+  assert.match(result.content[0]?.text ?? "", /execution was not cancelled/i);
+});
+
+test("adapter quest_watch waits for final and times out when absent", async () => {
+  const runtime = new FakePeerMessagingRuntime([SELF_PEER, WORKER_A]);
+  const adapter = createIntercomCompatibleAdapter();
+
+  const watch = adapter.execute(runtime, {
+    action: "quest_watch",
+    questId: "quest-watch",
+    waitFor: "final",
+    timeoutMs: 1_000,
+  });
+
+  setTimeout(() => {
+    adapter.handleIncomingMessage(
+      WORKER_A,
+      createMessage("QUEST_ACK quest_id=quest-watch: started", { id: "ack-1" }),
+    );
+  }, 10);
+  setTimeout(() => {
+    adapter.handleIncomingMessage(
+      WORKER_A,
+      createMessage("QUEST_FINAL quest_id=quest-watch: done", { id: "final-1" }),
+    );
+  }, 20);
+
+  const result = await watch;
+
+  assert.equal(result.isError, undefined);
+  assert.equal(result.details?.state, "final_received");
+  assert.equal(result.details?.timedOut, false);
+
+  const timeout = await adapter.execute(runtime, {
+    action: "quest_watch",
+    questId: "missing-quest",
+    waitFor: "ack",
+    timeoutMs: 1,
+  });
+
+  assert.equal(timeout.isError, undefined);
+  assert.equal(timeout.details?.state, "no_messages");
+  assert.equal(protocolDetails(timeout).coordination?.state, "unknown");
+  assert.equal(timeout.details?.timedOut, true);
+  assert.equal(timeout.details?.observationEnded, "timeout");
+  assert.equal(timeout.details?.executionAffected, false);
+  assert.match(timeout.content[0]?.text ?? "", /execution was not cancelled and remains unknown/i);
+});

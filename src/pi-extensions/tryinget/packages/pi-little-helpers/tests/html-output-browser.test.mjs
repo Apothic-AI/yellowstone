@@ -1,0 +1,367 @@
+// summary: verifies artifact discovery, browser opening, preview widgets, notices, and opener failure handling.
+// read_when:
+//   - changing html output browser commands, artifact routing, recent writes, or preview ui behavior.
+import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test from "node:test";
+import { pathToFileURL } from "node:url";
+
+import {
+  createHtmlOutputBrowserExtension,
+  discoverArtifactTargets,
+  isOpenableArtifactPath,
+} from "../extensions/html-output-browser.ts";
+
+function registerExtension(extension) {
+  const handlers = new Map();
+  const commands = new Map();
+  const shortcuts = new Map();
+
+  extension({
+    on(eventName, handler) {
+      const existing = handlers.get(eventName) ?? [];
+      existing.push(handler);
+      handlers.set(eventName, existing);
+    },
+    registerCommand(name, command) {
+      commands.set(name, command);
+    },
+    registerShortcut(key, shortcut) {
+      shortcuts.set(key, shortcut);
+    },
+  });
+
+  return {
+    handlers,
+    commands,
+    shortcuts,
+    toolResultHandler: handlers.get("tool_result")?.[0],
+  };
+}
+
+function createUiHarness({ custom } = {}) {
+  const notifications = [];
+  const widgets = [];
+  const customCalls = [];
+
+  return {
+    notifications,
+    widgets,
+    customCalls,
+    ui: {
+      notify(message, type = "info") {
+        notifications.push({ message, type });
+      },
+      setWidget(key, content, options) {
+        widgets.push({ key, content, options });
+      },
+      async custom(...args) {
+        customCalls.push(args);
+        return custom ? custom(...args) : null;
+      },
+    },
+  };
+}
+
+function createSpawnStub({ error } = {}) {
+  const calls = [];
+
+  const spawnImpl = (command, args, options) => {
+    calls.push({ command, args, options });
+
+    const child = new EventEmitter();
+    child.unrefCalled = false;
+    child.unref = () => {
+      child.unrefCalled = true;
+    };
+
+    queueMicrotask(() => {
+      if (error) {
+        const spawnError = Object.assign(new Error(error), { code: "ENOENT" });
+        child.emit("error", spawnError);
+        return;
+      }
+      child.emit("spawn");
+    });
+
+    return child;
+  };
+
+  return { calls, spawnImpl };
+}
+
+function createContext(cwd, uiHarness) {
+  return {
+    cwd,
+    hasUI: true,
+    ui: uiHarness.ui,
+  };
+}
+
+function createTempDir() {
+  return mkdtempSync(join(tmpdir(), "html-output-browser-"));
+}
+
+function expectedOpenCommand() {
+  if (process.platform === "darwin") return "open";
+  if (process.platform === "win32") return "cmd";
+  return "xdg-open";
+}
+
+test("html output browser registers tool_result plus artifact command and shortcut", () => {
+  const { commands, handlers, shortcuts, toolResultHandler } = registerExtension(
+    createHtmlOutputBrowserExtension(),
+  );
+
+  assert.equal(typeof toolResultHandler, "function");
+  assert.deepEqual([...handlers.keys()], ["tool_result"]);
+  assert.equal(typeof commands.get("artifacts")?.handler, "function");
+  assert.equal(typeof commands.get("show-artifacts")?.handler, "function");
+  assert.equal(typeof shortcuts.get("ctrl+shift+s")?.handler, "function");
+});
+
+test("successful HTML write opens the exact file, updates the widget, and appends a notice", async () => {
+  const dir = createTempDir();
+  const htmlPath = join(dir, "@preview.html");
+  writeFileSync(htmlPath, "<html><body>preview</body></html>");
+
+  try {
+    const spawnStub = createSpawnStub();
+    const uiHarness = createUiHarness();
+    const { toolResultHandler } = registerExtension(
+      createHtmlOutputBrowserExtension({ spawn: spawnStub.spawnImpl }),
+    );
+
+    const result = await toolResultHandler(
+      {
+        isError: false,
+        toolName: "write",
+        input: { path: "@preview.html" },
+        content: [{ type: "text", text: "Saved HTML" }],
+      },
+      createContext(dir, uiHarness),
+    );
+
+    assert.equal(spawnStub.calls.length, 1);
+    assert.equal(spawnStub.calls[0].command, expectedOpenCommand());
+    assert.deepEqual(spawnStub.calls[0].options, {
+      detached: true,
+      stdio: "ignore",
+    });
+    assert.equal(spawnStub.calls[0].args.at(-1), pathToFileURL(htmlPath).href);
+
+    assert.equal(uiHarness.widgets.length, 1);
+    assert.equal(uiHarness.widgets[0].key, "html-output-browser");
+    assert.equal(uiHarness.widgets[0].options.placement, "belowEditor");
+    assert.match(uiHarness.widgets[0].content[0], /Latest artifact preview/);
+    assert.match(uiHarness.widgets[0].content[1], /@preview\.html/);
+
+    assert.equal(uiHarness.notifications.length, 1);
+    assert.equal(uiHarness.notifications[0].type, "info");
+    assert.match(uiHarness.notifications[0].message, /Opened artifact in browser: @preview\.html/);
+
+    assert.equal(result.content[0].text, "Saved HTML");
+    assert.match(result.content[1].text, /HTML preview:/);
+    assert.match(result.content[1].text, /@preview\.html/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("bash results mentioning HTML are ignored", async () => {
+  const dir = createTempDir();
+  writeFileSync(join(dir, "report.html"), "<html>report</html>");
+
+  try {
+    const spawnStub = createSpawnStub();
+    const uiHarness = createUiHarness();
+    const { toolResultHandler } = registerExtension(
+      createHtmlOutputBrowserExtension({ spawn: spawnStub.spawnImpl }),
+    );
+
+    const result = await toolResultHandler(
+      {
+        isError: false,
+        toolName: "bash",
+        input: { command: "printf ./report.html" },
+        content: [{ type: "text", text: "./report.html" }],
+      },
+      createContext(dir, uiHarness),
+    );
+
+    assert.equal(result, undefined);
+    assert.equal(spawnStub.calls.length, 0);
+    assert.equal(uiHarness.widgets.length, 0);
+    assert.equal(uiHarness.notifications.length, 0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("non-HTML writes clear the preview widget instead of leaving stale state behind", async () => {
+  const dir = createTempDir();
+  writeFileSync(join(dir, "preview.html"), "<html>preview</html>");
+
+  try {
+    const spawnStub = createSpawnStub();
+    const uiHarness = createUiHarness();
+    const { toolResultHandler } = registerExtension(
+      createHtmlOutputBrowserExtension({ spawn: spawnStub.spawnImpl }),
+    );
+
+    await toolResultHandler(
+      {
+        isError: false,
+        toolName: "write",
+        input: { path: "preview.html" },
+        content: [{ type: "text", text: "Saved HTML" }],
+      },
+      createContext(dir, uiHarness),
+    );
+
+    const secondResult = await toolResultHandler(
+      {
+        isError: false,
+        toolName: "edit",
+        input: { path: "notes.txt" },
+        content: [{ type: "text", text: "Saved text" }],
+      },
+      createContext(dir, uiHarness),
+    );
+
+    assert.equal(secondResult, undefined);
+    assert.equal(uiHarness.widgets.length, 2);
+    assert.equal(uiHarness.widgets[1].key, "html-output-browser");
+    assert.equal(uiHarness.widgets[1].content, undefined);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("opener failures warn without dropping the HTML notice", async () => {
+  const dir = createTempDir();
+  writeFileSync(join(dir, "preview.html"), "<html>preview</html>");
+
+  try {
+    const spawnStub = createSpawnStub({ error: "spawn xdg-open ENOENT" });
+    const uiHarness = createUiHarness();
+    const { toolResultHandler } = registerExtension(
+      createHtmlOutputBrowserExtension({ spawn: spawnStub.spawnImpl }),
+    );
+
+    const result = await toolResultHandler(
+      {
+        isError: false,
+        toolName: "write",
+        input: { path: "preview.html" },
+        content: [{ type: "text", text: "Saved HTML" }],
+      },
+      createContext(dir, uiHarness),
+    );
+
+    assert.equal(spawnStub.calls.length, 1);
+    assert.equal(uiHarness.widgets.length, 1);
+    assert.equal(uiHarness.notifications.length, 1);
+    assert.equal(uiHarness.notifications[0].type, "warning");
+    assert.match(uiHarness.notifications[0].message, /auto-open failed/i);
+    assert.match(result.content[1].text, /HTML preview:/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("artifact discovery includes HTML and generated JSON artifacts while skipping ordinary JSON", () => {
+  const dir = createTempDir();
+
+  try {
+    mkdirSync(join(dir, "docs", "project"), { recursive: true });
+    mkdirSync(join(dir, "node_modules", "pkg"), { recursive: true });
+    writeFileSync(join(dir, "docs", "project", "direction-explorer-mvp.html"), "<html></html>");
+    writeFileSync(join(dir, "docs", "project", "direction-explorer-mvp.export.json"), "{}");
+    writeFileSync(join(dir, "plain.json"), "{}");
+    writeFileSync(join(dir, "node_modules", "pkg", "ignored.html"), "<html></html>");
+
+    const targets = discoverArtifactTargets(dir);
+    const prettyPaths = targets.map((target) => target.prettyPath).sort();
+
+    assert.deepEqual(prettyPaths, [
+      "docs/project/direction-explorer-mvp.export.json",
+      "docs/project/direction-explorer-mvp.html",
+    ]);
+    assert.equal(isOpenableArtifactPath("report.html"), true);
+    assert.equal(isOpenableArtifactPath("direction-explorer-mvp.export.json"), true);
+    assert.equal(isOpenableArtifactPath("plain.json"), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("recent non-workspace image writes are included in the artifact picker", async () => {
+  const dir = createTempDir();
+  const artifactDir = createTempDir();
+  const imagePath = join(artifactDir, "capture.png");
+  writeFileSync(imagePath, "not really a png, but enough for opener routing");
+
+  try {
+    const spawnStub = createSpawnStub();
+    const uiHarness = createUiHarness({ custom: async () => "0" });
+    const { shortcuts, toolResultHandler } = registerExtension(
+      createHtmlOutputBrowserExtension({ spawn: spawnStub.spawnImpl }),
+    );
+    const ctx = createContext(dir, uiHarness);
+
+    const toolResult = await toolResultHandler(
+      {
+        isError: false,
+        toolName: "write",
+        input: { path: imagePath },
+        content: [{ type: "text", text: "Saved image" }],
+      },
+      ctx,
+    );
+
+    assert.equal(toolResult, undefined);
+    assert.equal(spawnStub.calls.length, 0);
+
+    await shortcuts.get("ctrl+shift+s").handler(ctx);
+
+    assert.equal(uiHarness.customCalls.length, 1);
+    assert.equal(spawnStub.calls.length, 1);
+    assert.equal(spawnStub.calls[0].args.at(-1), pathToFileURL(imagePath).href);
+    assert.equal(uiHarness.notifications.at(-1).type, "info");
+    assert.match(
+      uiHarness.notifications.at(-1).message,
+      /Opened artifact in browser: .*capture\.png/,
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(artifactDir, { recursive: true, force: true });
+  }
+});
+
+test("artifacts command opens an explicit artifact path", async () => {
+  const dir = createTempDir();
+  const htmlPath = join(dir, "preview.html");
+  writeFileSync(htmlPath, "<html>preview</html>");
+
+  try {
+    const spawnStub = createSpawnStub();
+    const uiHarness = createUiHarness();
+    const { commands } = registerExtension(
+      createHtmlOutputBrowserExtension({ spawn: spawnStub.spawnImpl }),
+    );
+
+    await commands.get("artifacts").handler("preview.html", createContext(dir, uiHarness));
+
+    assert.equal(spawnStub.calls.length, 1);
+    assert.equal(spawnStub.calls[0].args.at(-1), pathToFileURL(htmlPath).href);
+    assert.equal(uiHarness.widgets.length, 1);
+    assert.equal(uiHarness.notifications[0].type, "info");
+    assert.match(uiHarness.notifications[0].message, /Opened artifact in browser: preview\.html/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

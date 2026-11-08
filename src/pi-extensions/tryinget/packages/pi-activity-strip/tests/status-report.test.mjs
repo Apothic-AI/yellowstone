@@ -1,0 +1,73 @@
+/**
+summary: "Tests activity-strip runtime status formatting and operator headline selection."
+read_when:
+  - "Changing broker status fields, warning rendering, readiness headlines, or severity mapping."
+*/
+import assert from "node:assert/strict";
+import test from "node:test";
+import {
+  formatBrokerRuntimeStatus,
+  summarizeBrokerRuntimeStatus,
+} from "../src/common/status-report.mjs";
+
+test("formatBrokerRuntimeStatus renders runtime warnings and readiness metadata", () => {
+  const text = formatBrokerRuntimeStatus({
+    ok: true,
+    runtimeStatus: {
+      state: "ready",
+      backend: "native-layer-shell",
+      displayServer: "wayland",
+      windowManager: "niri",
+      alignmentMode: "layer-shell",
+      displayCount: 2,
+      windowVisible: true,
+      warnings: ["Detected 2 displays; the strip currently renders on the primary display only."],
+    },
+  });
+
+  assert.match(text, /^running \(ready\)$/m);
+  assert.match(text, /display: wayland/);
+  assert.match(text, /window manager: niri/);
+  assert.match(text, /displays: 2/);
+  assert.match(text, /surface visible: yes/);
+  assert.match(text, /warnings:/);
+});
+
+test("summarizeBrokerRuntimeStatus returns operator headlines", () => {
+  assert.deepEqual(summarizeBrokerRuntimeStatus({ ok: false }), {
+    headline: "Activity strip is stopped",
+    level: "warning",
+  });
+
+  assert.deepEqual(summarizeBrokerRuntimeStatus({ ok: true, runtimeStatus: { state: "ready" } }), {
+    headline: "Activity strip is running and ready",
+    level: "info",
+  });
+
+  assert.deepEqual(summarizeBrokerRuntimeStatus({ ok: true, runtimeStatus: { state: "error" } }), {
+    headline: "Activity strip reported an error",
+    level: "error",
+  });
+});
+
+test("formatBrokerRuntimeStatus reports hidden-tab placement counters", () => {
+  const text = formatBrokerRuntimeStatus({
+    ok: true,
+    runtimeStatus: {
+      state: "ready",
+      rendererCardCount: 5,
+      rendererHiddenTabCardCount: 3,
+      surfaceBindingCount: 12,
+      unplacedSurfaceCount: 2,
+    },
+  });
+  assert.match(text, /cards on focused workspace: 5 \(3 hidden tabs\)/);
+  assert.match(text, /remembered tab windows: 12/);
+  assert.match(text, /unplaced hidden tabs: 2/);
+  const quiet = formatBrokerRuntimeStatus({
+    ok: true,
+    runtimeStatus: { state: "ready", rendererCardCount: 0, unplacedSurfaceCount: 0 },
+  });
+  assert.match(quiet, /cards on focused workspace: 0$/m);
+  assert.doesNotMatch(quiet, /unplaced hidden tabs/);
+});

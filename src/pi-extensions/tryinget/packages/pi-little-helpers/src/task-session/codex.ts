@@ -1,0 +1,261 @@
+import * as zlib from "node:zlib";
+import {
+  type Api,
+  type Context,
+  type CredentialStore,
+  type Model,
+  type ModelsSimpleStreamOptions,
+  normalizeContext,
+  type OAuthCredential,
+  type TranscriptContext,
+} from "@earendil-works/pi-ai";
+import { streamSimple as nativeCodexStream } from "@earendil-works/pi-ai/api/openai-codex-responses";
+import { ModelRuntime } from "@earendil-works/pi-coding-agent";
+import { AUTH_MARGIN_MS, assertCredentialMetadata } from "./auth-metadata.js";
+import type { DispatchGuard } from "./dispatch.js";
+import { bytesDigest, refuse } from "./json.js";
+import {
+  type ModelResolution,
+  NATIVE_CODEX_PROVIDER,
+  nativeModelBoundary,
+  profileResolution,
+} from "./model-source.js";
+
+export { AUTH_MARGIN_MS } from "./auth-metadata.js";
+export interface CodexProfile {
+  model: Model<Api>;
+  resolution?: ModelResolution;
+  reasoning: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+  account: string;
+  runDeadline: number;
+}
+export interface SendPort {
+  send: typeof fetch;
+} // private composition, never a public export or CLI field
+export function readonlyCredentials(
+  credential: OAuthCredential,
+  profile: CodexProfile,
+  guard: DispatchGuard,
+): CredentialStore {
+  const snapshot = structuredClone(credential);
+  return Object.freeze({
+    async read(providerId: string) {
+      guard.assert();
+      if (providerId !== NATIVE_CODEX_PROVIDER) guard.deny("credential_provider_mismatch");
+      if (
+        snapshot.type !== "oauth" ||
+        snapshot.expires <= Math.max(Date.now(), profile.runDeadline) + AUTH_MARGIN_MS
+      )
+        guard.deny("auth_refresh_required");
+      return structuredClone(snapshot);
+    },
+    async list() {
+      return [{ providerId: NATIVE_CODEX_PROVIDER, type: "oauth" as const }];
+    },
+    async modify() {
+      return guard.deny("credential_mutation_forbidden");
+    },
+    async delete() {
+      guard.deny("credential_mutation_forbidden");
+    },
+  });
+}
+/** Per-request post-serializer and actual-send boundary. Never installs a global network hook. */
+export function guardedCodexOptions(
+  profile: CodexProfile,
+  credential: OAuthCredential,
+  guard: DispatchGuard,
+  port: SendPort,
+  options: ModelsSimpleStreamOptions = {},
+) {
+  let expected: string | undefined;
+  let sent = false;
+  if (
+    (options.transport !== undefined && options.transport !== "sse") ||
+    (options.maxRetries !== undefined && options.maxRetries !== 0) ||
+    options.fetch ||
+    options.apiKey ||
+    options.headers ||
+    options.env ||
+    options.onPayload ||
+    options.transformHeaders
+  )
+    guard.deny("provider_override_forbidden");
+  return {
+    ...options,
+    apiKey: credential.access,
+    reasoning: profile.reasoning === "off" ? undefined : profile.reasoning,
+    transport: "sse" as const,
+    maxRetries: 0,
+    onPayload(payload: unknown) {
+      guard.assert();
+      const p = payload as {
+        model?: string;
+        stream?: boolean;
+        store?: boolean;
+        reasoning?: { effort?: string };
+      };
+      // Pi 1.x turns reasoning off explicitly: off on a reasoning model sends the model's
+      // declared off effort ("none" unless mapped; nothing when it is null), as the native
+      // serializer does. Pi 0.84 omitted the field and left the server's default effort.
+      const off =
+        profile.model.reasoning && profile.model.thinkingLevelMap?.off !== null
+          ? (profile.model.thinkingLevelMap?.off ?? "none")
+          : undefined;
+      const effort =
+        profile.reasoning === "off"
+          ? off
+          : (profile.model.thinkingLevelMap?.[profile.reasoning] ?? profile.reasoning);
+      if (
+        p.model !== profile.model.id ||
+        p.stream !== true ||
+        p.store !== false ||
+        p.reasoning?.effort !== effort
+      )
+        guard.deny("codex_payload_drift");
+      const body = JSON.stringify(payload);
+      if (Buffer.byteLength(body) > 1048576) guard.deny("codex_payload_budget");
+      expected = bytesDigest(body);
+      return payload;
+    },
+    async fetch(input: string | URL | Request, init?: RequestInit): Promise<Response> {
+      guard.assert();
+      if (sent || !expected) guard.deny("codex_retry_or_unbound_send");
+      if (
+        String(input) !== "https://chatgpt.com/backend-api/codex/responses" ||
+        init?.method !== "POST"
+      )
+        guard.deny("codex_endpoint_mismatch");
+      if (credential.expires <= Math.max(Date.now(), profile.runDeadline) + AUTH_MARGIN_MS)
+        guard.deny("auth_refresh_required");
+      const headers = new Headers(init.headers);
+      if (
+        headers.get("authorization") !== `Bearer ${credential.access}` ||
+        headers.get("chatgpt-account-id") !== profile.account
+      )
+        guard.deny("codex_account_mismatch");
+      let bytes: Uint8Array;
+      const body = init.body;
+      if (typeof body === "string" && !headers.has("content-encoding")) bytes = Buffer.from(body);
+      else if (body instanceof Uint8Array && headers.get("content-encoding") === "zstd") {
+        if (body.byteLength > 1048576) guard.deny("codex_payload_budget");
+        const decompress = (
+          zlib as unknown as {
+            zstdDecompressSync?: (b: Uint8Array, o: { maxOutputLength: number }) => Buffer;
+          }
+        ).zstdDecompressSync;
+        if (!decompress) guard.deny("zstd_unsupported");
+        try {
+          bytes = decompress?.(body, { maxOutputLength: 1048576 });
+        } catch {
+          return guard.deny("codex_compression_invalid");
+        }
+      } else return guard.deny("codex_body_unsupported");
+      if (bytes.byteLength > 1048576 || bytesDigest(bytes) !== expected)
+        guard.deny("codex_wire_payload_drift");
+      guard.assert();
+      sent = true;
+      // No await between final checks and the sole network call. Redirects cannot change account/endpoint.
+      return port.send(input, { ...init, redirect: "error" });
+    },
+  };
+}
+export async function codexRuntime(
+  profileInput: CodexProfile,
+  credentialInput: OAuthCredential,
+  guard: DispatchGuard,
+  assertContext: (context: TranscriptContext) => void,
+  port: SendPort,
+): Promise<ModelRuntime> {
+  const profile = structuredClone(profileInput),
+    credential = structuredClone(credentialInput);
+  nativeModelBoundary(profile.model);
+  profileResolution(profile);
+  assertCredentialMetadata(credential, profile);
+  const runtime = await ModelRuntime.create({
+    credentials: readonlyCredentials(credential, profile, guard),
+    modelsPath: null,
+    refreshOnCreate: false,
+    allowModelNetwork: false,
+  });
+  const nativeAuth = runtime.getAuth.bind(runtime);
+  const blocked = async () => guard.deny("model_runtime_sealed");
+  for (const key of [
+    "refresh",
+    "login",
+    "logout",
+    "setRuntimeApiKey",
+    "removeRuntimeApiKey",
+    "fetchDeferred",
+    "cancelDeferred",
+  ] as const)
+    Object.defineProperty(runtime, key, { value: blocked });
+  const oauth = runtime.getProvider("openai-codex")?.auth.oauth;
+  if (!oauth) refuse("native_codex_missing");
+  // Preload only native pure OAuth derivation before PREPARED. No refresh/login path is available.
+  await oauth.toAuth(credential);
+  oauth.refresh = blocked;
+  oauth.login = blocked;
+  Object.defineProperty(runtime, "getAuth", {
+    value: async (model: Model<Api> | string, options?: Record<string, unknown>) => {
+      guard.assert();
+      if (
+        (typeof model === "string"
+          ? model !== profile.model.provider
+          : JSON.stringify(model) !== JSON.stringify(profile.model)) ||
+        (options && Object.keys(options).some((k) => k !== "signal"))
+      )
+        guard.deny("auth_override_forbidden");
+      if (credential.expires <= Math.max(Date.now(), profile.runDeadline) + AUTH_MARGIN_MS)
+        guard.deny("auth_refresh_required");
+      // Resolved provider labels select no plugin. Authentication always uses the pinned native OAuth owner.
+      return nativeAuth({ ...profile.model, provider: NATIVE_CODEX_PROVIDER }, options);
+    },
+  });
+  // SDK prompt preflight asks about the resolved label. This reports the validated copied
+  // credential's presence, NOT provider availability or admission readiness; no alias discovery.
+  Object.defineProperty(runtime, "hasConfiguredAuth", {
+    value: (provider: string) => provider === profile.model.provider,
+  });
+  Object.defineProperty(runtime, "isUsingOAuth", {
+    value: (provider: string) => provider === profile.model.provider,
+  });
+  Object.defineProperty(runtime, "isSubscriptionProvider", {
+    value: (provider: string) =>
+      provider === profile.model.provider && oauth.isSubscription === true,
+  });
+  Object.defineProperty(runtime, "checkAuth", {
+    value: async (provider: string) => {
+      guard.assert();
+      if (provider !== profile.model.provider) guard.deny("auth_override_forbidden");
+      return runtime.getAuth(profile.model);
+    },
+  });
+  Object.defineProperty(runtime, "getModel", {
+    value: (provider: string, model: string) =>
+      provider === profile.model.provider && model === profile.model.id
+        ? structuredClone(profile.model)
+        : undefined,
+  });
+  Object.defineProperty(runtime, "streamSimple", {
+    value: async (model: Model<Api>, context: Context, options?: ModelsSimpleStreamOptions) => {
+      guard.assert();
+      // The checked transcript is the one sent: a prompt or tools passed as Context fields
+      // become its leading system message, as ModelRuntime.streamSimple folds them.
+      const transcript = normalizeContext(context);
+      assertContext(transcript);
+      if (JSON.stringify(model) !== JSON.stringify(profile.model)) guard.deny("model_drift");
+      await runtime.getAuth(model);
+      guard.assert();
+      assertContext(transcript);
+      return nativeCodexStream(
+        model as Model<"openai-codex-responses">,
+        transcript,
+        guardedCodexOptions(profile, credential, guard, port, options),
+      );
+    },
+  });
+  // Unused APIs cannot silently select another serializer or objective.
+  Object.defineProperty(runtime, "stream", { value: () => guard.deny("raw_stream_forbidden") });
+  return runtime;
+}

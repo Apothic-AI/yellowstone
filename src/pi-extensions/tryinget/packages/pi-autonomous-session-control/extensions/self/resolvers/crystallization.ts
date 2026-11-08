@@ -1,0 +1,304 @@
+/**
+ * Crystallization domain resolver - remembering, recalling, and forgetting patterns.
+ */
+
+import { createEdgeMonotonicId, normalizeInput, normalizeString } from "../edge-contract-kernel.ts";
+import type { SelfQuery, SelfResponse, SelfState } from "../types.ts";
+import { extractQuotedContent } from "./helpers.ts";
+import {
+  handleForgetOntologyCandidate,
+  handleRecallOntologyCandidates,
+  handleRejectOntologyCandidate,
+  handleRememberOntologyCandidate,
+  isOntologyCandidateQuery,
+} from "./ontology-candidates.ts";
+
+export const CRYSTALLIZATION_KEYWORDS = [
+  "remember",
+  "learned",
+  "crystallize",
+  "save pattern",
+  "what did i learn",
+  "recall",
+  "what patterns",
+  "memory topic",
+  "memory topics",
+  "topic summary",
+  "forget",
+  "remove pattern",
+  "ontology candidate",
+  "ontology candidates",
+  "ontology gap",
+  "semantic gap",
+  "reject ontology candidate",
+  "reject candidate",
+  "candidate rejected",
+  "mark candidate as rejected",
+];
+
+export function mapCrystallizationIntent(lower: string): string {
+  if (isOntologyCandidateQuery(lower)) {
+    if (lower.includes("reject") || lower.includes("rejected")) {
+      return "reject_ontology_candidate";
+    }
+    if (lower.includes("forget") || lower.includes("remove") || lower.includes("delete")) {
+      return "forget_ontology_candidate";
+    }
+    if (lower.includes("what") || lower.includes("list") || lower.includes("recall")) {
+      return "recall_ontology_candidates";
+    }
+    return "remember_ontology_candidate";
+  }
+
+  // Check recall patterns FIRST - query indicators like "what" signal retrieval, not storage
+  if (
+    lower.includes("recall") ||
+    lower.includes("what") ||
+    lower.includes("learn") ||
+    lower.includes("list") ||
+    (lower.includes("what") && lower.includes("crystallized"))
+  ) {
+    return "recall_patterns";
+  }
+
+  // Then check for storage actions
+  if (lower.includes("remember") || lower.includes("save") || lower.includes("crystallize")) {
+    return "remember_pattern";
+  }
+
+  if (lower.includes("forget") || lower.includes("remove")) {
+    return "forget_pattern";
+  }
+
+  return "recall_patterns";
+}
+
+export function resolveCrystallizationQuery(
+  intent: string,
+  query: SelfQuery,
+  state: SelfState,
+): SelfResponse {
+  switch (intent) {
+    case "remember_pattern": {
+      return handleRememberPattern(query, state);
+    }
+
+    case "recall_patterns": {
+      return handleRecallPatterns(query, state);
+    }
+
+    case "forget_pattern": {
+      return handleForgetPattern(query, state);
+    }
+
+    case "remember_ontology_candidate": {
+      return handleRememberOntologyCandidate(query, state);
+    }
+
+    case "recall_ontology_candidates": {
+      return handleRecallOntologyCandidates(query, state);
+    }
+
+    case "forget_ontology_candidate": {
+      return handleForgetOntologyCandidate(query, state);
+    }
+
+    case "reject_ontology_candidate": {
+      return handleRejectOntologyCandidate(query, state);
+    }
+
+    default:
+      return {
+        understood: true,
+        intent: "crystallization",
+        answer: "Crystallization query understood but not fully specified.",
+        suggestions: [
+          "remember: [pattern]",
+          "what did I learn about [topic]",
+          "remember ontology candidate: [missing term]",
+          "what ontology candidates have I crystallized?",
+        ],
+      };
+  }
+}
+
+function handleRememberPattern(query: SelfQuery, state: SelfState): SelfResponse {
+  const normalizedContext = normalizeInput(query.context);
+  const content = normalizeString(normalizedContext.pattern) || extractQuotedContent(query.query);
+
+  if (!content) {
+    return {
+      understood: true,
+      intent: "crystallization",
+      answer: "What pattern would you like to remember? Provide it in quotes or context.pattern.",
+    };
+  }
+
+  const patternId = createEdgeMonotonicId("pattern");
+  const topic = normalizeString(normalizedContext.topic) || "general";
+
+  state.learnings.patterns.set(patternId, {
+    id: patternId,
+    topic,
+    content,
+    context: `Crystallized at turn ${state.operations.turnCount}`,
+    crystallizedAt: Date.now(),
+    lastAccessedAt: Date.now(),
+    accessCount: 0,
+    strength: 1.0,
+  });
+
+  // Update topic index
+  if (!state.learnings.topicsIndex.has(topic)) {
+    state.learnings.topicsIndex.set(topic, new Set());
+  }
+  state.learnings.topicsIndex.get(topic)?.add(patternId);
+
+  return {
+    understood: true,
+    intent: "crystallization",
+    answer: `Pattern crystallized: "${content.slice(0, 100)}${content.length > 100 ? "..." : ""}" (topic: ${topic})`,
+    data: { patternId, topic },
+  };
+}
+
+function isExactRecallQuery(query: SelfQuery): boolean {
+  const normalizedContext = normalizeInput(query.context);
+  const lower = query.query.toLowerCase();
+  return (
+    normalizedContext.exact === true ||
+    normalizedContext.verbatim === true ||
+    lower.includes("exact") ||
+    lower.includes("verbatim") ||
+    lower.includes("untruncated") ||
+    lower.includes("full pattern") ||
+    lower.includes("full patterns")
+  );
+}
+
+function formatPatternForRecall(content: string, exactRecall: boolean): string {
+  if (!exactRecall) {
+    return `"${content.slice(0, 50)}..."`;
+  }
+
+  const maxExactChars = 1000;
+  if (content.length <= maxExactChars) {
+    return JSON.stringify(content);
+  }
+
+  return `${JSON.stringify(content.slice(0, maxExactChars))}... [truncated above ${maxExactChars} chars]`;
+}
+
+function handleRecallPatterns(query: SelfQuery, state: SelfState): SelfResponse {
+  const normalizedContext = normalizeInput(query.context);
+  const topic = normalizeString(normalizedContext.topic) || extractTopicFilter(query.query);
+  const exactRecall = isExactRecallQuery(query);
+
+  let patterns = Array.from(state.learnings.patterns.values());
+  if (topic) {
+    const normalizedTopic = normalizeTopicKey(topic);
+    patterns = patterns.filter((pattern) => normalizeTopicKey(pattern.topic) === normalizedTopic);
+  }
+
+  const wantsTopicSummary = /\b(topics?|summary|summarize|group)\b/i.test(query.query);
+
+  // Sort by strength * recency
+  patterns.sort((a, b) => {
+    const scoreA = a.strength * (1 / (Date.now() - a.lastAccessedAt + 1));
+    const scoreB = b.strength * (1 / (Date.now() - b.lastAccessedAt + 1));
+    return scoreB - scoreA;
+  });
+
+  // Update access
+  for (const p of patterns.slice(0, 5)) {
+    p.lastAccessedAt = Date.now();
+    p.accessCount++;
+  }
+
+  const visiblePatterns = patterns.slice(0, exactRecall ? 3 : 5);
+  const topicSummary = summarizePatternTopics(patterns);
+
+  return {
+    understood: true,
+    intent: "crystallization",
+    answer:
+      patterns.length > 0
+        ? `${patterns.length} pattern(s) crystallized${topic ? ` for topic "${topic}"` : ""}${exactRecall ? " (verbatim visible recall, capped at 1000 chars each)" : ""}: ${visiblePatterns
+            .map((p) => formatPatternForRecall(p.content, exactRecall))
+            .join("; ")}${wantsTopicSummary ? `. Topics: ${formatTopicSummary(topicSummary)}` : ""}`
+        : "No patterns crystallized yet.",
+    data: {
+      patterns: patterns.slice(0, 10),
+      count: patterns.length,
+      exactRecall,
+      topicSummary,
+    },
+  };
+}
+
+function normalizeTopicKey(topic: string): string {
+  return topic.trim().toLowerCase();
+}
+
+function extractTopicFilter(query: string): string | undefined {
+  const naturalMatch = query.match(/\b(?:about|for)\s+["']?([^"'?.,;]+)["']?/i);
+  const explicitMatch = query.match(/\btopic\s*:\s*["']?([^"'?.,;]+)["']?/i);
+  const topic = (explicitMatch?.[1] ?? naturalMatch?.[1])?.trim();
+  return topic && topic.length > 0 ? topic : undefined;
+}
+
+function summarizePatternTopics(
+  patterns: Array<{ topic: string }>,
+): Array<{ topic: string; count: number }> {
+  const counts = new Map<string, { topic: string; count: number }>();
+
+  for (const pattern of patterns) {
+    const key = normalizeTopicKey(pattern.topic || "general");
+    const current = counts.get(key) ?? { topic: pattern.topic || "general", count: 0 };
+    current.count++;
+    counts.set(key, current);
+  }
+
+  return Array.from(counts.values()).sort(
+    (a, b) => b.count - a.count || a.topic.localeCompare(b.topic),
+  );
+}
+
+function formatTopicSummary(summary: Array<{ topic: string; count: number }>): string {
+  return summary.map((entry) => `${entry.topic} (${entry.count})`).join(", ");
+}
+
+function handleForgetPattern(query: SelfQuery, state: SelfState): SelfResponse {
+  const normalizedContext = normalizeInput(query.context);
+  const patternId = normalizeString(normalizedContext.patternId);
+
+  if (!patternId) {
+    return {
+      understood: true,
+      intent: "crystallization",
+      answer: "Which pattern would you like to forget? Provide patternId in context.",
+    };
+  }
+
+  const pattern = state.learnings.patterns.get(patternId);
+  if (!pattern) {
+    return {
+      understood: true,
+      intent: "crystallization",
+      answer: `Pattern ${patternId} not found.`,
+    };
+  }
+
+  state.learnings.patterns.delete(patternId);
+  const topicPatterns = state.learnings.topicsIndex.get(pattern.topic);
+  if (topicPatterns) {
+    topicPatterns.delete(patternId);
+  }
+
+  return {
+    understood: true,
+    intent: "crystallization",
+    answer: `Pattern forgotten: "${pattern.content.slice(0, 50)}..."`,
+    data: { patternId },
+  };
+}

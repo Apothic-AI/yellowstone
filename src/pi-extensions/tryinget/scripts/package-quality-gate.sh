@@ -1,0 +1,488 @@
+#!/usr/bin/env bash
+# summary: "Runs stage-specific lint, typecheck, test, structure, packaging, and file-budget checks for package roots."
+# read_when:
+#   - "Changing package quality stages, package-group detection, tool resolution, or release checks."
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [[ -n "${PI_EXTENSIONS_TMPDIR:-}" ]]; then
+  TMP_ROOT="$PI_EXTENSIONS_TMPDIR"
+elif [[ -n "${TMPDIR:-}" ]]; then
+  TMP_ROOT="$TMPDIR"
+elif [[ -n "${HOME:-}" ]]; then
+  TMP_ROOT="$HOME/.pi/tmp/pi-extensions"
+else
+  TMP_ROOT="$REPO_ROOT/.git/tmp"
+fi
+mkdir -p "$TMP_ROOT"
+export TMPDIR="$TMP_ROOT"
+export TMP="$TMP_ROOT"
+export TEMP="$TMP_ROOT"
+
+# Release checks parse `npm view --json` output; npm config warnings (e.g.
+# unknown min-release-age keys in a user .npmrc) are emitted on stderr but
+# merged into that output by the scripts, breaking JSON.parse. Suppress
+# warn-level npm noise for gate children; callers may override.
+export NPM_CONFIG_LOGLEVEL="${NPM_CONFIG_LOGLEVEL:-error}"
+
+usage() {
+  cat <<'USAGE' >&2
+Usage: bash ./scripts/package-quality-gate.sh <lint|fix|typecheck|test|pre-commit|pre-push|ci> <target> [--mode <auto|simple-package|package-group>]
+
+Examples:
+  bash ./scripts/package-quality-gate.sh ci packages/pi-vault-client
+  bash ./scripts/package-quality-gate.sh ci packages/pi-interaction --mode package-group
+USAGE
+}
+
+stage="${1:-}"
+target="${2:-}"
+shift $(( $# > 0 ? 1 : 0 )) || true
+shift $(( $# > 0 ? 1 : 0 )) || true
+mode="auto"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --mode)
+      [[ $# -ge 2 ]] || { usage; exit 1; }
+      mode="$2"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "error: unknown argument: $1" >&2
+      usage
+      exit 1
+      ;;
+  esac
+done
+
+case "$stage" in
+  lint|fix|typecheck|test|pre-commit|pre-push|ci) ;;
+  *) usage; exit 1 ;;
+esac
+
+[[ -n "$target" ]] || { usage; exit 1; }
+case "$mode" in
+  auto|simple-package|package-group) ;;
+  *) echo "error: invalid mode: $mode" >&2; usage; exit 1 ;;
+esac
+
+resolve_target_root() {
+  local raw_target="$1"
+  local -a candidates=()
+
+  if [[ "$raw_target" = /* ]]; then
+    candidates+=("$raw_target")
+  else
+    candidates+=("$PWD/$raw_target")
+    candidates+=("$(dirname "$PWD")/$raw_target")
+    candidates+=("$(dirname "$(dirname "$PWD")")/$raw_target")
+    candidates+=("$REPO_ROOT/$raw_target")
+  fi
+
+  local candidate
+  local seen=":"
+  for candidate in "${candidates[@]}"; do
+    local normalized_parent
+    local normalized
+    normalized_parent="$(cd "$(dirname "$candidate")" 2>/dev/null && pwd || true)"
+    [[ -n "$normalized_parent" ]] || continue
+    normalized="$normalized_parent/$(basename "$candidate")"
+    [[ "$seen" != *":$normalized:"* ]] || continue
+    seen="$seen$normalized:"
+    if [[ -f "$normalized/package.json" ]]; then
+      (cd "$normalized" && pwd)
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+TARGET_ROOT="$(resolve_target_root "$target")" || {
+  echo "error: target is not a package root: $target" >&2
+  echo "looked relative to cwd, one parent, two parents, and repo root" >&2
+  exit 1
+}
+
+relative_target() {
+  python3 - "$REPO_ROOT" "$1" <<'PY'
+import os, sys
+print(os.path.relpath(sys.argv[2], sys.argv[1]))
+PY
+}
+
+TARGET_LABEL="$(relative_target "$TARGET_ROOT")"
+
+has_biome_config() {
+  [[ -f "$1/biome.json" ]] || [[ -f "$1/biome.jsonc" ]]
+}
+
+run_biome() {
+  local workdir="$1"
+  shift
+  if [[ -x "$workdir/node_modules/.bin/biome" ]]; then
+    (cd "$workdir" && ./node_modules/.bin/biome "$@")
+    return 0
+  fi
+
+  echo "biome: configuration detected but local biome binary is unavailable in $(relative_target "$workdir")." >&2
+  echo "Run 'npm install' (or add @biomejs/biome to devDependencies)." >&2
+  exit 1
+}
+
+run_lint_target() {
+  local workdir="$1"
+  if ! has_biome_config "$workdir"; then
+    echo "lint: skipped ($(relative_target "$workdir"), no biome config found)"
+    return 0
+  fi
+
+  run_biome "$workdir" check --no-errors-on-unmatched .
+}
+
+run_fix_target() {
+  local workdir="$1"
+  if ! has_biome_config "$workdir"; then
+    echo "fix: skipped ($(relative_target "$workdir"), no biome config found)"
+    return 0
+  fi
+
+  run_biome "$workdir" check --write --no-errors-on-unmatched .
+}
+
+run_typecheck_target() {
+  local workdir="$1"
+  if [[ ! -f "$workdir/tsconfig.json" ]]; then
+    echo "typecheck: skipped ($(relative_target "$workdir"), no tsconfig.json found)"
+    return 0
+  fi
+
+  if [[ -x "$workdir/node_modules/.bin/tsc" ]]; then
+    (cd "$workdir" && ./node_modules/.bin/tsc --noEmit)
+    return 0
+  fi
+
+  echo "typecheck: tsconfig.json found but local tsc is unavailable in $(relative_target "$workdir")." >&2
+  echo "Run 'npm ci' with an exactly pinned typescript@7 dependency." >&2
+  exit 1
+}
+
+resolve_node_test_concurrency() {
+  local configured="${NODE_TEST_CONCURRENCY:-}"
+  if [[ -n "$configured" ]]; then
+    printf '%s\n' "$configured"
+    return 0
+  fi
+
+  if command -v nproc >/dev/null 2>&1; then
+    nproc
+    return 0
+  fi
+
+  getconf _NPROCESSORS_ONLN 2>/dev/null || printf '1\n'
+}
+
+# Tests build disposable Git repositories, and after a commit Git may start
+# `git maintenance run --auto --detach` in the background. That detached process
+# keeps writing .git/objects while the test deletes its fixture (ENOTEMPTY), so
+# every Git process a test starts, including code under test, runs with automatic
+# maintenance off. Appended after any caller-supplied GIT_CONFIG_* pairs.
+quiet_git_maintenance_exported="false"
+export_quiet_git_maintenance() {
+  [[ "$quiet_git_maintenance_exported" == "true" ]] && return 0
+  quiet_git_maintenance_exported="true"
+  local count="${GIT_CONFIG_COUNT:-0}"
+  if [[ ! "$count" =~ ^[0-9]+$ ]]; then
+    echo "tests: GIT_CONFIG_COUNT must be a non-negative integer." >&2
+    exit 1
+  fi
+  export "GIT_CONFIG_KEY_${count}=maintenance.auto" "GIT_CONFIG_VALUE_${count}=false"
+  count=$((count + 1))
+  export "GIT_CONFIG_KEY_${count}=gc.auto" "GIT_CONFIG_VALUE_${count}=0"
+  export GIT_CONFIG_COUNT=$((count + 1))
+}
+
+run_tests_target() {
+  local workdir="$1"
+  if [[ ! -d "$workdir/tests" ]]; then
+    echo "tests: skipped ($(relative_target "$workdir"), no tests directory found)"
+    return 0
+  fi
+
+  # Loop-tool tests must never write run records into the operator's live
+  # loop-runs telemetry state; redirect the checkpoint store to gate scratch.
+  if [[ "$workdir" == *"pi-society-orchestrator"* ]]; then
+    export PI_ORCH_LOOP_RUNS_DIR="$TMP_ROOT/loop-runs-test"
+    mkdir -p "$PI_ORCH_LOOP_RUNS_DIR"
+  fi
+
+  local -a test_files=()
+  while IFS= read -r test_file; do
+    test_files+=("$test_file")
+  done < <(
+    cd "$workdir"
+    find tests -type f \( \
+      -name '*.test.js' -o \
+      -name '*.test.mjs' -o \
+      -name '*.test.cjs' -o \
+      -name '*.test.ts' -o \
+      -name '*.test.tsx' -o \
+      -name '*.test.mts' -o \
+      -name '*.test.cts' \
+    \) | LC_ALL=C sort
+  )
+
+  if [[ "${#test_files[@]}" -eq 0 ]]; then
+    echo "tests: skipped ($(relative_target "$workdir"), no test files found)"
+    return 0
+  fi
+
+  if ! command -v node >/dev/null 2>&1; then
+    echo "tests: node is required to run tests." >&2
+    exit 1
+  fi
+
+  local needs_tsx="false"
+  local test_file
+  for test_file in "${test_files[@]}"; do
+    case "$test_file" in
+      *.test.ts|*.test.tsx|*.test.mts|*.test.cts)
+        needs_tsx="true"
+        break
+        ;;
+    esac
+  done
+
+  local test_concurrency
+  test_concurrency="$(resolve_node_test_concurrency)"
+  local test_timeout_ms="${NODE_TEST_TIMEOUT_MS:-120000}"
+  if [[ ! "$test_timeout_ms" =~ ^[1-9][0-9]{0,9}$ ]] || (( test_timeout_ms > 2147483647 )); then
+    echo "tests: NODE_TEST_TIMEOUT_MS must be a positive integer <= 2147483647 (milliseconds per file)." >&2
+    exit 1
+  fi
+  echo "tests: per-file timeout ${test_timeout_ms}ms ($(relative_target "$workdir"))"
+  export_quiet_git_maintenance
+
+  local -a imports=()
+  if [[ "$needs_tsx" == "true" ]]; then
+    if [[ ! -x "$workdir/node_modules/.bin/tsx" ]]; then
+      echo "tests: TypeScript test files detected in $(relative_target "$workdir") but local tsx binary is unavailable." >&2
+      exit 1
+    fi
+    imports=(--import tsx)
+  fi
+
+  # One process per file under a wall clock: Node 26 no longer bounds a file that keeps a handle
+  # open after its tests, so the timeout is enforced here as well (AK6249).
+  (cd "$workdir" && node "$REPO_ROOT/scripts/run-package-tests.mjs" --concurrency "$test_concurrency" --timeout-ms "$test_timeout_ms" "${imports[@]}" -- "${test_files[@]}")
+}
+
+should_run_structure_validation_target() {
+  local workdir="$1"
+
+  [[ -f "$workdir/scripts/validate-structure.sh" ]] || return 1
+  [[ -f "$workdir/.copier-answers.yml" ]] || return 1
+  [[ -f "$workdir/docs/project/foundation.md" ]] || return 1
+  [[ -f "$workdir/policy/engineering-lane.json" ]] || return 1
+}
+
+run_structure_validation_target() {
+  local workdir="$1"
+  shift || true
+  if ! should_run_structure_validation_target "$workdir"; then
+    echo "structure: skipped ($(relative_target "$workdir"), no monorepo structure contract detected)"
+    return 0
+  fi
+
+  (cd "$workdir" && bash ./scripts/validate-structure.sh "$@")
+}
+
+run_file_budget_audit_target() {
+  local workdir="$1"
+  local audit_script="$REPO_ROOT/scripts/file-budget-audit.mjs"
+  if [[ ! -f "$audit_script" ]]; then
+    return 0
+  fi
+  if ! command -v node >/dev/null 2>&1; then
+    echo "file-budget: skipped ($(relative_target "$workdir"), node unavailable)" >&2
+    return 0
+  fi
+
+  # Per-package ratchet opt-in: a checked-in policy/file-budget-ratchet.json
+  # marks a package whose audit must pass hard-fail (clean or fully excepted
+  # via policy/file-budget-exceptions.json) in every gate stage.
+  local audit_mode=("--warn-only")
+  if [[ -f "$workdir/policy/file-budget-ratchet.json" ]]; then
+    audit_mode=("--fail")
+  fi
+
+  local selection=()
+  case "$stage" in pre-push|ci) selection=(--tracked) ;; esac
+  node "$audit_script" --root "$workdir" "${audit_mode[@]}" "${selection[@]}"
+}
+
+has_npm_script() {
+  local workdir="$1"
+  local script_name="$2"
+  python3 - "$workdir/package.json" "$script_name" <<'PY'
+import json, sys
+pkg = json.load(open(sys.argv[1], 'r', encoding='utf-8'))
+name = sys.argv[2]
+value = pkg.get('scripts', {}).get(name)
+sys.exit(0 if isinstance(value, str) and value.strip() else 1)
+PY
+}
+
+is_private_package() {
+  local workdir="$1"
+  python3 - "$workdir/package.json" <<'PY'
+import json, sys
+pkg = json.load(open(sys.argv[1], 'r', encoding='utf-8'))
+sys.exit(0 if pkg.get('private') is True else 1)
+PY
+}
+
+run_packaging_target() {
+  local workdir="$1"
+  if has_npm_script "$workdir" "release:check:quick"; then
+    echo "packaging: running scripts.release:check:quick ($(relative_target "$workdir"))"
+    (cd "$workdir" && npm run release:check:quick)
+    return 0
+  fi
+
+  if is_private_package "$workdir"; then
+    echo "packaging: skipped ($(relative_target "$workdir"), private package without release:check:quick)"
+    return 0
+  fi
+
+  echo "packaging: fallback to npm pack --dry-run ($(relative_target "$workdir"), no release:check:quick script)"
+  (cd "$workdir" && npm pack --dry-run)
+}
+
+run_local_package_link_validation_target() {
+  local workdir="$1"
+  node "$REPO_ROOT/scripts/validate-local-package-links.mjs" \
+    --repo-root "$REPO_ROOT" \
+    --package "$workdir"
+}
+
+run_simple_stage() {
+  # Explicit package scope: unfinished neighbors must not contaminate admission.
+  local stage_name="$1"
+  local workdir="$2"
+
+  printf '==> package quality gate: %s [%s]\n' "$(relative_target "$workdir")" "$stage_name"
+
+  if [[ "$stage_name" != "fix" ]]; then
+    node "$REPO_ROOT/scripts/pi-host-compatibility-canary/check-dev-pin-drift.mjs" --package "$workdir"
+  fi
+
+  case "$stage_name" in
+    test|pre-push|ci)
+      node "$REPO_ROOT/scripts/validate-test-source-dependencies.mjs" \
+        --repo-root "$REPO_ROOT" --package "$workdir"
+      ;;
+  esac
+
+  case "$stage_name" in
+    lint)
+      run_lint_target "$workdir"
+      ;;
+    fix)
+      run_fix_target "$workdir"
+      ;;
+    typecheck)
+      run_local_package_link_validation_target "$workdir"
+      run_typecheck_target "$workdir"
+      ;;
+    test)
+      run_local_package_link_validation_target "$workdir"
+      run_tests_target "$workdir"
+      ;;
+    pre-commit)
+      run_structure_validation_target "$workdir" --staged-only
+      run_file_budget_audit_target "$workdir"
+      run_lint_target "$workdir"
+      ;;
+    pre-push)
+      run_local_package_link_validation_target "$workdir"
+      run_structure_validation_target "$workdir"
+      run_file_budget_audit_target "$workdir"
+      run_lint_target "$workdir"
+      run_typecheck_target "$workdir"
+      run_tests_target "$workdir"
+      ;;
+    ci)
+      run_local_package_link_validation_target "$workdir"
+      run_structure_validation_target "$workdir"
+      run_file_budget_audit_target "$workdir"
+      run_lint_target "$workdir"
+      run_typecheck_target "$workdir"
+      run_tests_target "$workdir"
+      run_packaging_target "$workdir"
+      ;;
+  esac
+}
+
+find_child_package_roots() {
+  local workdir="$1"
+  find "$workdir" -mindepth 1 -maxdepth 1 -type d ! -name node_modules ! -name '.*' | while IFS= read -r child; do
+    if [[ -f "$child/package.json" ]]; then
+      printf '%s\n' "$child"
+    fi
+  done | LC_ALL=C sort
+}
+
+resolve_mode() {
+  local workdir="$1"
+  if [[ "$mode" != "auto" ]]; then
+    printf '%s\n' "$mode"
+    return 0
+  fi
+
+  if find_child_package_roots "$workdir" | grep -q .; then
+    printf '%s\n' "package-group"
+  else
+    printf '%s\n' "simple-package"
+  fi
+}
+
+run_package_group_stage() {
+  local stage_name="$1"
+  local workdir="$2"
+
+  printf '==> package-group quality gate: %s [%s]\n' "$(relative_target "$workdir")" "$stage_name"
+
+  if [[ "$stage_name" != "fix" ]]; then
+    node "$REPO_ROOT/scripts/pi-host-compatibility-canary/check-dev-pin-drift.mjs" --package "$workdir"
+  fi
+
+  local child_count="0"
+  local child
+  while IFS= read -r child; do
+    [[ -n "$child" ]] || continue
+    child_count="$((child_count + 1))"
+    run_simple_stage "$stage_name" "$child"
+  done < <(find_child_package_roots "$workdir")
+
+  if [[ "$child_count" -eq 0 ]]; then
+    echo "error: package-group has no child package roots: $(relative_target "$workdir")" >&2
+    exit 1
+  fi
+}
+
+resolved_mode="$(resolve_mode "$TARGET_ROOT")"
+
+case "$resolved_mode" in
+  simple-package)
+    run_simple_stage "$stage" "$TARGET_ROOT"
+    ;;
+  package-group)
+    run_package_group_stage "$stage" "$TARGET_ROOT"
+    ;;
+esac
