@@ -1,0 +1,47 @@
+{
+	"name": "@apothic-ai/pi-persist",
+	"version": "0.2.0",
+	"type": "module",
+	"description": "pi extension: a cached prompt section and a per-request trailing message that other extensions append to, plus declarative items stored on disk.",
+	"license": "MIT",
+	"main": "./src/index.ts",
+	"files": [
+		"src",
+		"README.md",
+		"LICENSE"
+	],
+	"keywords": [
+		"pi",
+		"pi-coding-agent",
+		"pi-extension",
+		"pi-package"
+	],
+	"peerDependencies": {
+		"@earendil-works/pi-ai": "*",
+		"@earendil-works/pi-coding-agent": "*",
+		"@earendil-works/pi-tui": "*",
+		"typebox": "*"
+	},
+	"publishConfig": {
+		"access": "public",
+		"registry": "https://registry.npmjs.org/"
+	},
+	"pi": {
+		"extensions": [
+			"./src/index.ts"
+		]
+	},
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/Apothic-AI/pi-persist"
+	},
+	"scripts": {
+		"typecheck": "tsc --noEmit",
+		"lint": "biome check .",
+		"test": "bun test",
+		"check": "npm run typecheck && npm run lint && npm test"
+	},
+	"bin": {
+		"pi-persist": "./src/cli.ts"
+	}
+}

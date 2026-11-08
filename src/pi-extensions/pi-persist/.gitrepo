@@ -1,0 +1,12 @@
+; DO NOT EDIT (unless you know what you are doing)
+;
+; This subdirectory is a git "subrepo", and this file is maintained by the
+; git-subrepo command. See https://github.com/ingydotnet/git-subrepo#readme
+;
+[subrepo]
+	remote = https://github.com/Apothic-AI/pi-persist
+	branch = main
+	commit = 194b7ece8bd5fb372c26c724c3dc477d4e12366f
+	parent = ec335b5cbec3830ced75a917e274b6effe4f3ff2
+	method = merge
+	cmdver = 0.4.9
