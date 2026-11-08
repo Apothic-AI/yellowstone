@@ -1,0 +1,746 @@
+import { filerPid, laneIdentity } from './origin-process.js'
+import http from 'node:http'
+import { spawn } from 'node:child_process'
+import { existsSync, readFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { dirname, join } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import readline from 'node:readline'
+
+import { daemonRoot } from './config.js'
+import { ONLY_YOU_REASONS } from './schema.js'
+
+const PROTOCOL_VERSION = '2025-06-18'
+const SERVER_INFO = { name: 'unblock', version: '0.1.0' }
+const HOST = '127.0.0.1'
+/** Start the daemon from the configured canonical checkout when there is one. */
+function daemonPath() {
+  const root = daemonRoot()
+  return root ? join(root, 'src', 'daemon.js') : join(dirname(fileURLToPath(import.meta.url)), 'daemon.js')
+}
+
+function stateDir() {
+  return (
+    process.env.UNBLOCK_STATE_DIR ||
+    join(process.env.XDG_STATE_HOME || join(homedir(), '.local', 'state'), 'unblock')
+  )
+}
+
+function configuredPort() {
+  try {
+    return JSON.parse(readFileSync(join(stateDir(), 'daemon.json'), 'utf8')).port
+  } catch {
+    return Number(process.env.UNBLOCK_PORT || 4488)
+  }
+}
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+/**
+ * Where to send the human for one ask.
+ *
+ * ONE link per install, not one per ask. When the daemon has a canonical
+ * origin — a tailnet host where a trusted proxy already identifies the viewer —
+ * every park points at that same stable URL with the ticket in the fragment.
+ * It is bookmarkable, it survives restarts, and a person who has answered once
+ * already has it open.
+ *
+ * Minting a fresh token per park was the old behaviour and it was wrong: a new
+ * unguessable URL every time is useless as a bookmark, and it trains the human
+ * to click whatever link an agent hands them. Tokens still exist, but as a
+ * SHARING mechanism (send one ask to someone off the tailnet), not the front
+ * door — and they are the fallback when no canonical origin is configured.
+ */
+async function answerLink(ticket) {
+  try {
+    const health = await daemonFetch('/health')
+    if (health?.public_origin) {
+      return { url: `${health.public_origin.replace(/\/$/, '')}/#ask=${ticket}`, canonical: true }
+    }
+  } catch {
+    /* fall through to a token */
+  }
+  const link = await daemonFetch('/links', {
+    method: 'POST',
+    body: JSON.stringify({ ticket, ttl_seconds: 900 }),
+  })
+  return { url: link.url, canonical: false }
+}
+
+/** The daemon's local secret, re-read each call so a restart is picked up. */
+function daemonAuth() {
+  if (process.env.UNBLOCK_AUTH) return process.env.UNBLOCK_AUTH
+  try {
+    return JSON.parse(readFileSync(join(stateDir(), 'daemon.json'), 'utf8')).auth ?? null
+  } catch {
+    return null
+  }
+}
+
+async function daemonFetch(pathname, options = {}) {
+  let lastError
+  for (let attempt = 0; attempt < 27; attempt += 1) {
+    const port = configuredPort()
+    try {
+      const auth = daemonAuth()
+      const response = await fetch(`http://${HOST}:${port}/api${pathname}`, {
+        ...options,
+        signal: options.signal || AbortSignal.timeout(5000),
+        headers: {
+          'Content-Type': 'application/json',
+          ...(auth ? { Authorization: `Bearer ${auth}` } : {}),
+          ...(options.headers || {}),
+        },
+      })
+      const body = await response.json()
+      if (!response.ok) {
+        const error = new Error(body.error || `daemon returned ${response.status}`)
+        error.status = response.status
+        error.data = body
+        throw error
+      }
+      return body
+    } catch (error) {
+      if (error.status) throw error
+      lastError = error
+      if (attempt === 0) {
+        spawn(process.execPath, [daemonPath()], {
+          detached: true,
+          stdio: 'ignore',
+          env: process.env,
+        }).unref()
+      }
+      await sleep(200)
+    }
+  }
+  throw new Error(`unblock daemon did not start: ${lastError?.message || 'unknown error'}`)
+}
+
+function origin(identity = process.env) {
+  return {
+    agent: process.env.UNBLOCK_AGENT || 'claude',
+    pid: identity === process.env && !process.argv.includes('--http') ? filerPid() : undefined,
+    ...laneIdentity(identity),
+    tab_id: identity.HERDR_TAB_ID,
+    workspace_id: identity.HERDR_WORKSPACE_ID,
+    session_id: identity.HERDR_SESSION_ID || identity.CLAUDE_SESSION_ID,
+    cwd: process.cwd(),
+    kind: process.env.UNBLOCK_ORIGIN_KIND,
+  }
+}
+
+const askProperties = {
+  // Blocker = the human must DO something only they can do (supply a key,
+  // click a console button, confirm an act). No recommendation is possible.
+  // Decision = the human must DECIDE; the agent has a view and every field
+  // MUST carry recommend {value, why}. The daemon rejects a mismatch, so this
+  // is a real contract, not a hint.
+  purpose: { type: 'string', enum: ['blocker', 'decision', 'consent', 'spend', 'message', 'question', 'permission'], default: 'blocker' },
+  // The project this ask files under — the queue page groups and filters by
+  // it. One short name per workstream, reused across asks. Defaults to
+  // $UNBLOCK_PROJECT when unset.
+  project: { type: 'string', maxLength: 64 },
+  level: { type: 'string', enum: ['P1', 'P2', 'P3', 'P4'], description:
+    'P1 a real person or money is waiting, or something is down;\n' +
+    'P2 holds up a lane or a build;\n' +
+    'P3 a scope round, or something shipped to review;\n' +
+    'P4 decide when it suits you.' },
+  title: { type: 'string', maxLength: 90 },
+  only_you: { type: 'string', enum: ONLY_YOU_REASONS, description: 'What only the human can do: credential, their own account click, spend, message to a real person, or product judgment.' },
+  tried: { type: 'array', minItems: 1, maxItems: 8, items: { type: 'string', minLength: 20, maxLength: 400 }, description: 'What you already tried using CLI, API, computer use or docs and why that did not clear the blocker.' },
+  why: { type: 'string', maxLength: 1200 },
+  summary: { type: 'string', maxLength: 140 },
+  minutes: { type: 'integer', minimum: 1, maximum: 240, description: 'How many minutes Alex should expect to spend (1-240).' },
+  after: { type: 'string', maxLength: 140 },
+  blocks: { anyOf: [{ type: 'string', maxLength: 200 }, { type: 'array', maxItems: 5, items: { type: 'string', maxLength: 60 } }], description: 'What work waits for this answer (one short line; older clients may send a list).' },
+  permission: { type: 'object', properties: { tool: { type: 'string' }, command: { type: 'string', maxLength: 2000 }, path: { type: 'string' }, summary: { type: 'string', maxLength: 200 } }, required: ['tool', 'summary'] },
+  consent_blocked_by: { type: 'string', enum: ['sign_in', 'not_signed_in', 'no_browser', 'types_secret', 'device'] },
+  plan: { type: 'object', properties: { site: { type: 'string' }, start_url: { type: 'string' }, steps: { type: 'array', items: { type: 'string' } }, changes: { type: 'string' }, untouched: { type: 'string' } }, required: ['site', 'start_url', 'steps', 'changes', 'untouched'] },
+  spend: { type: 'object', properties: { item: { type: 'string' }, vendor: { type: 'string' }, vendor_url: { type: 'string' }, amount_cents: { type: 'integer' }, currency: { type: 'string' }, cap_cents: { type: 'integer' }, why: { type: 'string' } }, required: ['item', 'vendor', 'vendor_url', 'amount_cents', 'currency', 'cap_cents', 'why'] },
+  message: { type: 'object', properties: { to: { type: 'string' }, via: { type: 'string', enum: ['email', 'slack', 'linkedin', 'sms', 'other'] }, subject: { type: 'string' }, text: { type: 'string' } }, required: ['to', 'via', 'text'] },
+  fields: {
+    type: 'array',
+    minItems: 1,
+    maxItems: 12,
+    items: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        type: { type: 'string', enum: ['text', 'secret', 'choice', 'confirm', 'paste'] },
+        label: { type: 'string' },
+        required: { type: 'boolean' },
+        step: { type: 'integer', minimum: 1 },
+        // Required on every field when purpose is "decision"; rejected on a
+        // blocker. `why` is the reason in one line, not a restatement.
+        recommend: {
+          type: 'object',
+          properties: { value: {}, why: { type: 'string', maxLength: 200 } },
+          required: ['value', 'why'],
+        },
+        // Renders empty and is excluded from accept-all, so the human has to
+        // engage with it. At most 3 per ask.
+        must_decide: { type: 'boolean' },
+        help: { type: 'string' },
+        url: { type: 'string' },
+        choices: { type: 'array', items: { anyOf: [{ type: 'string' }, { type: 'object', properties: { value: { type: 'string' }, label: { type: 'string' }, description: { type: 'string', maxLength: 200 } }, required: ['value'] }] } },
+        multi: { type: 'boolean' },
+        command: { type: 'string' },
+        multiline: { type: 'boolean' },
+        placeholder: { type: 'string' },
+        store: { type: 'string' },
+        env_name: { type: 'string' },
+      },
+      required: ['name', 'type'],
+    },
+  },
+  steps: { type: 'array', items: { type: 'string' }, maxItems: 12 },
+  links: {
+    type: 'array',
+    items: {
+      type: 'object',
+      properties: { url: { type: 'string' }, label: { type: 'string' } },
+      required: ['url'],
+    },
+  },
+  closes_on: { type: 'array', maxItems: 5, items: { type: 'string' }, description: 'Close this ask by itself when any of these PRs or issues merges or closes, or when this scope comment is resolved.' },
+  ttl_seconds: { type: 'number', exclusiveMinimum: 0 },
+}
+
+const askSchema = { type: 'object', properties: askProperties, required: ['title', 'why'] }
+
+const TOOLS = [
+  { name: 'unblock_keep', description: 'Keep an open ask in today’s queue and claim its liveness.', inputSchema: { type: 'object', properties: { ticket: { type: 'string' } }, required: ['ticket'] } },
+  {
+    name: 'unblock_file',
+    description: 'Only for what only the human can do: their credential or sign-in, a click in their own account, spend, a message to a real person, or a product call. Clicks in a signed-in site are consent asks; signing in or out is never consent. Try the CLI, API, computer use and docs first and list those attempts in `tried`.',
+    inputSchema: askSchema,
+  },
+  {
+    name: 'unblock_park',
+    description: 'Only for what only the human can do: their credential or sign-in, a click in their own account, spend, a message to a real person, or a product call. Clicks in a signed-in site are consent asks; signing in or out is never consent. Try the CLI, API, computer use and docs first and list those attempts in `tried`.',
+    inputSchema: askSchema,
+  },
+  {
+    name: 'unblock_check',
+    description:
+      'Collect answered requests previously filed by this agent, and see what is part way filled in on the ones still open.',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'unblock_peek',
+    description:
+      'Read what the human has typed into an open ask so far — drafts and per-field context — without consuming the answer. Use it while they are still on the page, then unblock_update to follow up.',
+    inputSchema: {
+      type: 'object',
+      properties: { ticket: { type: 'string' } },
+      required: ['ticket'],
+    },
+  },
+  {
+    name: 'unblock_update',
+    description:
+      'Revise an OPEN ask in place: add follow-up questions, drop ones their answers made pointless, or restate why. The ticket, the page they have open and every draft on a field you do not touch all survive. Cancelling and refiling loses all three.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ticket: { type: 'string' },
+        level: askProperties.level,
+        title: askProperties.title,
+        why: askProperties.why,
+        steps: askProperties.steps,
+        links: askProperties.links,
+        closes_on: askProperties.closes_on,
+        tried: askProperties.tried,
+        only_you: askProperties.only_you,
+        summary: askProperties.summary, minutes: askProperties.minutes, after: askProperties.after, blocks: askProperties.blocks,
+        permission: askProperties.permission,
+        plan: askProperties.plan, spend: askProperties.spend, message: askProperties.message,
+        consent_blocked_by: askProperties.consent_blocked_by,
+        // Same field shape as unblock_file, validated by the same schema — a
+        // revision can never reach a shape a fresh ask could not.
+        add_fields: askProperties.fields,
+        remove_fields: { type: 'array', items: { type: 'string' }, maxItems: 12 },
+        replace_fields: askProperties.fields,
+      },
+      required: ['ticket'],
+    },
+  },
+  {
+    name: 'unblock_cancel',
+    description: 'Withdraw an open request.',
+    inputSchema: {
+      type: 'object',
+      properties: { ticket: { type: 'string' }, note: { type: 'string' } },
+      required: ['ticket'],
+    },
+  },
+  {
+    name: 'unblock_scope_approve',
+    description: 'relay an approval Alex gave in chat; quote is his exact words, never a paraphrase; at is when he said it',
+    inputSchema: {
+      type: 'object',
+      properties: { slug: { type: 'string' }, quote: { type: 'string' }, at: { type: 'string' } },
+      required: ['slug', 'quote'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'unblock_scope_unapprove',
+    description: 'Take back a scope approval the PM relayed from chat.',
+    inputSchema: {
+      type: 'object',
+      properties: { slug: { type: 'string' }, reason: { type: 'string' } },
+      required: ['slug', 'reason'],
+      additionalProperties: false,
+    },
+  },
+]
+
+function textResult(text, data) {
+  return { content: [{ type: 'text', text }], ...(data === undefined ? {} : { structuredContent: data }) }
+}
+
+function answerText(ask) {
+  if (ask.status === 'bounced') {
+    const lines = [`${ask.ticket} was SENT BACK: ${ask.reply ?? '(no note)'}`]
+    // Notes typed against individual fields before the bounce still carry
+    // signal — often they ARE the reason it came back.
+    for (const [name, note] of Object.entries(ask.field_context || {})) {
+      lines.push(`${name} (their context): ${note}`)
+    }
+    return lines.join('\n')
+  }
+  const lines = [`${ask.ticket}: ${ask.title}`]
+  for (const field of ask.fields) {
+    const note = ask.field_context?.[field.name]
+    if (!(field.name in ask.answers)) {
+      if (note) lines.push(`${field.name} (unanswered, their context): ${note}`)
+      continue
+    }
+    const value = ask.answers[field.name]
+    if (ask.answer_is_ref?.[field.name]) {
+      lines.push(`${field.name}: ${value.store} reference ${value.ref}`)
+      if (value.hint) lines.push(`  ${value.hint}`)
+      if (value.resolve) lines.push(`  Resolve without printing: ${value.resolve}`)
+    } else if (value === null) {
+      // An explicit skip is a real response: they saw the question and chose
+      // not to answer it. Do not re-ask; proceed without this value.
+      lines.push(`${field.name}: (skipped — they chose not to answer)`)
+    } else if (value && typeof value === 'object' && '$bounce' in value) {
+      // They rejected this one question rather than accepting it as asked. The
+      // rest of the ask still stands; rework only this question, and do not
+      // treat its recommendation as accepted.
+      const why = typeof value.$bounce === 'string' ? ` — they said: ${value.$bounce}` : ''
+      if ('value' in value) {
+        // A bounce WITH an answer: "this is roughly right, but come back to me
+        // before you use it." Use the value, then re-ask before committing.
+        lines.push(`${field.name}: ${JSON.stringify(value.value)} — SENT BACK for rework${why}`)
+        lines.push('  Their value stands as a draft. Re-ask this question with their note addressed before you act on it.')
+      } else {
+        lines.push(`${field.name}: SENT BACK, not answered${why}`)
+        lines.push('  Rework this question (or drop it); its recommendation was NOT accepted.')
+      }
+    } else {
+      lines.push(`${field.name}: ${JSON.stringify(value)}`)
+    }
+    if (note) lines.push(`  their context: ${note}`)
+  }
+  if (ask.reply) lines.push(`they also said: ${ask.reply}`)
+  return lines.join('\n')
+}
+
+/**
+ * What the human has typed so far, without consuming anything.
+ *
+ * A draft is not an answer: they are mid-thought, they may change it, and they
+ * have not pressed the button. Read it to decide what to ASK next, never to act
+ * on as though it were decided. Secrets never draft, so a secret field here is
+ * always empty.
+ */
+function draftText(ask) {
+  const lines = [`${ask.ticket}: ${ask.title} — ${ask.status}`]
+  for (const field of ask.fields) {
+    const value = ask.draft?.[field.name]
+    const note = ask.field_context?.[field.name]
+    if (value === undefined && note === undefined) {
+      lines.push(`${field.name}: (nothing yet)`)
+      continue
+    }
+    if (value !== undefined) lines.push(`${field.name}: ${JSON.stringify(value)} (draft, not submitted)`)
+    if (note !== undefined) lines.push(`  their context: ${note}`)
+  }
+  if (ask.draft_reply) lines.push(`they are writing: ${ask.draft_reply}`)
+  lines.push(
+    ask.draft_updated_at
+      ? `last typed at ${new Date(ask.draft_updated_at).toISOString()}`
+      : 'they have not typed anything yet',
+  )
+  return lines.join('\n')
+}
+
+async function createAsk(kind, args, identity) {
+  const project = identity.UNBLOCK_PROJECT || undefined
+  return daemonFetch('/asks', {
+    method: 'POST',
+    body: JSON.stringify({ ask: { project, ...args, kind }, origin: origin(identity) }),
+  })
+}
+
+export class McpConnection {
+  constructor(send) {
+    this.send = send
+    this.clientCapabilities = {}
+    this.nextId = 1
+    this.pending = new Map()
+  }
+
+  request(method, params) {
+    const id = `unblock-${this.nextId++}`
+    return new Promise((resolve, reject) => {
+      this.pending.set(id, { resolve, reject })
+      this.send({ jsonrpc: '2.0', id, method, params })
+    })
+  }
+
+  notify(method, params = {}) {
+    this.send({ jsonrpc: '2.0', method, params })
+  }
+
+  async callTool(name, args, request, identity = process.env) {
+    if (name === 'unblock_file') {
+      let ask
+      try {
+        ask = await createAsk('file', args, identity)
+      } catch (error) {
+        if (error.status === 409 && error.data?.ticket) {
+          const link = await answerLink(error.data.ticket)
+          error.message = `${error.message} ${link.url}`
+        }
+        throw error
+      }
+      return textResult(`Filed ${ask.ticket}. Keep working; call unblock_check later.`, { ticket: ask.ticket })
+    }
+
+    if (name === 'unblock_keep') {
+      const body = await daemonFetch(`/asks/${encodeURIComponent(args.ticket)}/keep`, { method: 'POST', body: JSON.stringify({ pid: origin(identity).pid ?? null }) })
+      return textResult(`Kept ${body.ask.ticket}.`, { ask: body.ask })
+    }
+
+    if (name === 'unblock_cancel') {
+      const body = await daemonFetch(`/asks/${encodeURIComponent(args.ticket)}/cancel`, {
+        method: 'POST',
+        body: JSON.stringify({ note: args.note }),
+      })
+      return textResult(`Cancelled ${body.ask.ticket}.`, { ask: body.ask })
+    }
+
+    if (name === 'unblock_peek') {
+      const ask = await daemonFetch(`/asks/${encodeURIComponent(args.ticket)}`)
+      return textResult(draftText(ask), { ask })
+    }
+
+    if (name === 'unblock_update') {
+      const body = await daemonFetch(`/asks/${encodeURIComponent(args.ticket)}/update`, {
+        method: 'POST',
+        body: JSON.stringify({
+          title: args.title,
+          why: args.why,
+          steps: args.steps,
+          links: args.links,
+          closes_on: args.closes_on,
+          tried: args.tried,
+          only_you: args.only_you,
+          summary: args.summary, minutes: args.minutes, after: args.after, blocks: args.blocks,
+          permission: args.permission,
+          plan: args.plan, spend: args.spend, message: args.message,
+          consent_blocked_by: args.consent_blocked_by,
+          add_fields: args.add_fields,
+          remove_fields: args.remove_fields,
+          replace_fields: args.replace_fields,
+        }),
+      })
+      const names = body.ask.fields.map((field) => field.name).join(', ')
+      return textResult(
+        `Updated ${body.ask.ticket}; it now asks: ${names}. Their page picks it up on its own — do not re-park.`,
+        { ask: body.ask },
+      )
+    }
+
+    if (name === 'unblock_check') {
+      const query = new URLSearchParams(Object.entries(origin(identity)).filter(([, value]) => value != null))
+      const pending = await daemonFetch(`/pending?${query}`)
+      const collected = []
+      for (const ask of pending.asks) {
+        const body = await daemonFetch(`/asks/${encodeURIComponent(ask.ticket)}/collect`, {
+          method: 'POST',
+          body: '{}',
+        })
+        collected.push(body.ask)
+      }
+      // Asks nobody has submitted yet, but which someone is visibly part way
+      // through. Reporting them is what stops an agent re-asking a question
+      // the human is in the middle of answering.
+      const drafts = (pending.open || []).filter((ask) => ask.draft_updated_at)
+      // Every open ask, with the link the human answers it at. A park whose
+      // result the agent never saw (the harness backgrounded the call, the
+      // session was resumed) is otherwise unrecoverable: the agent knows it
+      // asked something and cannot say where, so it guesses a URL or asks
+      // again.
+      const open = []
+      for (const ask of pending.open || []) {
+        const link = await answerLink(ask.ticket)
+        open.push({ ticket: ask.ticket, title: ask.title, url: link.url, draft_updated_at: ask.draft_updated_at ?? null })
+      }
+      if (collected.length === 0 && drafts.length === 0 && open.length === 0) {
+        return textResult('No answered requests are waiting.', { asks: [], drafts: [], open: [] })
+      }
+      const sections = []
+      if (collected.length > 0) sections.push(collected.map(answerText).join('\n\n'))
+      if (drafts.length > 0) {
+        sections.push(
+          ['Still open, and being filled in right now:', ...drafts.map(draftText)].join('\n'),
+        )
+      }
+      if (open.length > 0) {
+        sections.push(
+          ['Open, answer links:', ...open.map((ask) => `- ${ask.ticket} "${ask.title}" → ${ask.url}`)].join('\n'),
+        )
+      }
+      return textResult(sections.join('\n\n'), { asks: collected, drafts, open })
+    }
+
+    if (name === 'unblock_park') {
+      let ask
+      try {
+        ask = await createAsk('park', args, identity)
+      } catch (error) {
+        if (error.status === 409 && error.data?.ticket) {
+          const link = await answerLink(error.data.ticket)
+          error.message = `${error.message} ${link.url}`
+        }
+        throw error
+      }
+      const link = await answerLink(ask.ticket)
+      if (this.clientCapabilities.elicitation) {
+        try {
+          await this.request('elicitation/create', {
+            mode: 'url',
+            message: `${ask.title}: ${ask.why}`,
+            url: link.url,
+            elicitationId: ask.ticket,
+          })
+        } catch {
+          // A declined or unsupported elicitation still leaves polling as the reliable path.
+        }
+      }
+      let lastProgress = Date.now()
+      const deadline = ask.expires_at || Date.now() + 24 * 60 * 60 * 1000
+      for (;;) {
+        const current = await daemonFetch(`/asks/${encodeURIComponent(ask.ticket)}`)
+        if (current.status === 'answered') {
+          const collected = await daemonFetch(`/asks/${encodeURIComponent(ask.ticket)}/collect`, {
+            method: 'POST',
+            body: '{}',
+          })
+          return textResult(answerText(collected.ask), { ask: collected.ask })
+        }
+        if (current.status === 'bounced') {
+          // Not an error and not an answer. The human read the ask, decided it
+          // was the wrong question, and sent it back with a note. Resume, take
+          // the note seriously, and ask again properly — do not re-park with
+          // the same question.
+          await daemonFetch(`/asks/${encodeURIComponent(ask.ticket)}/collect`, {
+            method: 'POST',
+            body: '{}',
+          }).catch(() => {})
+          return textResult(
+            [
+              `${current.ticket} was SENT BACK, not answered.`,
+              `They said: ${current.reply ?? '(no note)'}`,
+              '',
+              'Rewrite the ask to address that and park again. Do not repeat the same question.',
+            ].join('\n'),
+            { ask: current, bounced: true },
+          )
+        }
+        if (['cancelled', 'expired', 'orphaned'].includes(current.status)) {
+          throw new Error(`ask ${current.ticket} is ${current.status}`)
+        }
+        if (Date.now() >= deadline) {
+          throw new Error(`timed out waiting for ${current.ticket}`)
+        }
+        if (Date.now() - lastProgress >= 20_000) {
+          this.notify('notifications/progress', {
+            progressToken: request?.params?._meta?.progressToken || ask.ticket,
+            progress: Math.floor((Date.now() - ask.created_at) / 1000),
+            message: `Waiting for ${ask.ticket}`,
+          })
+          lastProgress = Date.now()
+        }
+        await sleep(3000)
+      }
+    }
+
+    if (name === 'unblock_scope_approve') {
+      if (typeof args.quote !== 'string' || !args.quote.trim()) throw new Error('quote is required')
+      const payload = { by: 'alex', quote: args.quote }
+      if (args.at !== undefined) payload.at = args.at
+      if (identity.HERDR_PANE_ID) payload.pane = identity.HERDR_PANE_ID
+      const body = await daemonFetch(`/scope/${encodeURIComponent(args.slug)}/pm-approve`, { method: 'POST', body: JSON.stringify(payload) })
+      return textResult(`approved ${args.slug} r${body.revision} (${body.approval.at_et}, ${body.approval.open} open)`, { approval: body.approval })
+    }
+
+    if (name === 'unblock_scope_unapprove') {
+      if (typeof args.reason !== 'string' || !args.reason.trim()) throw new Error('reason is required')
+      const payload = { reason: args.reason }
+      if (identity.HERDR_PANE_ID) payload.pane = identity.HERDR_PANE_ID
+      const body = await daemonFetch(`/scope/${encodeURIComponent(args.slug)}/unapprove`, { method: 'POST', body: JSON.stringify(payload) })
+      return textResult(`unapproved ${args.slug}`, { revision: body.revision })
+    }
+
+    throw new Error(`unknown tool: ${name}`)
+  }
+
+  async handle(message, identity = process.env) {
+    if (message.id !== undefined && (message.result !== undefined || message.error !== undefined) && !message.method) {
+      const pending = this.pending.get(String(message.id))
+      if (!pending) return
+      this.pending.delete(String(message.id))
+      if (message.error) pending.reject(new Error(message.error.message || 'client request failed'))
+      else pending.resolve(message.result)
+      return
+    }
+    if (!message.method) return
+    if (message.id === undefined) return
+
+    let result
+    try {
+      if (message.method === 'initialize') {
+        this.clientCapabilities = message.params?.capabilities || {}
+        result = {
+          protocolVersion: PROTOCOL_VERSION,
+          capabilities: { tools: { listChanged: false } },
+          serverInfo: SERVER_INFO,
+        }
+      } else if (message.method === 'ping') {
+        result = {}
+      } else if (message.method === 'tools/list') {
+        result = { tools: TOOLS }
+      } else if (message.method === 'tools/call') {
+        result = await this.callTool(message.params?.name, message.params?.arguments || {}, message, identity)
+      } else {
+        this.send({
+          jsonrpc: '2.0',
+          id: message.id,
+          error: { code: -32601, message: `Method not found: ${message.method}` },
+        })
+        return
+      }
+      this.send({ jsonrpc: '2.0', id: message.id, result })
+    } catch (error) {
+      this.send({
+        jsonrpc: '2.0',
+        id: message.id,
+        error: { code: -32000, message: error.message, data: error.data },
+      })
+    }
+  }
+}
+
+export function startStdio() {
+  const connection = new McpConnection((message) => process.stdout.write(`${JSON.stringify(message)}\n`))
+  const input = readline.createInterface({ input: process.stdin, crlfDelay: Infinity })
+  input.on('line', (line) => {
+    if (!line.trim()) return
+    let message
+    try {
+      message = JSON.parse(line)
+    } catch {
+      process.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', error: { code: -32700, message: 'Parse error' } })}\n`)
+      return
+    }
+    connection.handle(message)
+  })
+  return connection
+}
+
+function isLoopbackHost(host) {
+  if (!host) return false
+  const hostname = String(host).replace(/:\d+$/, '').replace(/^\[|\]$/g, '')
+  return hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '::1'
+}
+
+function isLoopbackOrigin(origin) {
+  try {
+    return isLoopbackHost(new URL(origin).host)
+  } catch {
+    return false
+  }
+}
+
+export function createHttpHandler() {
+  return async (req, res) => {
+    if (req.method !== 'POST') return res.writeHead(405, { Allow: 'POST' }).end()
+    // Reject browser cross-origin writes and DNS rebinding, just as the
+    // standalone HTTP transport does. The daemon binds only to loopback.
+    if (!isLoopbackHost(req.headers.host) || (req.headers.origin && !isLoopbackOrigin(req.headers.origin))) {
+      return res.writeHead(403).end()
+    }
+    if (!String(req.headers['content-type'] || '').includes('application/json')) {
+      return res.writeHead(415).end()
+    }
+    const chunks = []
+    let received = 0
+    for await (const chunk of req) {
+      received += chunk.length
+      if (received > 1_000_000) {
+        res.writeHead(413).end()
+        req.destroy()
+        return
+      }
+      chunks.push(chunk)
+    }
+    let message
+    try {
+      message = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+      if (!message || typeof message !== 'object' || Array.isArray(message)) throw new Error('Invalid request')
+    } catch {
+      res.writeHead(400, { 'Content-Type': 'application/json' })
+      return res.end(JSON.stringify({ jsonrpc: '2.0', error: { code: -32700, message: 'Parse error' } }))
+    }
+    // Stateless Streamable HTTP: no per-tab server or retained session state.
+    // Each request owns its reply callback and identity, including concurrent calls.
+    const identity = {
+      HERDR_PANE_ID: req.headers['x-herdr-pane'],
+      UNBLOCK_LANE_NAME: req.headers['x-unblock-origin'],
+      CLAUDE_SESSION_ID: req.headers['x-claude-session'],
+      HERDR_SESSION_ID: req.headers['x-herdr-session'],
+      UNBLOCK_PROJECT: req.headers['x-unblock-project'],
+    }
+    let response
+    const connection = new McpConnection((payload) => {
+      if (payload.id === message.id && !payload.method) response = payload
+    })
+    await connection.handle(message, identity)
+    res.writeHead(response ? 200 : 202, { 'Content-Type': 'application/json' })
+    res.end(response ? JSON.stringify(response) : '')
+  }
+}
+
+export async function startHttp({ port = configuredPort() + 1 } = {}) {
+  const handle = createHttpHandler()
+  const server = http.createServer((req, res) => {
+    if (req.url !== '/mcp') return res.writeHead(404).end()
+    handle(req, res).catch(() => res.writeHead(500).end())
+  })
+  await new Promise((resolve, reject) => {
+    server.once('error', reject)
+    server.listen(port, HOST, resolve)
+  })
+  return { server, port: server.address().port, close: () => new Promise((resolve) => server.close(resolve)) }
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  if (process.argv.includes('--http')) await startHttp({})
+  else startStdio()
+}

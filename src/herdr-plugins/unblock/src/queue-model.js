@@ -1,0 +1,239 @@
+/**
+ * How a queue becomes something a human works through.
+ *
+ * One module, no dependencies, shared by every client: the browser panel, the
+ * herdr TUI, and anything else that renders the queue. Ordering, grouping,
+ * project scoping and the deep-link rule all live here so two surfaces cannot
+ * disagree about what "next" means — and so the rules can be tested without a
+ * browser, which is where the filter bugs kept hiding.
+ */
+
+/** Classify by pathname only, so query strings cannot turn pages into images. */
+export function isImageUrl(url) {
+  try {
+    return /\.(?:png|jpe?g|gif|webp|avif|svg)$/i.test(new URL(url).pathname)
+  } catch {
+    return false
+  }
+}
+
+/** Review material lives beside the question, not in the collapsed details. */
+export function reviewLinks(ask) {
+  const fieldUrls = new Set((ask.fields || []).map((field) => field.url))
+  const seen = new Set()
+  const images = []
+  const pages = []
+  for (const link of ask.links || []) {
+    if (seen.has(link.url) || fieldUrls.has(link.url)) continue
+    seen.add(link.url)
+    if (isImageUrl(link.url)) images.push(link)
+    else pages.push(link)
+  }
+  return { images, pages }
+}
+
+/** created_at is epoch ms from the daemon and an ISO string in some fixtures. */
+const at = (value) => (typeof value === 'number' ? value : new Date(value).getTime())
+
+/** The project an ask belongs to: what the agent declared, else its origin. */
+export function groupOf(ask) {
+  const origin = ask.origin || {}
+  return (
+    ask.project ||
+    origin.workspace_name ||
+    origin.repo ||
+    (origin.cwd ? origin.cwd.split('/').filter(Boolean).pop() : undefined) ||
+    origin.agent ||
+    'elsewhere'
+  )
+}
+
+/**
+ * Untouched. null is NOT missing: it is an explicit "no answer", a real
+ * response the agent acts on.
+ */
+export function isMissing(value) {
+  if (value === undefined) return true
+  if (value === null) return false
+  if (typeof value === 'string') return value.trim() === ''
+  if (Array.isArray(value)) return value.length === 0
+  return value === false
+}
+
+export function unansweredFields(ask) {
+  const answered = ask.answers || {}
+  return (ask.fields || []).filter((field) => !(field.name in answered))
+}
+
+export const LEVELS = ['P1', 'P2', 'P3', 'P4']
+
+/** Legacy asks inherit urgency from their purpose and dependent work. */
+export function levelOf(ask) {
+  if (LEVELS.includes(ask.level)) return ask.level
+  if (['message', 'spend'].includes(ask.purpose)) return 'P1'
+  if (['blocker', 'consent', 'permission'].includes(ask.purpose) || ask.gating ||
+      (typeof ask.blocks === 'string' && ask.blocks.length > 0) ||
+      (Array.isArray(ask.blocks) && ask.blocks.length > 0)) return 'P2'
+  return 'P4'
+}
+
+export const DEFAULT_PROJECT_ORDER = 'Recruiter=recruiter,chord,recruiting;Closer=closer;Rails=rails,unblock,factory,admin;Poker=poker'
+
+export function parseProjectOrder(text) {
+  return text.split(';').flatMap((entry) => {
+    const [rawName, rawAliases = ''] = entry.split('=')
+    const name = rawName.trim()
+    if (!name) return []
+    const aliases = [name.toLowerCase(), ...rawAliases.split(',').map((alias) => alias.trim().toLowerCase()).filter(Boolean)]
+    return [{ name, aliases: [...new Set(aliases)] }]
+  })
+}
+
+function defaultProjectOrder() {
+  const configured = typeof process !== 'undefined' ? process.env?.UNBLOCK_PROJECT_ORDER : undefined
+  return parseProjectOrder(configured?.trim() ? configured : DEFAULT_PROJECT_ORDER)
+}
+
+export function projectRank(project, order = defaultProjectOrder()) {
+  if (typeof project !== 'string' || !project.trim()) return order.length
+  const lower = project.toLowerCase()
+  const tokens = [lower, ...lower.split(/[^a-z0-9]+/).filter(Boolean)]
+  const rank = order.findIndex((entry) => entry.aliases.some((alias) => tokens.includes(alias)))
+  return rank < 0 ? order.length : rank
+}
+
+/** Open asks still waiting in today's queue, excluding the weekly list. */
+export function todayAsks(asks) {
+  return asks.filter((ask) => ask.status === 'open' && ask.weekly_at == null && ask.set_aside_at == null)
+}
+
+/** Urgency, owner project order, dependent work, then oldest. */
+export function sortAsks(asks, order = defaultProjectOrder()) {
+  return [...asks].sort((a, b) => LEVELS.indexOf(levelOf(a)) - LEVELS.indexOf(levelOf(b)) ||
+    projectRank(a.project, order) - projectRank(b.project, order) ||
+    Number(Boolean(b.gating)) - Number(Boolean(a.gating)) ||
+    (Array.isArray(b.blocks) ? b.blocks.length : Number(Boolean(b.blocks))) -
+    (Array.isArray(a.blocks) ? a.blocks.length : Number(Boolean(a.blocks))) || at(a.created_at) - at(b.created_at))
+}
+
+/**
+ * Short enough to share a card: nothing left in it but taps. A gating ask
+ * always gets its own card (an agent is stopped on it), and anything with
+ * typing, secrets, or steps deserves the full stage.
+ */
+export function isShort(ask) {
+  if (ask.gating || ask.origin?.detected === true) return false
+  if (ask.steps?.length) return false
+  const open = unansweredFields(ask)
+  if (open.length === 0 || open.length > 2) return false
+  return open.every((field) => field.type === 'choice' || field.type === 'confirm')
+}
+
+export const MAX_GROUP_ASKS = 3
+export const MAX_GROUP_FIELDS = 4
+
+/**
+ * Fold a sorted ask list into cards. Short asks from the same project pool
+ * into a shared card; the card keeps the position of its first ask, so
+ * grouping never reorders the deck's priorities.
+ */
+export function buildDeck(asks) {
+  const items = []
+  const openGroup = new Map()
+  const fieldCount = (item) =>
+    item.asks.reduce((total, ask) => total + unansweredFields(ask).length, 0)
+
+  for (const ask of asks) {
+    if (!isShort(ask)) {
+      items.push({ key: ask.ticket, project: groupOf(ask), grouped: false, asks: [ask] })
+      continue
+    }
+    const project = groupOf(ask)
+    const current = openGroup.get(project)
+    if (
+      current &&
+      current.asks.length < MAX_GROUP_ASKS &&
+      fieldCount(current) + unansweredFields(ask).length <= MAX_GROUP_FIELDS
+    ) {
+      current.asks.push(ask)
+      continue
+    }
+    const item = { key: `g_${ask.ticket}`, project, grouped: true, asks: [ask] }
+    openGroup.set(project, item)
+    items.push(item)
+  }
+  return items
+}
+
+export function hideProducts(asks, hidden) {
+  const names = new Set(hidden)
+  return asks.filter((ask) => !names.has(groupOf(ask)))
+}
+
+/** [[project, open ask count]], busiest first, then alphabetical. */
+export function projectCounts(asks) {
+  const counts = new Map()
+  for (const ask of asks) {
+    const key = groupOf(ask)
+    counts.set(key, (counts.get(key) || 0) + 1)
+  }
+  return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+}
+
+/**
+ * The whole selection, in one place.
+ *
+ * `project`      the filter the human chose, or null for everything.
+ * `pinnedTicket` a #ask= deep link.
+ * `deferredKeys` cards skipped this session, in the order they were skipped.
+ * `doneTickets`  answered this session; dropped before the server catches up.
+ * `doneProjects` projects answered in this session, which hold the filter open
+ *                after their last card leaves.
+ *
+ * The deep-link rule is the part that used to lie. A pinned ask SETS the
+ * project rather than being smuggled past the filter: the picker then names
+ * the project you are actually looking at. Prepending an out-of-scope card
+ * made the filter look broken, because it was.
+ */
+export function selectDeck({
+  asks = [],
+  project = null,
+  pinnedTicket = null,
+  deferredKeys = [],
+  doneTickets = new Set(),
+  doneProjects = [],
+} = {}) {
+  const open = asks.filter((ask) => ask.status === 'open' && !doneTickets.has(ask.ticket))
+  const weekly = sortAsks(open.filter((ask) => ask.weekly_at != null))
+  const live = sortAsks(todayAsks(open))
+  const projects = projectCounts(live)
+
+  // A filter naming a project with nothing open is dropped — otherwise a stale
+  // localStorage value pins the panel to an empty view forever.
+  //
+  // With ONE exception, which is the whole point: a project you have answered
+  // in this session stays selected after its last card leaves. Without it,
+  // answering the last open-factory ask silently widened the deck to the whole
+  // queue and dealt somebody else's card — the filter said one thing and the
+  // card on screen was from somewhere else. Finishing a project should show you
+  // that project, empty.
+  const holds = new Set([...projects.map(([name]) => name), ...doneProjects])
+  const pinnedAsk = pinnedTicket ? live.find((ask) => ask.ticket === pinnedTicket) : undefined
+  const activeProject = pinnedAsk ? groupOf(pinnedAsk) : project && holds.has(project) ? project : null
+
+  const scoped = activeProject ? live.filter((ask) => groupOf(ask) === activeProject) : live
+  const deck = buildDeck(scoped)
+
+  const pinnedItem = pinnedAsk
+    ? deck.find((item) => item.asks.some((ask) => ask.ticket === pinnedAsk.ticket))
+    : undefined
+  const rest = deck.filter((item) => item !== pinnedItem)
+  const fresh = rest.filter((item) => !deferredKeys.includes(item.key))
+  // Skipped cards come back at the end, in the order they were skipped.
+  const later = deferredKeys
+    .map((key) => rest.find((item) => item.key === key))
+    .filter((item) => item !== undefined)
+
+  const items = [...(pinnedItem ? [pinnedItem] : []), ...fresh, ...later]
+  return { items, projects, activeProject, current: items[0], remaining: items.length, weekly }
+}

@@ -1,0 +1,818 @@
+import { LEVELS, levelOf } from './queue-model.js'
+export { LEVELS }
+
+/**
+ * The ask schema. This is the contract every client shares, and it is
+ * deliberately strict: an agent may only park after it has said exactly what
+ * it needs and what filling it in unblocks.
+ *
+ * The item rules come from the /unblock skill and are enforced here rather
+ * than trusted to the agent:
+ *   - self-contained (the human never needs the transcript)
+ *   - one action per ask
+ *   - state the payoff, not the history
+ */
+
+export const FIELD_TYPES = ['text', 'secret', 'choice', 'confirm', 'paste']
+
+export const ASK_KINDS = ['file', 'park']
+
+/**
+ * Why the agent is asking. The test is: does the agent already know what
+ * should happen?
+ *
+ *   blocker   YES, and it cannot do it. You hold a key it needs, or a console
+ *             button only you can click, or an approval only you can give.
+ *             The answer already exists; what is missing is your ACTION.
+ *             A recommendation is forbidden — there is nothing to recommend.
+ *
+ *   decision  NO, and it should not guess. It has done the work, formed a
+ *             view, and wants you to rule on it. Every field carries the
+ *             agent's recommendation, so your job is to ratify, not author.
+ *             What is missing is your JUDGEMENT.
+ *
+ * Blocker = do something. Decision = decide something.
+ * Either may be parked or filed; that is a separate axis.
+ */
+export const ASK_PURPOSES = ['blocker', 'decision', 'consent', 'spend', 'message', 'question', 'permission']
+export const APPROVAL_PURPOSES = ['consent', 'spend', 'message', 'permission']
+export const ACCOUNT_ACTION_RE = /accounts\.google\.com|appleid\.apple\.com|login\.(microsoftonline|live)\.com|authenticator\.cursor\.sh|\/auth\/cli\/|\/(log|sign)[-_]?(in|out|up|off)\b|\/oauth2?\/|\b(log|sign)\s?(in|out|off|up)\b|switch\s+accounts?|add\s+(another\s+)?account|use\s+another\s+account|choose\s+an?\s+account|create\s+(an?\s+|new\s+)?account|continue\s+with\s+(google|apple|microsoft|github)/i
+const CONSENT_BLOCKERS = ['sign_in', 'not_signed_in', 'no_browser', 'types_secret', 'device']
+const choices = (values) => values.map(([value, label]) => ({ value, label }))
+function approvalFields(purpose) {
+  const permission = purpose === 'permission'
+  if (permission) return [
+    { name: 'verdict', type: 'choice', label: 'Allow this?', required: true, must_decide: true,
+      choices: choices([['allow_once', 'Allow once'], ['deny', 'Deny']]) },
+    { name: 'note', type: 'text', label: 'Note to the agent', required: false },
+  ]
+  const consent = purpose === 'consent'
+  const message = purpose === 'message'
+  return [
+    { name: 'verdict', type: 'choice', label: consent ? 'Your call' : message ? 'Send it?' : 'Pay this?', required: true, must_decide: true,
+      choices: choices(consent ? [['approve', 'Approve: do it for me'], ['self', "I'll do it myself"], ['no', 'No']] :
+        message ? [['approve', 'Approve and send'], ['no', 'No']] : [['approve', 'Approve payment'], ['no', 'No']]) },
+    message ? { name: 'edited_text', type: 'text', multiline: true, label: 'Your edit', required: false } :
+      { name: 'note', type: 'text', label: consent ? 'Anything to change in the plan' : 'Note', required: false },
+  ]
+}
+function approvalData(raw, purpose) {
+  if (!APPROVAL_PURPOSES.includes(purpose)) return {}
+  if (raw.fields !== undefined) throw new ValidationError('fields are generated for approval asks', 'fields')
+  const key = purpose === 'consent' ? 'plan' : purpose
+  const data = raw[key]
+  if (!isPlainObject(data)) throw new ValidationError('must be an object', key)
+  if (purpose === 'permission') return { permission: {
+    tool: str(data.tool, 'permission.tool'),
+    ...(data.command === undefined ? {} : { command: str(data.command, 'permission.command', { max: 2000 }) }),
+    ...(data.path === undefined ? {} : { path: str(data.path, 'permission.path') }),
+    summary: plainWords(str(data.summary, 'permission.summary', { max: 200 }), 'permission.summary'),
+  } }
+  if (purpose === 'consent') {
+    const site = str(data.site, 'plan.site', { max: 253 }).toLowerCase()
+    const start_url = str(data.start_url, 'plan.start_url', { max: 2000 })
+    let host
+    try { const url = new URL(start_url); if (url.protocol !== 'https:') throw new Error(); host = url.hostname.toLowerCase() } catch { throw new ValidationError('must be an https deep link', 'plan.start_url') }
+    if (host !== site) throw new ValidationError('must match the start_url host', 'plan.site')
+    if (!isDeepLink(start_url)) throw new ValidationError('must be a deep link', 'plan.start_url')
+    if (!Array.isArray(data.steps) || data.steps.length < 1 || data.steps.length > 12) throw new ValidationError('needs 1..12 steps', 'plan.steps')
+    const steps = data.steps.map((step, i) => str(step, `plan.steps[${i}]`, { max: 300 }))
+    if (ACCOUNT_ACTION_RE.test(start_url) || steps.some((step) => ACCOUNT_ACTION_RE.test(step))) {
+      throw new ValidationError("Signing in or out, switching or creating accounts stay Alex's own click. File a blocker with consent_blocked_by: sign_in.", 'plan')
+    }
+    return { plan: { site, start_url, steps: steps.map((step, i) => plainWords(step, `plan.steps[${i}]`)),
+      changes: str(data.changes, 'plan.changes', { max: 300 }), untouched: str(data.untouched, 'plan.untouched', { max: 300 }) } }
+  }
+  if (purpose === 'spend') {
+    const amount = data.amount_cents
+    const cap = data.cap_cents
+    if (!Number.isSafeInteger(amount) || amount < 1) throw new ValidationError('must be a positive integer', 'spend.amount_cents')
+    if (!Number.isSafeInteger(cap) || cap < amount) throw new ValidationError('must be an integer at least amount_cents', 'spend.cap_cents')
+    if (amount > 50000) throw new ValidationError('Link limit is 50000 cents', 'spend.amount_cents')
+    const currency = str(data.currency, 'spend.currency').toLowerCase()
+    if (currency !== 'usd') throw new ValidationError('only usd is supported', 'spend.currency')
+    const vendor_url = str(data.vendor_url, 'spend.vendor_url', { max: 2000 })
+    try { if (new URL(vendor_url).protocol !== 'https:') throw new Error() } catch { throw new ValidationError('must be https', 'spend.vendor_url') }
+    const item = plainWords(str(data.item, 'spend.item'), 'spend.item')
+    const vendor = str(data.vendor, 'spend.vendor')
+    for (const [value, path] of [[item, 'spend.item'], [vendor, 'spend.vendor']]) {
+      if (value.startsWith('-') || /[,:]/.test(value)) throw new ValidationError('cannot start with - or contain , or :', path)
+    }
+    return { spend: { item, vendor,
+      vendor_url, amount_cents: amount, currency, cap_cents: cap, why: str(data.why, 'spend.why', { max: 300 }) } }
+  }
+  const via = str(data.via, 'message.via')
+  if (!['email', 'slack', 'linkedin', 'sms', 'other'].includes(via)) throw new ValidationError('invalid channel', 'message.via')
+  const subject = optionalStr(data.subject, 'message.subject')
+  return { message: { to: str(data.to, 'message.to'), via, ...(subject ? { subject: plainWords(subject, 'message.subject') } : {}),
+    text: str(data.text, 'message.text', { max: 4000 }) } }
+}
+
+export const ONLY_YOU_REASONS = ['credential', 'their_account', 'spend', 'message', 'judgment']
+
+/**
+ * open      registered, unanswered
+ * bounced   the human sent it back instead of answering — the question was
+ *           wrong, or missing options. Carries their note. A parked agent
+ *           resumes on this and must re-ask better, not retry the same thing.
+ * answered  every required field filled; a parked agent is wakeable
+ * collected the agent has received the answers
+ * orphaned  answered (or not) but the agent that asked is gone
+ * expired   nobody answered before expires_at
+ * cancelled the agent withdrew it (it solved the problem itself)
+ */
+export const ASK_STATUSES = [
+  'open',
+  'bounced',
+  'answered',
+  'collected',
+  'orphaned',
+  'expired',
+  'cancelled',
+]
+
+const NAME_RE = /^[a-z][a-z0-9_]{0,47}$/
+const MAX_TITLE = 90
+const MAX_FIELDS = 12
+const ACTION_URL_RE = /^(?:https?:\/\/[^\s]+|codex:\/\/[^\s]+|x-apple\.systempreferences:[^\s]+)$/i
+const isActionUrl = (url) => ACTION_URL_RE.test(url)
+const PLAIN_WORDS_RE = /\bADR[ -]?\d+|\bv\d+(\.\d+)?\b|\brung\b|\blane[\/:-]|\bub_[a-z0-9]{6}\b|(^|\s)(~\/|\/Users\/|\/Volumes\/|\/home\/)/i
+
+function plainWords(value, path) {
+  if (PLAIN_WORDS_RE.test(value)) {
+    throw new ValidationError(`"${value}": write it for someone who has never opened the repo`, path)
+  }
+  return value
+}
+
+function isDeepLink(url) {
+  if (/^(codex:\/\/|x-apple\.systempreferences:)/i.test(url)) return true
+  try {
+    const parsed = new URL(url)
+    if (!['http:', 'https:'].includes(parsed.protocol)) return false
+    const path = parsed.pathname.replace(/\/+$/, '').toLowerCase()
+    return !['', '/dashboard', '/home', '/console'].includes(path)
+  } catch {
+    return false
+  }
+}
+
+class ValidationError extends Error {
+  constructor(message, path) {
+    super(path ? `${path}: ${message}` : message)
+    this.name = 'ValidationError'
+    this.path = path
+  }
+}
+
+const isPlainObject = (v) => typeof v === 'object' && v !== null && !Array.isArray(v)
+
+/**
+ * C0 controls, DEL, and C1 controls. Every one of these is stripped from every
+ * string an agent supplies.
+ *
+ * This is not hygiene, it is the trust boundary. Ask text is written by an LLM,
+ * and an LLM can be steered by whatever it just read — a README, an issue, a
+ * web page. That text is then rendered into a terminal (where ESC sequences
+ * move the cursor, clear the screen, and retitle the window), into markdown
+ * (where a newline escapes the heading it was meant to sit in), and into a
+ * browser. Stripping here means every renderer downstream is safe by
+ * construction instead of each one having to remember.
+ *
+ * Newlines go too. Prose that needs structure uses `steps`, which is a list.
+ */
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f]/g
+
+function scrub(value) {
+  return value.replace(CONTROL_CHARS, ' ').replace(/[ \t]{2,}/g, ' ')
+}
+
+function str(value, path, { max = 2000, min = 1 } = {}) {
+  if (typeof value !== 'string') throw new ValidationError('must be a string', path)
+  const trimmed = scrub(value).trim()
+  if (trimmed.length < min) throw new ValidationError('must not be empty', path)
+  if (trimmed.length > max) throw new ValidationError(`must be at most ${max} characters`, path)
+  return trimmed
+}
+
+function optionalStr(value, path, opts) {
+  if (value === undefined || value === null || value === '') return undefined
+  return str(value, path, opts)
+}
+
+function validateField(raw, index, seen, purpose = 'blocker') {
+  const path = `fields[${index}]`
+  if (!isPlainObject(raw)) throw new ValidationError('must be an object', path)
+
+  const name = str(raw.name, `${path}.name`)
+  if (!NAME_RE.test(name)) {
+    throw new ValidationError(
+      'must be snake_case, start with a letter, max 48 chars',
+      `${path}.name`,
+    )
+  }
+  if (seen.has(name)) throw new ValidationError(`duplicate field name "${name}"`, path)
+  seen.add(name)
+
+  const type = str(raw.type, `${path}.type`)
+  if (!FIELD_TYPES.includes(type)) {
+    throw new ValidationError(`must be one of ${FIELD_TYPES.join(', ')}`, `${path}.type`)
+  }
+
+  const field = {
+    name,
+    type,
+    label: plainWords(str(raw.label ?? name, `${path}.label`, { max: 120 }), `${path}.label`),
+    required: raw.required === undefined ? true : Boolean(raw.required),
+    help: optionalStr(raw.help, `${path}.help`, { max: 600 }),
+    url: optionalStr(raw.url, `${path}.url`, { max: 2000 }),
+  }
+  if (raw.step !== undefined) field.step = raw.step
+
+  if (field.url && !isActionUrl(field.url)) {
+    throw new ValidationError('must be an http(s), codex, or system preferences URL', `${path}.url`)
+  }
+
+  if (type === 'choice') {
+    if (!Array.isArray(raw.choices) || raw.choices.length < 2) {
+      throw new ValidationError('choice fields need at least 2 choices', `${path}.choices`)
+    }
+    if (raw.choices.length > 12) {
+      throw new ValidationError('at most 12 choices', `${path}.choices`)
+    }
+    field.choices = raw.choices.map((choice, i) => {
+      const cpath = `${path}.choices[${i}]`
+      if (typeof choice === 'string') return { value: str(choice, cpath), label: plainWords(str(choice, cpath), cpath) }
+      if (!isPlainObject(choice)) throw new ValidationError('must be a string or object', cpath)
+      const value = str(choice.value, `${cpath}.value`, { max: 200 })
+      const description = optionalStr(choice.description, `${cpath}.description`, { max: 200 })
+      return { value, label: plainWords(str(choice.label ?? value, `${cpath}.label`, { max: 200 }), `${cpath}.label`),
+        ...(description ? { description } : {}) }
+    })
+    field.multi = Boolean(raw.multi)
+  }
+
+  if (type === 'paste') {
+    // "run this and paste the output" — the command is the whole point.
+    field.command = str(raw.command, `${path}.command`, { max: 1000 })
+  }
+
+  if (type === 'text') {
+    field.multiline = Boolean(raw.multiline)
+    field.placeholder = optionalStr(raw.placeholder, `${path}.placeholder`, { max: 200 })
+  }
+
+  if (type === 'secret') {
+    // Where the value should end up. The agent never receives it either way;
+    // it receives the reference the store hands back.
+    field.store = optionalStr(raw.store, `${path}.store`, { max: 20 }) ?? 'auto'
+    field.env_name = optionalStr(raw.env_name, `${path}.env_name`, { max: 64 })
+    if (field.env_name && !/^[A-Z][A-Z0-9_]*$/.test(field.env_name)) {
+      throw new ValidationError('must be SCREAMING_SNAKE_CASE', `${path}.env_name`)
+    }
+  }
+
+  if (type === 'confirm') {
+    field.required = true // "I did the thing" is meaningless as an optional field
+  }
+
+  if (purpose === 'question' && !['choice', 'text'].includes(type)) {
+    throw new ValidationError('a question needs choice or text fields', `${path}.type`)
+  }
+  if (purpose === 'decision' || (purpose === 'question' && raw.recommend !== undefined)) {
+    // A question may carry a recommendation, but unlike a decision it does
+    // not require one. Both kinds validate supplied recommendations alike.
+    if (purpose === 'decision' && (type === 'secret' || type === 'paste')) {
+      throw new ValidationError(`a decision cannot ask for a ${type} field`, `${path}.type`)
+    }
+    if (!isPlainObject(raw.recommend)) {
+      throw new ValidationError(
+        purpose === 'decision'
+          ? 'every decision field needs recommend: {value, why} — if you have no recommendation, you have not thought it through yet'
+          : 'recommend must be {value, why}',
+        `${path}.recommend`,
+      )
+    }
+    const why = str(raw.recommend.why, `${path}.recommend.why`, { max: 200 })
+    const value = raw.recommend.value
+    if (type === 'choice') {
+      // The one-tap path, so the recommendation must name a real option.
+      const allowed = field.choices.map((c) => c.value)
+      if (!allowed.includes(value)) {
+        throw new ValidationError(
+          `must be one of the declared choices: ${allowed.join(', ')}`,
+          `${path}.recommend.value`,
+        )
+      }
+    } else if (type === 'confirm') {
+      if (typeof value !== 'boolean') {
+        throw new ValidationError('must be true or false', `${path}.recommend.value`)
+      }
+    } else {
+      field.recommendIsText = true
+    }
+    field.recommend = {
+      value: type === 'text' ? str(value, `${path}.recommend.value`, { max: 600 }) : value,
+      why,
+    }
+    field.must_decide = Boolean(raw.must_decide)
+  } else if (raw.recommend !== undefined) {
+    // A pre-filled guess at something only you can know is how accept-all
+    // stops being safe.
+    throw new ValidationError(
+      'a blocker field cannot carry a recommendation — the agent cannot know this value',
+      `${path}.recommend`,
+    )
+  }
+
+  return field
+}
+
+function triedFromString(text) {
+  try {
+    const parsed = JSON.parse(text)
+    if (Array.isArray(parsed)) return parsed
+  } catch { /* one plain line */ }
+  return text.trim() === '' ? [] : [text]
+}
+
+/**
+ * Validate an incoming ask registration. Returns a normalized ask body
+ * (without ids or timestamps — the store adds those).
+ */
+export function validateAsk(raw) {
+  if (!isPlainObject(raw)) throw new ValidationError('allowed: ask object')
+  const errors = []
+  let firstPath
+  const check = (fn) => {
+    try { return fn() } catch (error) {
+      if (!(error instanceof ValidationError)) throw error
+      if (!errors.length) firstPath = error.path
+      if (!errors.includes(error.message)) errors.push(error.message)
+    }
+  }
+  const fail = (path, allowed) => check(() => { throw new ValidationError(`allowed: ${allowed}`, path) })
+  const enumValue = (path, value, allowed) => {
+    if (!allowed.includes(value)) fail(path, allowed.join(', '))
+  }
+  const string = (path, value, max = 2000, min = 1) => {
+    if (typeof value !== 'string' || scrub(value).trim().length < min || scrub(value).trim().length > max) {
+      fail(path, `string of ${min} to ${max} characters`)
+    } else check(() => str(value, path, { min, max }))
+  }
+  const purpose = raw.purpose ?? 'blocker'
+  enumValue('kind', raw.kind ?? 'file', ASK_KINDS)
+  enumValue('purpose', purpose, ASK_PURPOSES)
+  if (raw.level !== undefined) enumValue('level', raw.level, LEVELS)
+  string('title', raw.title, MAX_TITLE)
+  if (typeof raw.title === 'string') check(() => plainWords(raw.title, 'title'))
+  string('why', raw.why, 1200)
+  const optionalGate = ['question', 'permission'].includes(purpose)
+  const tried = typeof raw.tried === 'string' ? triedFromString(raw.tried) : raw.tried
+  if (!optionalGate || tried !== undefined) {
+    if (!Array.isArray(tried) || tried.length < (optionalGate ? 0 : 1) || tried.length > 8) {
+      fail('tried', `${optionalGate ? 0 : 1} to 8 strings, each 20 to 400 characters`)
+    }
+    if (Array.isArray(tried)) {
+      tried.forEach((value, i) => string(`tried[${i}]`, value, 400, 20))
+      const strings = tried.filter(value => typeof value === 'string').map(value => scrub(value).trim().toLowerCase())
+      if (new Set(strings).size !== strings.length) fail('tried', 'distinct attempts (no duplicates)')
+    }
+  }
+  if (!optionalGate || raw.only_you != null) enumValue('only_you', raw.only_you, ONLY_YOU_REASONS)
+  const expected = { consent: 'their_account', spend: 'spend', message: 'message' }[purpose]
+  if (expected && raw.only_you !== expected) fail('only_you', expected)
+  if (purpose === 'decision' && !['judgment', 'spend', 'message'].includes(raw.only_you)) fail('only_you', 'judgment, spend, message')
+  if (purpose === 'blocker' && raw.only_you === 'judgment') fail('only_you', 'credential, their_account, spend, message')
+  if (raw.consent_blocked_by !== undefined) enumValue('consent_blocked_by', raw.consent_blocked_by, CONSENT_BLOCKERS)
+  if (purpose === 'blocker' && raw.only_you === 'their_account' && !raw.consent_blocked_by) fail('consent_blocked_by', CONSENT_BLOCKERS.join(', '))
+  const approvalPurpose = APPROVAL_PURPOSES.includes(purpose) ? purpose : raw.message !== undefined ? 'message' : undefined
+  if (approvalPurpose) {
+    if (raw.fields !== undefined) fail('fields', 'omitted; approval fields are generated automatically')
+    const key = approvalPurpose === 'consent' ? 'plan' : approvalPurpose
+    const data = raw[key]
+    if (!isPlainObject(data)) fail(key, 'object')
+    else if (approvalPurpose === 'message') {
+      string('message.to', data.to)
+      enumValue('message.via', data.via, ['email', 'slack', 'linkedin', 'sms', 'other'])
+      string('message.text', data.text, 4000)
+      if (data.subject != null && data.subject !== '') string('message.subject', data.subject)
+    } else {
+      // Probe independent properties against a valid shape, so a bad first
+      // property does not conceal repairs for later properties.
+      const fixtures = {
+        permission: { tool: 'fixture', summary: 'Local permission fixture' },
+        consent: { site: 'example.invalid', start_url: 'https://example.invalid/settings/access', steps: ['Read the fixture settings'], changes: 'Read fixture', untouched: 'Everything else' },
+        spend: { item: 'Fixture', vendor: 'Fixture', vendor_url: 'https://example.invalid/item', amount_cents: 1, cap_cents: 1, currency: 'usd', why: 'Local fixture' },
+      }
+      const required = {
+        permission: ['tool', 'summary'], consent: ['site', 'start_url', 'steps', 'changes', 'untouched'],
+        spend: ['item', 'vendor', 'vendor_url', 'amount_cents', 'cap_cents', 'currency', 'why'],
+      }[approvalPurpose]
+      for (const property of new Set([...required, ...Object.keys(data)])) {
+        const probe = { ...fixtures[approvalPurpose], [property]: data[property] }
+        if (approvalPurpose === 'spend' && property === 'amount_cents' && Number.isSafeInteger(data.amount_cents)) probe.cap_cents = Math.max(1, data.amount_cents)
+        if (approvalPurpose === 'consent' && property === 'site' && typeof data.site === 'string') probe.start_url = `https://${data.site}/settings/access`
+        if (approvalPurpose === 'consent' && property === 'start_url') {
+          try { probe.site = new URL(data.start_url).hostname } catch { /* validator reports the URL */ }
+        }
+        check(() => approvalData({ ...raw, fields: undefined, [key]: probe }, approvalPurpose))
+      }
+      check(() => approvalData({ ...raw, fields: undefined }, approvalPurpose))
+    }
+  } else {
+    if (!Array.isArray(raw.fields) || !raw.fields.length || raw.fields.length > MAX_FIELDS) fail('fields', `1 to ${MAX_FIELDS} field objects`)
+    if (Array.isArray(raw.fields)) {
+      const seen = new Set()
+      raw.fields.forEach((field, i) => check(() => validateField(field, i, seen, purpose)))
+      if (purpose === 'blocker' && raw.fields.length && raw.fields.every(field => field?.type === 'choice')) fail('fields', 'at least one text, secret, confirm or paste field; use decision for choices only')
+    }
+  }
+  for (const [key, max] of [['project', 64], ['summary', 140], ['after', 140]]) {
+    if (raw[key] != null && raw[key] !== '') string(key, raw[key], max)
+  }
+  const steps = raw.steps ?? []
+  if (!Array.isArray(steps) || steps.length > 12) fail('steps', '0 to 12 strings, each 1 to 600 characters')
+  if (Array.isArray(steps)) steps.forEach((step, i) => string(`steps[${i}]`, step, 600))
+  if (Array.isArray(raw.fields)) raw.fields.forEach((field, i) => {
+    if (field?.step !== undefined && (!Number.isInteger(field.step) || field.step < 1 || !Array.isArray(steps) || field.step > steps.length)) fail(`fields[${i}].step`, 'existing 1-based step number')
+  })
+  const links = raw.links ?? []
+  if (!Array.isArray(links)) fail('links', 'array of {url, label} objects')
+  if (Array.isArray(links)) links.forEach((link, i) => {
+    if (!isPlainObject(link)) return fail(`links[${i}]`, '{url, label} object')
+    string(`links[${i}].url`, link.url)
+    if (!isActionUrl(link.url)) fail(`links[${i}].url`, 'http(s), codex or system preferences URL')
+    string(`links[${i}].label`, link.label ?? link.url, 160)
+  })
+  if (purpose === 'blocker' && ['credential', 'their_account'].includes(raw.only_you) &&
+      ![...(Array.isArray(links) ? links.map(link => link?.url) : []), ...(Array.isArray(raw.fields) ? raw.fields.map(field => field?.url) : [])].some(url => url && isDeepLink(url))) {
+    fail('links', 'deep link to the exact manual-action screen, not a home page')
+  }
+  if (raw.minutes !== undefined && (!Number.isSafeInteger(raw.minutes) || raw.minutes < 1 || raw.minutes > 240)) fail('minutes', 'integer from 1 to 240')
+  if (raw.blocks !== undefined) {
+    if (Array.isArray(raw.blocks)) {
+      if (raw.blocks.length > 5) fail('blocks', 'at most 5 strings')
+      raw.blocks.forEach((block, i) => {
+        string(`blocks[${i}]`, block, 60)
+        if (typeof block === 'string') check(() => plainWords(block, `blocks[${i}]`))
+      })
+    } else {
+      string('blocks', raw.blocks, 200)
+      if (typeof raw.blocks === 'string') check(() => plainWords(raw.blocks, 'blocks'))
+    }
+  }
+  if (raw.closes_on !== undefined && (!Array.isArray(raw.closes_on) || raw.closes_on.length > 5 || raw.closes_on.some(ref =>
+    typeof ref !== 'string' || !(/^(https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/(pull|issues)\/\d+|scope:[a-z0-9][a-z0-9-]{0,63}#T\d{1,4})$/.test(ref))))) {
+    fail('closes_on', 'at most 5 https://github.com/<owner>/<repo>/pull/<number>, issues/<number>, or scope:<slug>#T<number> references')
+  }
+  check(() => normalizeTtl(raw.ttl_seconds))
+  // Retain the full normalizer as the final authority, including cross-field rules.
+  const normalized = check(() => validateAskFirst(raw))
+  if (errors.length) {
+    const error = new ValidationError(errors.join('\n'))
+    error.path = firstPath
+    throw error
+  }
+  return normalized
+}
+
+function validateAskFirst(raw) {
+  if (!isPlainObject(raw)) throw new ValidationError('ask must be an object')
+
+  const kind = str(raw.kind ?? 'file', 'kind')
+  if (!ASK_KINDS.includes(kind)) {
+    throw new ValidationError(`must be one of ${ASK_KINDS.join(', ')}`, 'kind')
+  }
+
+  const purpose = str(raw.purpose ?? 'blocker', 'purpose')
+  if (!ASK_PURPOSES.includes(purpose)) {
+    throw new ValidationError(`must be one of ${ASK_PURPOSES.join(', ')}`, 'purpose')
+  }
+
+  if (raw.level !== undefined && !LEVELS.includes(raw.level)) {
+    throw new ValidationError(`level must be one of ${LEVELS.join(', ')}`, 'level')
+  }
+
+  const title = plainWords(str(raw.title, 'title', { max: MAX_TITLE }), 'title')
+  const why = str(raw.why, 'why', { max: 1200 })
+  // An MCP server started before this gate still lists the old tool schema,
+  // so its agent never learns these two keys exist. Name every missing one in
+  // one error and say how to get them through: that old handler forwards extra
+  // arguments unchanged, and the CLI takes the same JSON.
+  // An undeclared argument reaches us as a string: Claude sends `tried` as the
+  // JSON text of the list, or as one plain line. Take either form; the length
+  // and duplicate rules below still apply to every line.
+  if (typeof raw.tried === 'string') raw = { ...raw, tried: triedFromString(raw.tried) }
+  // A question or a permission prompt is the agent asking, not a blocker it
+  // failed to clear, so tried is optional for those two.
+  const optionalGate = purpose === 'question' || purpose === 'permission'
+  const missing = optionalGate ? [] : ['tried', 'only_you'].filter((key) => raw[key] === undefined || raw[key] === null || (key === 'tried' && Array.isArray(raw.tried) && raw.tried.length === 0))
+  if (missing.length) {
+    throw new ValidationError(
+      `missing ${missing.join(' and ')}. If your unblock tool does not list ${missing.length > 1 ? 'them' : 'it'}, it is an older build: pass ${missing.length > 1 ? 'them' : 'it'} anyway as extra arguments ` +
+        `(tried: 1 to 8 lines, each 20 to 400 characters, on what you ran and why it could not clear this; only_you: one of ${ONLY_YOU_REASONS.join(', ')}, and a decision uses judgment), ` +
+        'or file the same JSON from a shell with: unblock file - < ask.json',
+      missing[0],
+    )
+  }
+  if ((!optionalGate || raw.tried !== undefined) && (!Array.isArray(raw.tried) || (!optionalGate && raw.tried.length === 0))) {
+    throw new ValidationError('say what you already tried (commands, computer use, docs) and why it could not clear this — only file what only the human can do', 'tried')
+  }
+  if (raw.tried?.length > 8) throw new ValidationError('at most 8 attempts', 'tried')
+  const tried = (raw.tried ?? []).map((entry, i) => str(entry, `tried[${i}]`, { min: 20, max: 400 }))
+  if (new Set(tried.map((entry) => entry.toLowerCase())).size !== tried.length) {
+    throw new ValidationError('duplicate attempts', 'tried')
+  }
+  const only_you = optionalGate && (raw.only_you === undefined || raw.only_you === null) ? undefined : str(raw.only_you, 'only_you')
+  if (only_you !== undefined && !ONLY_YOU_REASONS.includes(only_you)) {
+    throw new ValidationError(`must be one of ${ONLY_YOU_REASONS.join(', ')}`, 'only_you')
+  }
+  if (purpose === 'decision' ? !['judgment', 'spend', 'message'].includes(only_you) :
+    purpose === 'permission' ? false : APPROVAL_PURPOSES.includes(purpose) ? only_you !== ({ consent: 'their_account', spend: 'spend', message: 'message' })[purpose] : purpose === 'question' ? false : only_you === 'judgment') {
+    throw new ValidationError('decisions allow judgment, spend or message; blockers require an action other than judgment', 'only_you')
+  }
+
+  const consent_blocked_by = raw.consent_blocked_by === undefined ? undefined : str(raw.consent_blocked_by, 'consent_blocked_by')
+  if (consent_blocked_by && !CONSENT_BLOCKERS.includes(consent_blocked_by)) throw new ValidationError('invalid consent blocker', 'consent_blocked_by')
+  if (purpose === 'blocker' && only_you === 'their_account' && !consent_blocked_by) throw new ValidationError('a click in an account needs consent_blocked_by', 'consent_blocked_by')
+  const approval = approvalData(raw, purpose)
+
+  // The project this ask belongs to, declared by the agent. The queue page
+  // groups and filters on it. Optional: an ask without one falls back to its
+  // origin (workspace, repo, cwd) for grouping, so old clients keep working.
+  const project = optionalStr(raw.project, 'project', { max: 64 })
+
+  const inputFields = APPROVAL_PURPOSES.includes(purpose) ? approvalFields(purpose) : raw.fields
+  if (!Array.isArray(inputFields) || inputFields.length === 0) {
+    throw new ValidationError('an ask needs at least one field — say what you need', 'fields')
+  }
+  if (inputFields.length > MAX_FIELDS) {
+    throw new ValidationError(`at most ${MAX_FIELDS} fields; split the ask`, 'fields')
+  }
+
+  const seen = new Set()
+  const fields = inputFields.map((f, i) => validateField(f, i, seen, purpose))
+  if (APPROVAL_PURPOSES.includes(purpose)) fields.splice(0, fields.length, ...approvalFields(purpose))
+
+  // Enforce the blocker/decision line instead of trusting the label.
+  //
+  // The real discriminator is whether the agent could form a view. If it
+  // enumerated the options, it knows the option space, so it can recommend one
+  // — that is a decision. A value living outside its knowledge (a hostname, a
+  // key, an account id) or an act only the human can perform is a blocker.
+  //
+  // So the rule is narrow on purpose: a blocker may not be made ENTIRELY of
+  // choices. Free text, secrets, confirms and pastes are all legitimate
+  // blockers. An earlier, tighter rule demanded a secret/confirm/paste and
+  // wrongly rejected "what is your staging hostname", which is a real blocker.
+  if (purpose === 'blocker' && fields.every((f) => f.type === 'choice')) {
+    throw new ValidationError(
+      'a blocker cannot be only choices — if you enumerated the options you can recommend one. ' +
+        'Set purpose "decision" and give every field a recommendation.',
+      'fields',
+    )
+  }
+
+  // Accept-all is only safe while it cannot rubber-stamp the decisions that
+  // actually needed you. Cap the ones that opt out of it.
+  if (fields.filter((f) => f.must_decide).length > 3) {
+    throw new ValidationError('at most 3 must_decide fields; split the round', 'fields')
+  }
+
+  const steps = raw.steps === undefined ? [] : raw.steps
+  if (!Array.isArray(steps)) throw new ValidationError('must be an array of strings', 'steps')
+  if (steps.length > 12) throw new ValidationError('at most 12 steps', 'steps')
+  for (let i = 0; i < fields.length; i++) {
+    if (fields[i].step !== undefined && (!Number.isInteger(fields[i].step) || fields[i].step < 1 || fields[i].step > steps.length)) {
+      throw new ValidationError('must name an existing 1-based step', `fields[${i}].step`)
+    }
+  }
+
+  const links = raw.links === undefined ? [] : raw.links
+  if (!Array.isArray(links)) throw new ValidationError('must be an array', 'links')
+
+  const normalizedLinks = links.map((l, i) => {
+    const path = `links[${i}]`
+    if (!isPlainObject(l)) throw new ValidationError('must be an object', path)
+    const url = str(l.url, `${path}.url`, { max: 2000 })
+    if (!isActionUrl(url)) throw new ValidationError('must be an http(s), codex, or system preferences URL', `${path}.url`)
+    return { url, label: str(l.label ?? url, `${path}.label`, { max: 160 }) }
+  })
+  if (purpose === 'blocker' && ['credential', 'their_account'].includes(only_you) &&
+      ![...normalizedLinks.map((link) => link.url), ...fields.map((field) => field.url)].some((url) => url && isDeepLink(url))) {
+    throw new ValidationError('a manual step needs a deep link to the exact screen, not a home page', 'links')
+  }
+
+  const summary = optionalStr(raw.summary, 'summary', { max: 140 })
+  const after = optionalStr(raw.after, 'after', { max: 140 })
+  const minutes = raw.minutes
+  if (minutes !== undefined && (!Number.isSafeInteger(minutes) || minutes < 1 || minutes > 240)) {
+    throw new ValidationError('must be an integer from 1 to 240', 'minutes')
+  }
+  const blocks = raw.blocks === undefined ? undefined : Array.isArray(raw.blocks)
+    ? (() => {
+      if (raw.blocks.length > 5) throw new ValidationError('must have at most 5 items', 'blocks')
+      return raw.blocks.map((block, i) => plainWords(str(block, `blocks[${i}]`, { max: 60 }), `blocks[${i}]`)).join(', ')
+    })()
+    : plainWords(str(raw.blocks, 'blocks', { max: 200 }), 'blocks')
+
+  const closes_on = raw.closes_on
+  if (closes_on !== undefined && (!Array.isArray(closes_on) || closes_on.length > 5 || closes_on.some((ref) =>
+    typeof ref !== 'string' || !(/^(https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/(pull|issues)\/\d+|scope:[a-z0-9][a-z0-9-]{0,63}#T\d{1,4})$/.test(ref))))) {
+    throw new ValidationError('must contain at most 5 PR, issue or scope comment references', 'closes_on')
+  }
+  return {
+    closes_on: closes_on?.length ? closes_on : undefined,
+    kind,
+    purpose,
+    only_you,
+    tried,
+    project,
+    level: raw.level === undefined ? levelOf({ purpose, blocks }) : raw.level,
+    title,
+    why,
+    fields,
+    steps: steps.map((s, i) => str(s, `steps[${i}]`, { max: 600 })),
+    links: normalizedLinks,
+    ttl_seconds: normalizeTtl(raw.ttl_seconds),
+    ...approval,
+    consent_blocked_by,
+    summary: summary === undefined ? undefined : plainWords(summary, 'summary'),
+    minutes,
+    after: after === undefined ? undefined : plainWords(after, 'after'),
+    blocks,
+  }
+}
+
+/**
+ * Apply an agent's in-place edit to an OPEN ask and re-validate the result.
+ *
+ * The merged ask goes back through validateAsk untouched, so an update can
+ * never reach a shape a fresh ask could not: the blocker/decision rule, the
+ * field cap and the must_decide cap all still hold. Fields the patch does not
+ * name keep their existing definition — which is exactly what lets the drafts
+ * already typed against them survive the edit.
+ *
+ * Returns the revised properties; the store writes them and bumps updated_at.
+ */
+export function validateUpdate(ask, patch) {
+  if (!isPlainObject(patch)) throw new ValidationError('update must be an object')
+  if (patch.purpose !== undefined) throw new ValidationError('purpose cannot change', 'purpose')
+  if (APPROVAL_PURPOSES.includes(ask.purpose) && ['add_fields', 'remove_fields', 'replace_fields'].some((key) => patch[key] !== undefined)) throw new ValidationError('approval fields cannot change', 'fields')
+  const named = ['closes_on', 'level', 'title', 'why', 'steps', 'links', 'tried', 'only_you', 'plan', 'spend', 'message', 'permission', 'consent_blocked_by', 'summary', 'minutes', 'after', 'blocks', 'add_fields', 'remove_fields', 'replace_fields'].filter(
+    (key) => patch[key] !== undefined,
+  )
+  if (patch.level !== undefined && !LEVELS.includes(patch.level)) {
+    throw new ValidationError(`level must be one of ${LEVELS.join(', ')}`, 'level')
+  }
+  if (named.length === 0) {
+    throw new ValidationError(
+      'nothing to update — pass a changed ask property or fields',
+    )
+  }
+
+  if (!['question', 'permission'].includes(ask.purpose) && (!ask.tried?.length || !ask.only_you) && (patch.tried === undefined || patch.only_you === undefined)) {
+    throw new ValidationError('this ask predates the filing gate; include tried and only_you in the update')
+  }
+
+  let fields = ask.fields
+  if (patch.replace_fields !== undefined) {
+    if (!Array.isArray(patch.replace_fields)) {
+      throw new ValidationError('must be an array of fields', 'replace_fields')
+    }
+    fields = patch.replace_fields
+  }
+
+  if (patch.remove_fields !== undefined) {
+    if (!Array.isArray(patch.remove_fields)) {
+      throw new ValidationError('must be an array of field names', 'remove_fields')
+    }
+    const drop = new Set(
+      patch.remove_fields.map((name, i) => str(name, `remove_fields[${i}]`, { max: 48 })),
+    )
+    for (const name of drop) {
+      // Naming a field that is not there means the agent is working from a
+      // stale copy of the ask. Say so rather than silently doing nothing.
+      if (!fields.some((field) => field.name === name)) {
+        throw new ValidationError(`no field named "${name}" on this ask`, 'remove_fields')
+      }
+    }
+    fields = fields.filter((field) => !drop.has(field.name))
+  }
+
+  if (patch.add_fields !== undefined) {
+    if (!Array.isArray(patch.add_fields)) {
+      throw new ValidationError('must be an array of fields', 'add_fields')
+    }
+    for (const raw of patch.add_fields) {
+      // Adding a name that already exists is a REVISION of that question —
+      // reworded, new choices — not a duplicate. It keeps its position, so the
+      // human does not see the list reshuffle under them mid-answer.
+      const name = isPlainObject(raw) ? raw.name : undefined
+      const at = fields.findIndex((field) => field.name === name)
+      fields = at >= 0 ? fields.map((field, i) => (i === at ? raw : field)) : [...fields, raw]
+    }
+  }
+
+  const merged = validateAsk({
+    kind: ask.kind,
+    purpose: ask.purpose,
+    project: ask.project,
+    level: patch.level ?? ask.level,
+    title: patch.title ?? ask.title,
+    why: patch.why ?? ask.why,
+    fields: APPROVAL_PURPOSES.includes(ask.purpose) ? undefined : fields,
+    plan: patch.plan ?? ask.plan, spend: patch.spend ?? ask.spend, message: patch.message ?? ask.message, permission: patch.permission ?? ask.permission,
+    summary: patch.summary ?? ask.summary, minutes: patch.minutes ?? ask.minutes, after: patch.after ?? ask.after, blocks: patch.blocks ?? ask.blocks,
+    consent_blocked_by: patch.consent_blocked_by ?? ask.consent_blocked_by,
+    steps: patch.steps ?? ask.steps,
+    links: patch.links ?? ask.links,
+    closes_on: patch.closes_on === undefined ? ask.closes_on : patch.closes_on,
+    tried: patch.tried ?? ask.tried,
+    only_you: patch.only_you ?? ask.only_you,
+  })
+  return { closes_on: merged.closes_on, level: merged.level, title: merged.title, why: merged.why, fields: merged.fields, steps: merged.steps, links: merged.links, tried: merged.tried, only_you: merged.only_you, plan: merged.plan, spend: merged.spend, message: merged.message, permission: merged.permission, consent_blocked_by: merged.consent_blocked_by,
+    summary: merged.summary, minutes: merged.minutes, after: merged.after, blocks: merged.blocks }
+}
+
+function normalizeTtl(value) {
+  if (value === undefined || value === null) return null
+  const n = Number(value)
+  if (!Number.isFinite(n) || n <= 0) throw new ValidationError('must be a positive number', 'ttl_seconds')
+  const MAX = 60 * 60 * 24 * 30
+  return Math.min(Math.round(n), MAX)
+}
+
+/**
+ * Origin is what lets the queue group by workspace and filter by profile.
+ * Everything here is best-effort: an agent outside herdr supplies what it can.
+ */
+export function normalizeOrigin(raw = {}) {
+  if (!isPlainObject(raw)) throw new ValidationError('origin must be an object')
+  return {
+    pid: Number.isSafeInteger(raw.pid) && raw.pid > 0 ? raw.pid : undefined,
+    agent: optionalStr(raw.agent, 'origin.agent', { max: 40 }) ?? 'unknown',
+    session_id: optionalStr(raw.session_id, 'origin.session_id', { max: 200 }),
+    pane_id: optionalStr(raw.pane_id, 'origin.pane_id', { max: 200 }),
+    lane_name: optionalStr(raw.lane_name, 'origin.lane_name', { max: 200 }),
+    tab_id: optionalStr(raw.tab_id, 'origin.tab_id', { max: 200 }),
+    workspace_id: optionalStr(raw.workspace_id, 'origin.workspace_id', { max: 200 }),
+    workspace_name: optionalStr(raw.workspace_name, 'origin.workspace_name', { max: 200 }),
+    // A named herdr session is a SEPARATE server with its own state — hard
+    // isolation, not a filter. The daemon is machine-global and therefore sees
+    // asks from all of them, so record which one an ask came from rather than
+    // silently mixing universes. Not a filter in v1; grouping only.
+    herdr_session: optionalStr(raw.herdr_session, 'origin.herdr_session', { max: 100 }),
+    // Profile membership. In herdr a profile is not a container: it is a tag on
+    // workspaces, one active at a time, and the sidebar shows a workspace when
+    // the active profile is in its list — or when the active profile is
+    // `personal` and the list is empty. A PANE may carry its own profile tags
+    // that override its workspace's, so callers should send the pane's
+    // effective set (pane tags when present, else the workspace's).
+    profiles: Array.isArray(raw.profiles)
+      ? raw.profiles.slice(0, 16).map((p, i) => str(p, `origin.profiles[${i}]`, { max: 32 }))
+      : [],
+    cwd: optionalStr(raw.cwd, 'origin.cwd', { max: 1000 }),
+    repo: optionalStr(raw.repo, 'origin.repo', { max: 200 }),
+    kind: optionalStr(raw.kind, 'origin.kind', { max: 40 }),
+    detected: raw.detected === true,
+  }
+}
+
+/** Scrub an optional free-text value arriving outside validateAsk. */
+export function optionalScrub(value, max = 600) {
+  if (typeof value !== 'string') return undefined
+  const cleaned = scrub(value).trim().slice(0, max)
+  return cleaned === '' ? undefined : cleaned
+}
+
+export const DEFAULT_PROFILE = 'personal'
+
+/** Herdr's own visibility rule, reimplemented so the queue can never disagree with the sidebar. */
+export function matchesProfile(origin, activeProfile) {
+  if (!activeProfile || activeProfile === '*') return true
+  const profiles = origin?.profiles ?? []
+  if (profiles.length === 0) return activeProfile === DEFAULT_PROFILE
+  return profiles.includes(activeProfile)
+}
+
+/** An answer set is complete when every required field has a value. */
+export function missingRequired(ask, answers = {}) {
+  return ask.fields
+    .filter((f) => f.required)
+    .filter((f) => {
+      const v = answers[f.name]
+      // undefined = never answered. null = the human explicitly chose not to
+      // answer this one — a real response, so it does not hold the ask open.
+      if (v === undefined) return true
+      if (v === null) return false
+      if (typeof v === 'string') return v.trim() === ''
+      if (Array.isArray(v)) return v.length === 0
+      return false
+    })
+    .map((f) => f.name)
+}
+
+export { ValidationError }

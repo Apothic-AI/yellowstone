@@ -1,0 +1,12 @@
+; DO NOT EDIT (unless you know what you are doing)
+;
+; This subdirectory is a git "subrepo", and this file is maintained by the
+; git-subrepo command. See https://github.com/ingydotnet/git-subrepo#readme
+;
+[subrepo]
+	remote = https://github.com/Apothic-AI/unblock
+	branch = apothic-main
+	commit = 5887cefa8724090289cdb133159e50c7c1c8932c
+	parent = d66818159e561f2507afae3e55d470caa9310884
+	method = merge
+	cmdver = 0.4.9
