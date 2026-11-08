@@ -19,7 +19,7 @@
 set -euo pipefail
 cd "$(dirname -- "$0")/.."
 
-EXPECTED=12
+EXPECTED=13
 REPO="$(pwd)"
 
 # The canonical checkout is permanently dirty in one file: `.pi/launch.env` is a lane-local
