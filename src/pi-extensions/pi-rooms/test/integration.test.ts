@@ -1,0 +1,612 @@
+/**
+ * Integration tests: load the real extension through a stub pi API and drive
+ * its tool handlers. This is what catches wiring mistakes — a tool that is
+ * registered but unreachable, a handler that throws, a delivery that never
+ * lands — without needing a model or a live pi process.
+ */
+
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+
+import init from "../index.ts";
+
+import {
+  archive,
+  drain,
+  readPosts,
+  readRoom,
+  register,
+  resolvePaths,
+  roomSeq,
+} from "../src/store.ts";
+
+interface Recorded {
+  tools: Map<string, any>;
+  handlers: Map<string, Function>;
+  sent: { content: string; customType: string }[];
+}
+
+function loadExtension(env: Record<string, string>): Recorded {
+  // Sandbox: never inherit a real HERDR_PANE_ID / session id, or every fake lane
+  // in a test would look like the same pane and pins would resolve across tests.
+  for (const key of ["HERDR_PANE_ID", "HERDR_TAB_ID", "HERDR_WORKSPACE_ID", "PI_SESSION_ID", "PI_AGENT_NAME"]) {
+    delete process.env[key];
+  }
+  for (const [key, value] of Object.entries(env)) process.env[key] = value;
+  const recorded: Recorded = { tools: new Map(), handlers: new Map(), sent: [] };
+  const pi = {
+    registerTool: (def: any) => recorded.tools.set(def.name, def),
+    registerCommand: () => {},
+    on: (event: string, handler: Function) => {
+      recorded.handlers.set(event, handler);
+      return () => {};
+    },
+    sendMessage: (message: any) => recorded.sent.push({ content: message.content, customType: message.customType }),
+    appendEntry: () => {},
+  };
+  init(pi as any);
+  return recorded;
+}
+
+function ctx(cwd: string) {
+  return { cwd, hasUI: false, ui: { setStatus: () => {}, notify: () => {} } } as any;
+}
+
+async function call(ext: Recorded, name: string, params: unknown, cwd: string) {
+  const tool = ext.tools.get(name);
+  assert.ok(tool != null, `${name} should be registered`);
+  return tool.execute("call-1", params, undefined, undefined, ctx(cwd));
+}
+
+function base(): string {
+  return fs.mkdtempSync(path.join(os.tmpdir(), "pi-rooms-int-"));
+}
+
+/**
+ * Switch the identity that the next tool call resolves to.
+ *
+ * Name resolution reads `PI_ROOMS_NAME` on every call, by design — that is what
+ * lets a running lane pick up a pin — so a test that loads a second fake lane and
+ * then calls the first one's tools would otherwise be speaking as the second.
+ */
+function as(name: string): void {
+  process.env.PI_ROOMS_NAME = name;
+}
+
+test("registers the room and messaging tools", () => {
+  const ext = loadExtension({ PI_ROOMS_DIR: base(), PI_ROOMS_NAME: "lead" });
+  for (const name of [
+    "rooms_who",
+    "rooms_dm",
+    "rooms_reply_all",
+    "rooms_create",
+    "rooms_join",
+    "rooms_leave",
+    "rooms_post",
+    "rooms_read",
+    "rooms_list",
+  ]) {
+    assert.ok(ext.tools.has(name), `${name} registered`);
+  }
+  assert.ok(ext.handlers.has("session_start"));
+  assert.ok(ext.handlers.has("session_shutdown"));
+});
+
+test("a leader creates a room, posts, and history is readable with sequence numbers", async () => {
+  const dir = base();
+  const ext = loadExtension({ PI_ROOMS_DIR: dir, PI_ROOMS_NAME: "lead" });
+
+  const created = await call(ext, "rooms_create", { room: "dxdb", members: ["core", "testkit"] }, "/work/dxdb");
+  assert.match(created.content[0].text, /Room dxdb created with 3 member/);
+
+  const posted = await call(ext, "rooms_post", { room: "dxdb", message: "kickoff: m2-core first" }, "/work/dxdb");
+  assert.match(posted.content[0].text, /#1/);
+
+  const read = await call(ext, "rooms_read", { room: "dxdb" }, "/work/dxdb");
+  assert.match(read.content[0].text, /#1 \d\d:\d\d lead: kickoff: m2-core first/);
+
+  // The post fanned out to both other members' inboxes.
+  assert.ok(fs.existsSync(path.join(dir, "inbox", "core")));
+  assert.ok(fs.existsSync(path.join(dir, "inbox", "testkit")));
+  assert.equal(fs.readdirSync(path.join(dir, "inbox", "core")).filter((f) => f.endsWith(".json")).length, 1);
+});
+
+test("posting to a room you are not in is refused, and joining fixes it", async () => {
+  const dir = base();
+  const lead = loadExtension({ PI_ROOMS_DIR: dir, PI_ROOMS_NAME: "lead" });
+  await call(lead, "rooms_create", { room: "neti", members: [] }, "/work/neti");
+
+  // A second identity in the same process: one pi process is one agent, so a
+  // second extension load is the smallest honest stand-in for a second lane.
+  const outsider = loadExtension({ PI_ROOMS_DIR: dir, PI_ROOMS_NAME: "neti-store" });
+  const denied = await call(outsider, "rooms_post", { room: "neti", message: "hello" }, "/work/neti-worktrees/store");
+  assert.equal(denied.isError, true);
+  assert.match(denied.content[0].text, /not a member/);
+
+  const joined = await call(outsider, "rooms_join", { room: "neti" }, "/work/neti-worktrees/store");
+  assert.equal(joined.isError, undefined);
+  assert.match(joined.content[0].text, /Joined room neti \(2 members\): lead, neti-store/);
+
+  const allowed = await call(outsider, "rooms_post", { room: "neti", message: "hello" }, "/work/neti-worktrees/store");
+  assert.equal(allowed.isError, undefined);
+  // The join recorded an event at #1, so the first post is #2.
+  assert.match(allowed.content[0].text, /#2/);
+});
+
+test("duplicate room creation is refused rather than silently resetting membership", async () => {
+  const dir = base();
+  const ext = loadExtension({ PI_ROOMS_DIR: dir, PI_ROOMS_NAME: "lead" });
+  await call(ext, "rooms_create", { room: "r1", members: ["a"] }, "/work/x");
+  const again = await call(ext, "rooms_create", { room: "r1", members: ["b"] }, "/work/x");
+  assert.equal(again.isError, true);
+  assert.match(again.content[0].text, /already exists/);
+});
+
+test("the send budget is unbounded unless the operator sets a cap", async () => {
+  const dir = base();
+  const ext = loadExtension({ PI_ROOMS_DIR: dir, PI_ROOMS_NAME: "lead" });
+  await call(ext, "rooms_create", { room: "b", members: [] }, "/work/x");
+  // Default config: no cap, so a long run of sends must all succeed.
+  for (let i = 0; i < 40; i += 1) {
+    const sent = await call(ext, "rooms_post", { room: "b", message: `post ${i}` }, "/work/x");
+    assert.equal(sent.isError, undefined, `send ${i} should not be capped`);
+  }
+});
+
+test("an explicit cap is enforced and reports the limit", async () => {
+  const dir = base();
+  fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify({ maxSendsPerSession: 2 }));
+  const ext = loadExtension({ PI_ROOMS_DIR: dir, PI_ROOMS_NAME: "lead" });
+  await call(ext, "rooms_create", { room: "b", members: [] }, "/work/x");
+
+  assert.equal((await call(ext, "rooms_post", { room: "b", message: "one" }, "/work/x")).isError, undefined);
+  assert.equal((await call(ext, "rooms_dm", { to: "core", message: "two" }, "/work/x")).isError, undefined);
+  const third = await call(ext, "rooms_post", { room: "b", message: "three" }, "/work/x");
+  assert.equal(third.isError, true);
+  assert.match(third.content[0].text, /Send budget reached \(2\/2/);
+});
+
+test("reply_all from a room message posts into the room history", async () => {
+  const dir = base();
+  const lead = loadExtension({ PI_ROOMS_DIR: dir, PI_ROOMS_NAME: "lead" });
+  await call(lead, "rooms_create", { room: "tri", members: ["core"] }, "/work/tri");
+  const posted = await call(lead, "rooms_post", { room: "tri", message: "who owns the migration?" }, "/work/tri");
+  assert.match(posted.content[0].text, /#1/);
+
+  // Stand in for the watcher having delivered and archived the post in core's inbox.
+  const paths = resolvePaths(dir);
+  const pending = drain(paths, "core");
+  assert.equal(pending.length, 1);
+  archive(paths, "core", pending[0].file, pending[0].message);
+  const messageId = pending[0].message.id;
+
+  const core = loadExtension({ PI_ROOMS_DIR: dir, PI_ROOMS_NAME: "core" });
+  const reply = await call(core, "rooms_reply_all", { messageId, message: "mine, until Friday" }, "/work/tri");
+  assert.equal(reply.isError, undefined);
+  assert.match(reply.content[0].text, /Replied in room tri at #2/);
+
+  const history = readPosts(paths, "tri");
+  assert.deepEqual(history.map((p) => `${p.seq}:${p.from}:${p.text}`), [
+    "1:lead:who owns the migration?",
+    "2:core:mine, until Friday",
+  ]);
+
+  // And the lead was pushed the reply.
+  const leadInbox = drain(paths, "lead");
+  assert.equal(leadInbox.length, 1);
+  assert.equal(leadInbox[0].message.room, "tri");
+  assert.equal(leadInbox[0].message.roomSeq, 2);
+});
+
+test("rooms_list shows membership and post counts", async () => {
+  const dir = base();
+  const ext = loadExtension({ PI_ROOMS_DIR: dir, PI_ROOMS_NAME: "lead" });
+  await call(ext, "rooms_create", { room: "a", members: ["core"] }, "/work/x");
+  await call(ext, "rooms_post", { room: "a", message: "hi" }, "/work/x");
+  const listed = await call(ext, "rooms_list", {}, "/work/x");
+  assert.match(listed.content[0].text, /\* a\s+1 post\(s\)\s+lead, core/);
+});
+
+test("rooms_who reports this agent", async () => {
+  const dir = base();
+  const ext = loadExtension({ PI_ROOMS_DIR: dir, PI_ROOMS_NAME: "plugin-eval" });
+  await ext.handlers.get("session_start")!({}, ctx("/work/eval"));
+  const who = await call(ext, "rooms_who", {}, "/work/eval");
+  assert.match(who.content[0].text, /plugin-eval/);
+});
+
+test("read on an unknown room fails cleanly rather than throwing", async () => {
+  const dir = base();
+  const ext = loadExtension({ PI_ROOMS_DIR: dir, PI_ROOMS_NAME: "lead" });
+  const read = await call(ext, "rooms_read", { room: "ghost" }, "/work/x");
+  assert.equal(read.isError, true);
+  assert.match(read.content[0].text, /does not exist/);
+});
+
+test("messages cannot carry terminal escape sequences into the transcript", async () => {
+  const dir = base();
+  const ext = loadExtension({ PI_ROOMS_DIR: dir, PI_ROOMS_NAME: "lead" });
+  await call(ext, "rooms_create", { room: "esc", members: [] }, "/work/x");
+  await call(ext, "rooms_post", { room: "esc", message: "safe\u001b[31mRED\u0000" }, "/work/x");
+  const read = await call(ext, "rooms_read", { room: "esc" }, "/work/x");
+  assert.equal(read.content[0].text.includes("\u001b"), false);
+  assert.match(read.content[0].text, /safe\[31mRED/);
+});
+
+test("shutdown removes presence so the roster stays honest", async () => {
+  const dir = base();
+  const ext = loadExtension({ PI_ROOMS_DIR: dir, PI_ROOMS_NAME: "temp-lane" });
+  await ext.handlers.get("session_start")!({}, ctx("/work/temp"));
+  assert.ok(fs.existsSync(path.join(dir, "registry", "temp-lane.json")));
+  await ext.handlers.get("session_shutdown")!({}, ctx("/work/temp"));
+  assert.equal(fs.existsSync(path.join(dir, "registry", "temp-lane.json")), false);
+});
+
+test("rooms_pins refuses to rename a lane that is a member of a room", async () => {
+  const dir = base();
+  const ext = loadExtension({ PI_ROOMS_DIR: dir, PI_ROOMS_NAME: "lead" });
+  await call(ext, "rooms_create", { room: "dxdb", members: [] }, "/work/x");
+
+  const refused = await call(ext, "rooms_pins", { action: "set", key: "session:abc", name: "renamed" }, "/work/x");
+  assert.equal(refused.isError, true);
+  assert.match(refused.content[0].text, /Refusing to rename lead -> renamed/);
+  assert.match(refused.content[0].text, /member of dxdb/);
+  assert.match(refused.content[0].text, /force:true/);
+});
+
+test("rooms_pins allows the rename when forced, and reports the rooms left behind", async () => {
+  const dir = base();
+  const ext = loadExtension({ PI_ROOMS_DIR: dir, PI_ROOMS_NAME: "lead" });
+  await call(ext, "rooms_create", { room: "dxdb", members: [] }, "/work/x");
+
+  const forced = await call(ext, "rooms_pins", { action: "set", key: "session:abc", name: "renamed", force: true }, "/work/x");
+  assert.equal(forced.isError, undefined);
+  assert.match(forced.content[0].text, /Left rooms: dxdb/);
+});
+
+test("rooms_pins set then list shows the pin, and remove deletes it", async () => {
+  const dir = base();
+  const ext = loadExtension({ PI_ROOMS_DIR: dir, PI_ROOMS_NAME: "solo" });
+  const set = await call(ext, "rooms_pins", { action: "set", key: "session:s-1", name: "solo-lead" }, "/work/solo");
+  assert.equal(set.isError, undefined);
+  assert.match(set.content[0].text, /Pinned session:s-1 -> solo-lead/);
+
+  const listed = await call(ext, "rooms_pins", {}, "/work/solo");
+  assert.match(listed.content[0].text, /session:s-1\s+solo-lead\s+unclaimed/);
+
+  const removed = await call(ext, "rooms_pins", { action: "remove", key: "session:s-1" }, "/work/solo");
+  assert.equal(removed.isError, undefined);
+  assert.match(removed.content[0].text, /Removed pin session:s-1/);
+
+  const after = await call(ext, "rooms_pins", {}, "/work/solo");
+  assert.match(after.content[0].text, /No pins in/);
+});
+
+test("rooms_pins reports a pin that is being ignored rather than looking absent", async () => {
+  const dir = base();
+  // A cwd pin is ambiguous when two lanes share a directory. The second lane has
+  // to be a genuinely different live process: two in-process fakes share a pid,
+  // so neither would count as "another agent" to the other.
+  const { spawn } = await import("node:child_process");
+  const neighbour = spawn(process.execPath, ["-e", "setTimeout(() => {}, 30000)"], { stdio: "ignore" });
+  try {
+    const paths = resolvePaths(dir);
+    register(paths, {
+      name: "neighbour",
+      pid: neighbour.pid!,
+      cwd: "/work/shared",
+      startedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+
+    const ext = loadExtension({ PI_ROOMS_DIR: dir, PI_ROOMS_NAME: "second" });
+    await call(ext, "rooms_pins", { action: "set", key: "cwd:/work/shared", name: "shared-lead" }, "/work/shared");
+    const listed = await call(ext, "rooms_pins", {}, "/work/shared");
+    assert.match(listed.content[0].text, /being ignored/);
+    assert.match(listed.content[0].text, /another agent shares this directory/);
+  } finally {
+    neighbour.kill("SIGKILL");
+  }
+});
+
+test("a bare pin key is treated as a session id", async () => {
+  const dir = base();
+  const ext = loadExtension({ PI_ROOMS_DIR: dir, PI_ROOMS_NAME: "solo" });
+  await call(ext, "rooms_pins", { action: "set", key: "abc123", name: "by-session" }, "/work/solo");
+  const listed = await call(ext, "rooms_pins", {}, "/work/solo");
+  assert.match(listed.content[0].text, /session:abc123\s+by-session/);
+});
+
+// ---------------------------------------------------------------------------
+// Leaving a room (FT-24): a lane must be able to stop a room's traffic on its
+// own initiative, without a manual "stop reading" instruction.
+// ---------------------------------------------------------------------------
+
+test("rooms_leave removes membership and records an event, not a message", async () => {
+  const dir = base();
+  const lead = loadExtension({ PI_ROOMS_DIR: dir, PI_ROOMS_NAME: "lead" });
+  await call(lead, "rooms_create", { room: "ft24", members: ["core", "testkit"] }, "/work/x");
+
+  const core = loadExtension({ PI_ROOMS_DIR: dir, PI_ROOMS_NAME: "core" });
+  const left = await call(core, "rooms_leave", { room: "ft24" }, "/work/x");
+  assert.equal(left.isError, undefined);
+  assert.match(left.content[0].text, /Left room ft24 at #1/);
+  assert.match(left.content[0].text, /2 member\(s\): lead, testkit/);
+
+  const paths = resolvePaths(dir);
+  assert.deepEqual(readRoom(paths, "ft24")?.members, ["lead", "testkit"], "membership is a name-string test");
+  const posts = readPosts(paths, "ft24");
+  assert.equal(posts.length, 1);
+  assert.deepEqual(
+    posts.map((p) => [p.seq, p.kind, p.from, p.text, p.recipients]),
+    [[1, "event", "core", "left the room", []]],
+  );
+  // An event is not delivered to anyone.
+  assert.equal(drain(paths, "lead").length, 0);
+  assert.equal(drain(paths, "testkit").length, 0);
+});
+
+test("rooms_read renders a membership event distinctly and keeps the sequence space", async () => {
+  const dir = base();
+  const lead = loadExtension({ PI_ROOMS_DIR: dir, PI_ROOMS_NAME: "lead" });
+  await call(lead, "rooms_create", { room: "ft24", members: [] }, "/work/x");
+
+  const core = loadExtension({ PI_ROOMS_DIR: dir, PI_ROOMS_NAME: "core" });
+  await call(core, "rooms_join", { room: "ft24" }, "/work/x"); // #1 event
+  as("lead");
+  await call(lead, "rooms_post", { room: "ft24", message: "hello" }, "/work/x"); // #2 message
+  as("core");
+  await call(core, "rooms_leave", { room: "ft24" }, "/work/x"); // #3 event
+
+  const read = await call(core, "rooms_read", { room: "ft24" }, "/work/x");
+  assert.match(read.content[0].text, /#1 \d\d:\d\d · core joined the room/);
+  assert.match(read.content[0].text, /#2 \d\d:\d\d lead: hello/);
+  assert.match(read.content[0].text, /#3 \d\d:\d\d · core left the room/);
+
+  // `since` still works across an event line.
+  const tail = await call(core, "rooms_read", { room: "ft24", since: 2 }, "/work/x");
+  assert.match(tail.content[0].text, /#3 \d\d:\d\d · core left the room/);
+  assert.equal(/#2 /.test(tail.content[0].text.split("\n").slice(1).join("\n")), false);
+});
+
+test("rooms_leave discards only this lane's queued messages for that room", async () => {
+  const dir = base();
+  const paths = resolvePaths(dir);
+  const lead = loadExtension({ PI_ROOMS_DIR: dir, PI_ROOMS_NAME: "lead" });
+  await call(lead, "rooms_create", { room: "ft24", members: ["core"] }, "/work/x");
+  await call(lead, "rooms_create", { room: "keep", members: ["core"] }, "/work/x");
+  await call(lead, "rooms_post", { room: "ft24", message: "one" }, "/work/x");
+  await call(lead, "rooms_post", { room: "ft24", message: "two" }, "/work/x");
+  await call(lead, "rooms_post", { room: "keep", message: "unrelated" }, "/work/x");
+  await call(lead, "rooms_dm", { to: "core", message: "direct" }, "/work/x");
+
+  // Stand in for the watcher having already delivered one of the two ft24 posts.
+  const delivered = drain(paths, "core").find((entry) => entry.message.text === "one")!;
+  archive(paths, "core", delivered.file, delivered.message);
+  assert.equal(drain(paths, "core").length, 3, "two ft24 leftovers, one keep, one dm");
+
+  const core = loadExtension({ PI_ROOMS_DIR: dir, PI_ROOMS_NAME: "core" });
+  const left = await call(core, "rooms_leave", { room: "ft24" }, "/work/x");
+  assert.equal(left.isError, undefined);
+  assert.match(left.content[0].text, /Discarded 1 queued message\(s\) of yours for this room/);
+  assert.equal(left.details.discarded, 1);
+
+  assert.deepEqual(drain(paths, "core").map((entry) => entry.message.text).sort(), [
+    "direct",
+    "unrelated",
+  ]);
+  assert.ok(
+    fs.existsSync(path.join(paths.inbox, "core", "read", `${delivered.message.id}.json`)),
+    "the read/ archive is not a queue and survives",
+  );
+  // Receipts are left alone: a discarded message was queued and never delivered.
+  const receipt = JSON.parse(fs.readFileSync(path.join(paths.receipts, `${delivered.message.id}.json`), "utf8"));
+  assert.equal(receipt.receipts.core.deliveredAt != null, true, "the archived one keeps its deliveredAt");
+});
+
+test("discardQueued:false keeps the backlog, queued", async () => {
+  const dir = base();
+  const paths = resolvePaths(dir);
+  const lead = loadExtension({ PI_ROOMS_DIR: dir, PI_ROOMS_NAME: "lead" });
+  await call(lead, "rooms_create", { room: "ft24", members: ["core"] }, "/work/x");
+  await call(lead, "rooms_post", { room: "ft24", message: "before you go" }, "/work/x");
+
+  const core = loadExtension({ PI_ROOMS_DIR: dir, PI_ROOMS_NAME: "core" });
+  const left = await call(core, "rooms_leave", { room: "ft24", discardQueued: false }, "/work/x");
+  assert.equal(left.isError, undefined);
+  assert.match(left.content[0].text, /Kept your queued messages/);
+  assert.equal(left.details.discarded, 0);
+  assert.deepEqual(drain(paths, "core").map((entry) => entry.message.text), ["before you go"]);
+});
+
+test("a post after parting creates no inbox file for the parted lane", async () => {
+  const dir = base();
+  const paths = resolvePaths(dir);
+  const lead = loadExtension({ PI_ROOMS_DIR: dir, PI_ROOMS_NAME: "lead" });
+  await call(lead, "rooms_create", { room: "ft24", members: ["core"] }, "/work/x");
+
+  const core = loadExtension({ PI_ROOMS_DIR: dir, PI_ROOMS_NAME: "core" });
+  await call(core, "rooms_leave", { room: "ft24" }, "/work/x");
+
+  as("lead");
+  const posted = await call(lead, "rooms_post", { room: "ft24", message: "still here?" }, "/work/x");
+  assert.equal(posted.isError, undefined);
+  assert.match(posted.content[0].text, /pushed to 0 member/);
+
+  const coreDir = path.join(dir, "inbox", "core");
+  const files = fs.existsSync(coreDir) ? fs.readdirSync(coreDir).filter((f) => f.endsWith(".json")) : [];
+  assert.deepEqual(files, [], "the parted lane gets no queue at all");
+  assert.equal(drain(paths, "core").length, 0);
+
+  // The post is still room history, readable by anyone.
+  assert.ok(readPosts(paths, "ft24").some((p) => p.text === "still here?"));
+});
+
+test("re-joining re-admits without replaying the posts missed while parted", async () => {
+  const dir = base();
+  const paths = resolvePaths(dir);
+  const lead = loadExtension({ PI_ROOMS_DIR: dir, PI_ROOMS_NAME: "lead" });
+  await call(lead, "rooms_create", { room: "ft24", members: ["core"] }, "/work/x");
+
+  const core = loadExtension({ PI_ROOMS_DIR: dir, PI_ROOMS_NAME: "core" });
+  await call(core, "rooms_leave", { room: "ft24" }, "/work/x"); // #1 event
+  as("lead");
+  await call(lead, "rooms_post", { room: "ft24", message: "while you were out" }, "/work/x"); // #2
+  assert.equal(drain(paths, "core").length, 0);
+
+  as("core");
+  const rejoined = await call(core, "rooms_join", { room: "ft24" }, "/work/x");
+  assert.equal(rejoined.isError, undefined);
+  assert.match(rejoined.content[0].text, /Joined room ft24 \(2 members\): lead, core/);
+  assert.match(rejoined.content[0].text, /Recorded at #3/);
+  assert.deepEqual(readRoom(paths, "ft24")?.members, ["lead", "core"]);
+
+  assert.equal(
+    drain(paths, "core").filter((entry) => entry.message.room === "ft24").length,
+    0,
+    "re-entry does not replay what was missed",
+  );
+
+  // The missed post is history, not a queue entry, and is readable.
+  const read = await call(core, "rooms_read", { room: "ft24" }, "/work/x");
+  assert.match(read.content[0].text, /while you were out/);
+
+  // And traffic after the rejoin flows again.
+  as("lead");
+  await call(lead, "rooms_post", { room: "ft24", message: "welcome back" }, "/work/x");
+  const queued = drain(paths, "core").filter((entry) => entry.message.room === "ft24");
+  assert.deepEqual(queued.map((entry) => entry.message.text), ["welcome back"]);
+  assert.equal(queued[0].message.roomSeq, 4);
+});
+
+test("a direct message still reaches a lane that left the room", async () => {
+  const dir = base();
+  const paths = resolvePaths(dir);
+  const lead = loadExtension({ PI_ROOMS_DIR: dir, PI_ROOMS_NAME: "lead" });
+  await call(lead, "rooms_create", { room: "ft24", members: ["core"] }, "/work/x");
+
+  const core = loadExtension({ PI_ROOMS_DIR: dir, PI_ROOMS_NAME: "core" });
+  await call(core, "rooms_leave", { room: "ft24" }, "/work/x");
+  as("lead");
+  const dm = await call(lead, "rooms_dm", { to: "core", message: "still reachable" }, "/work/x");
+  assert.equal(dm.isError, undefined);
+
+  const pending = drain(paths, "core");
+  assert.equal(pending.length, 1);
+  assert.equal(pending[0].message.room, undefined, "a DM carries no room");
+  assert.equal(pending[0].message.text, "still reachable");
+});
+
+test("leaving a room you are not in is a no-op, not an error", async () => {
+  const dir = base();
+  const paths = resolvePaths(dir);
+  const lead = loadExtension({ PI_ROOMS_DIR: dir, PI_ROOMS_NAME: "lead" });
+  await call(lead, "rooms_create", { room: "ft24", members: [] }, "/work/x");
+
+  const outsider = loadExtension({ PI_ROOMS_DIR: dir, PI_ROOMS_NAME: "outsider" });
+  const left = await call(outsider, "rooms_leave", { room: "ft24" }, "/work/x");
+  assert.equal(left.isError, undefined);
+  assert.match(left.content[0].text, /not a member of ft24: nothing to leave/);
+  assert.equal(left.details.left, false);
+  assert.equal(roomSeq(paths, "ft24"), 0, "a no-op leave appends no event");
+  assert.deepEqual(readRoom(paths, "ft24")?.members, ["lead"]);
+});
+
+test("leaving the last member leaves an empty room that stays joinable", async () => {
+  const dir = base();
+  const paths = resolvePaths(dir);
+  const solo = loadExtension({ PI_ROOMS_DIR: dir, PI_ROOMS_NAME: "solo" });
+  await call(solo, "rooms_create", { room: "solo-room", members: [] }, "/work/x");
+
+  const left = await call(solo, "rooms_leave", { room: "solo-room" }, "/work/x");
+  assert.equal(left.isError, undefined);
+  assert.match(left.content[0].text, /0 member\(s\) and stays joinable/);
+  assert.deepEqual(readRoom(paths, "solo-room")?.members, []);
+
+  const listed = await call(solo, "rooms_list", {}, "/work/x");
+  assert.match(listed.content[0].text, /solo-room/);
+
+  const back = await call(solo, "rooms_join", { room: "solo-room" }, "/work/x");
+  assert.equal(back.isError, undefined);
+  assert.deepEqual(readRoom(paths, "solo-room")?.members, ["solo"]);
+});
+
+test("rooms_join records an event only when membership actually changes", async () => {
+  const dir = base();
+  const paths = resolvePaths(dir);
+  const lead = loadExtension({ PI_ROOMS_DIR: dir, PI_ROOMS_NAME: "lead" });
+  await call(lead, "rooms_create", { room: "j", members: [] }, "/work/x");
+
+  const core = loadExtension({ PI_ROOMS_DIR: dir, PI_ROOMS_NAME: "core" });
+  assert.match((await call(core, "rooms_join", { room: "j" }, "/work/x")).content[0].text, /Recorded at #1/);
+  const again = await call(core, "rooms_join", { room: "j" }, "/work/x");
+  assert.match(again.content[0].text, /already a member; nothing changed/);
+  assert.equal(roomSeq(paths, "j"), 1, "a repeated join is not new history");
+
+  // The creator is a member at creation, so no join event is invented for it either.
+  as("lead");
+  const creatorJoin = await call(lead, "rooms_join", { room: "j" }, "/work/x");
+  assert.match(creatorJoin.content[0].text, /already a member/);
+  assert.equal(roomSeq(paths, "j"), 1);
+  assert.deepEqual(readPosts(paths, "j").map((p) => `${p.seq}:${p.kind}:${p.from}`), ["1:event:core"]);
+});
+
+test("a parted lane cannot speak into the room through rooms_reply_all", async () => {
+  const dir = base();
+  const paths = resolvePaths(dir);
+  const lead = loadExtension({ PI_ROOMS_DIR: dir, PI_ROOMS_NAME: "lead" });
+  await call(lead, "rooms_create", { room: "ft24", members: ["core"] }, "/work/x");
+  await call(lead, "rooms_post", { room: "ft24", message: "before you go" }, "/work/x");
+
+  // Stand in for the watcher: the post is in core's read/ archive, which is what
+  // reply_all searches. Holding the message is what makes this reachable at all.
+  const delivered = drain(paths, "core").find((entry) => entry.message.room === "ft24")!;
+  archive(paths, "core", delivered.file, delivered.message);
+
+  const core = loadExtension({ PI_ROOMS_DIR: dir, PI_ROOMS_NAME: "core" });
+  await call(core, "rooms_leave", { room: "ft24" }, "/work/x");
+  const seqBefore = roomSeq(paths, "ft24");
+  const inboxBefore = drain(paths, "lead").length;
+
+  as("core");
+  const reply = await call(core, "rooms_reply_all", { messageId: delivered.message.id, message: "still here" }, "/work/x");
+  assert.equal(reply.isError, true, "leaving must close the room's speech, not only its traffic");
+  assert.match(reply.content[0].text, /You are not a member of ft24/);
+  assert.equal(roomSeq(paths, "ft24"), seqBefore, "no post reached the room log");
+  assert.equal(drain(paths, "lead").length, inboxBefore, "no member was queued anything");
+
+  // rooms_post already refuses the same lane: the two doors now agree.
+  const post = await call(core, "rooms_post", { room: "ft24", message: "still here" }, "/work/x");
+  assert.equal(post.isError, true);
+});
+
+test("a lane that never joined cannot reply into a room it holds a message from", async () => {
+  const dir = base();
+  const paths = resolvePaths(dir);
+  const lead = loadExtension({ PI_ROOMS_DIR: dir, PI_ROOMS_NAME: "lead" });
+  await call(lead, "rooms_create", { room: "ft24", members: ["core"] }, "/work/x");
+  await call(lead, "rooms_post", { room: "ft24", message: "cc'd" }, "/work/x");
+
+  // Someone hands the outsider a copy of the room post (a future recipient list
+  // could do this; today's tools do not), so the message is not the admission.
+  const queued = drain(paths, "core").find((entry) => entry.message.room === "ft24")!;
+  const { deliver } = await import("../src/store.ts");
+  deliver(paths, { ...queued.message, id: "99999999-9999-9999-9999-999999999999", to: ["outsider"] });
+  const forOutsider = drain(paths, "outsider")[0]!;
+  archive(paths, "outsider", forOutsider.file, forOutsider.message);
+
+  const outsider = loadExtension({ PI_ROOMS_DIR: dir, PI_ROOMS_NAME: "outsider" });
+  const seqBefore = roomSeq(paths, "ft24");
+  const reply = await call(
+    outsider,
+    "rooms_reply_all",
+    { messageId: "99999999-9999-9999-9999-999999999999", message: "butting in" },
+    "/work/x",
+  );
+  assert.equal(reply.isError, true);
+  assert.match(reply.content[0].text, /You are not a member of ft24/);
+  assert.equal(roomSeq(paths, "ft24"), seqBefore);
+});
