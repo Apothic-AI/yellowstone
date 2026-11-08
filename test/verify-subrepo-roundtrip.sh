@@ -53,7 +53,8 @@ for gitrepo in $(find src -name .gitrepo | sort); do
   else
     got_commit="$(printf '%s\n' "$status" | sed -n 's/^ *Pulled Commit: *//p' | head -1)"
     got_branch="$(printf '%s\n' "$status" | sed -n 's/^ *Tracking Branch: *//p' | head -1)"
-    [ "$got_commit" = "$want_commit" ] || reasons="$reasons pulled(${got_commit:0:8})!=recorded(${want_commit:0:8})"
+    # `subrepo status` prints an abbreviated commit; .gitrepo records the full one.
+    [ "${got_commit:0:8}" = "${want_commit:0:8}" ] || reasons="$reasons pulled(${got_commit:0:8})!=recorded(${want_commit:0:8})"
     [ "$got_branch" = "$want_branch" ] || reasons="$reasons branch($got_branch)!=recorded($want_branch)"
   fi
 
