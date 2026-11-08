@@ -1,0 +1,150 @@
+# Changelog
+
+## 1.5.2
+### Patch Changes
+
+- da50094: Show unknown context usage after failed/aborted assistant responses and failed/cancelled or completed compaction until a fresh successful current-route response establishes provider usage. Admit assistant streams independently of repeated timestamps or late response IDs, persist only minimal display-confidence metadata for owned failed compactions, and rebuild it in active-branch order. Reject stale owners using incremental parent-link ancestry checks without altering Pi's token estimator or compaction behavior.
+
+## 1.5.1
+### Patch Changes
+
+- c00f9f9: Selectively port upstream compatibility fixes while retaining local safety behavior:
+  
+  - Honor live terminal color and hyperlink capabilities, and keep plain PR references inline without duplication.
+  - Bound timestamp formatter reuse and refresh resolved system locale/time-zone defaults after environment changes.
+  - Embed native working status only in the history extension's fallback editor.
+  - Give each side thread an independent provider session identity that survives in-memory follow-ups and resume.
+
+## 1.5.0
+### Minor Changes
+
+- a4dc1de: Add read-only extension status inspection through `/statusline inspect`, the menu, and a focus-safe Ctrl+Alt+S shortcut. Cooperating providers can admit owner-local detail views through a bounded, cancellation-safe event protocol; unknown statuses show sanitized inline text. Preserve the footer and editor draft.
+
+## 1.4.5
+### Patch Changes
+
+- 2b68eb3: Keep all visible extension statuses when wrapping the footer, and preserve producer parentheticals such as armed states and approval action hints.
+
+## 1.4.4
+### Patch Changes
+
+- c2fd867: Retire captured footer timers, subscriptions and pending refreshes when SDK disposal invalidates their context, without touching replacement UI or allowing a cleanup fault to strand resources. Check live mode/UI eligibility in retained callbacks and retire outgoing ownership before the extension's headless session handler runs and suppress ambient status and settings notifications outside TUI mode even with retained UI transports.
+- Updated dependencies [c2fd867]
+  - @signalridge/pi-ui@1.4.0
+
+## 1.4.3
+### Patch Changes
+
+- 3364cc0: Use patched Vitest 4.1.11 for development and regression testing without moving to a new major version. Refresh compatible transitive dependencies to include fixed source-map and brace-expansion releases.
+- 3364cc0: Resume a surviving terminal when a pending external settings editor exits after session replacement or reload, without restoring retired command state or restarting after quit. Dispose BTW credential loaders on every completion, cancellation, and error path, including immediate resolution before the host mounts the component.
+- 3364cc0: Adopt Pi 1.0.4's host-provided dependency contract: declare imported Pi and TypeBox modules as `*` peers rather than installing duplicate runtime modules, and align Pi development pins with the repository's tested 1.0.4 baseline. The wildcard identifies host module ownership; it does not promise compatibility with every Pi version.
+- 3364cc0: Cancel credential loaders, settings dialogs, and worktree operations when their owning session or branch retires, and ignore late results. Include boundary-generated usage receipts in statusline polling, mark only subscription-backed OAuth costs, and report headless worktree rejection on stderr.
+- 3364cc0: Close the settings JSON editor synchronously before tree navigation or shutdown, preserving Pi's native editing, configured external editor, and focus behavior without allowing late callbacks to dismiss a replacement dialog or apply retired settings. Prevent a pending native external editor from restarting the terminal after shutdown.
+- Updated dependencies [3364cc0]
+- Updated dependencies [3364cc0]
+- Updated dependencies [3364cc0]
+  - @signalridge/pi-ui@1.3.3
+
+## 1.4.2
+### Patch Changes
+
+- 8190516: Extend the tested Pi host compatibility range through 0.87.x while retaining supported older hosts. Validate the published extensions against Pi 0.87.1 and adapt changed provider, session-context, and lifecycle contracts where necessary.
+- 8190516: Add Pi 0.99.1 to the supported host peer ranges while retaining Pi 0.84–0.87 compatibility. Align Pi development dependency pins with 0.99.1 for validation against the new host.
+- 8190516: Include standalone Pi session usage entries, such as cache warming, in historical and live footer tokens, cache, and cost without counting an entry twice. Skip history copies when usage is hidden or the session leaf is unchanged, and inspect only appended entries when it advances.
+- Updated dependencies [8190516]
+- Updated dependencies [8190516]
+  - @signalridge/pi-ui@1.3.2
+
+## 1.4.1
+### Patch Changes
+
+- 1f586f8: Expand Pi peer support to `^0.84.0 || ^0.85.0`, retaining 0.84 compatibility while admitting 0.85 releases. The previous zero-major caret range excluded Pi 0.85.1. Update existing Pi development dependency pins to 0.85.1.
+- Updated dependencies [1f586f8]
+- Updated dependencies [1f586f8]
+- Updated dependencies [1f586f8]
+- Updated dependencies [1f586f8]
+  - @signalridge/pi-ui@1.3.1
+
+## 1.4.0
+### Minor Changes
+
+- 07350d4: Standardize extension-owned popup surfaces with an idempotent Pi-style border adapter. Native Pi dialogs retain their built-in framing and RPC behavior; custom menus and overlays gain consistent border rules.
+
+### Patch Changes
+
+- Updated dependencies [07350d4]
+  - @signalridge/pi-ui@1.3.0
+
+## 1.3.3
+### Patch Changes
+
+- f714ea0: Publish the package versions already prepared by the previous release transition after its first publish attempt was blocked before npm publication.
+
+## 1.3.2
+### Patch Changes
+
+- b6cf242: Peer dependency ranges now name the versions actually validated against, so an untested host combination fails at install time instead of silently at runtime: `@earendil-works/pi-coding-agent`, `pi-ai`, `pi-tui`, and `pi-agent-core` move from `"*"` to `^0.84.0`, and `typebox` from `"*"` to `^1.3.11`.
+  
+  Shared dependencies now carry ONE declared range across every package that uses them, and `bun run check:shared-deps` keeps it that way.
+  
+  `@narumitw/pi-tui-kit` was declared at three disjoint floors — `^0.54.0`, `^0.51.0`, and `^0.49.1` across nine packages — and the lockfile duly resolved three copies (0.54.0, 0.51.0, 0.49.3) installed side by side. For a shared rendering surface drawing into one terminal inside one host process, that means a theme rendering one way in one extension and another way in the next, with nothing failing at install to say so. All nine now declare `^0.54.0` and the install resolves a single copy. `@sinclair/typebox` likewise converges on `^0.34.50`.
+  
+  The new check covers `dependencies` and `peerDependencies` and compares range strings rather than their semantics: two ranges that merely overlap are still a finding, because the goal is one intentional answer per dependency rather than an accidental intersection. `devDependencies` are deliberately out of scope — a build tool is not a shared surface, and `pi-subagents` intentionally carries its own toolchain. `docs/package-boundaries.md` documents the Kit as a shared surface for the first time.
+- b6cf242: `pi-statusline` now has a single `/statusline` registration path. `registerStatuslineCommand()` existed but had no production caller — the runtime registered the command inline with its own session guard — so the tests exercised a wrapper the product never ran, and the guard existed on only one of the two paths. The runtime now goes through `registerStatuslineCommand()`, which takes the session check as an `isCurrentSession` option, so the covered path and the shipped path are the same one.
+  
+  `pi-files-widget`'s `DESIGN.md` now states up front that it is a design document rather than a description of the shipped surface: the extension registers one command, `/readfiles`, while the document's *Proposed* and *Phase 2/3* sections describe `/review`, `/diff`, and external `tuicr`/`critique` integrations that do not exist.
+
+## 1.3.1
+### Patch Changes
+
+- 24a8af4: Remove references to the maintainer's personal dotfile setup from shipped docs
+  and source comments. Each constraint is restated as a property of the package
+  itself: which manager owns a settings file, whether a project permits git
+  worktrees, and installing a package from a single source. No runtime behavior
+  changes.
+
+## 1.3.0
+### Minor Changes
+
+- 8488246: Say whose status it is.
+  
+  `extensionStatusIcons` is empty by default, so a status rendered as bare text
+  with nothing identifying it: the footer read `6 servers enabled · active ·
+  ready` with no way to tell which extension was speaking. When a status has no
+  configured icon, its key now labels it — `mcp 6 servers enabled`, `goal active`.
+  The icon was carrying that job invisibly, and turning icons off took the label
+  with it.
+  
+  Badge stripping also moves ahead of the key-prefix strip. `pi-mcp-adapter`
+  writes either `MCP: …` or `🔌 MCP: …` depending on one of its settings, and with
+  the badge still attached the value no longer began with the key, so the
+  redundant `MCP:` prefix survived in one form and was stripped in the other.
+  Both now reduce to the same text, and the new label is never doubled.
+
+## 1.0.0
+### Major Changes
+
+- Adopt a unified 1.0.0 across every published package.
+  
+  The version numbers no longer track their upstream forks individually; from this release each package
+  is versioned on its own merit against the Signalridge line, and 1.0.0 is the shared starting point.
+  Packages whose behavior changed in this release document that change in their own changeset entries;
+  the remainder are re-released unchanged so the whole set shares one baseline.
+
+### Patch Changes
+
+- Strip Unicode bidirectional overrides — and DCS/PM/APC payloads in the footer and recall picker — from untrusted text before display, so a crafted branch name, worktree path, model id, or recalled message can no longer visually reverse what the user reads and acts on.
+- Wire the hardened terminal sanitizers to the fields that actually carry hostile text, bound the escape-sequence skippers, and give worktree Add base-commit provenance.
+  
+  - `pi-statusline`: the `branch`, `provider`, and `tools` segments now pass through `sanitizeTerminalText`. The branch is sanitized before the GitHub PR context is composed in, so a hostile ref name can no longer emit raw OSC/CSI/bidi into the footer while the PR hyperlink keeps working.
+  - `pi-statusline` / `pi-recall`: an escape-sequence introducer with no terminator now drops only itself instead of consuming the rest of the string, so a single `0x90` in a branch name or saved message no longer blanks a footer row, a preview, or the fuzzy-search text. SOS is handled alongside DCS/PM/APC.
+  - `pi-recall`: previews are sanitized before truncation, so the preview budget is spent on visible characters instead of invisible escape bytes.
+  - `pi-worktree`: line separators are replaced with a space instead of being dropped, so multi-line Git output no longer welds two records together inside a destructive confirmation body.
+  - `pi-worktree`: Add resolves the base commit for both the create and the attach case (the attach case previously captured none, letting Git re-resolve the branch at exec time), shows the full base OID in the confirmation, and re-reads `git worktree list`, the local branch ref, and the base OID under the worktree mutation lock immediately before `git worktree add`. A base that moved, or a branch or path claimed while the dialog was open, refuses the add with a message naming both OIDs instead of silently creating a worktree from an unapproved base.
+
+## Unreleased
+
+- Moved the theme-native text-first statusline into the independently publishable Signalridge package.
+- Deduplicate response updates without provider response IDs and initialize a stable fallback key for each turn.
+- Scope provider-local response IDs and repeated tool-call IDs so switching providers or turns cannot overwrite another usage contribution.
+- Rebuild historical tool-result identities at assistant-turn boundaries so repeated tool-call IDs remain additive.

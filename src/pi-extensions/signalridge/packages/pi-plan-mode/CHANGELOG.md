@@ -1,0 +1,137 @@
+# Changelog
+
+## 1.4.6
+### Patch Changes
+
+- 4d37546: Point package documentation to the maintained compatibility guide instead of removed historical review snapshots.
+
+## 1.4.5
+### Patch Changes
+
+- 2b68eb3: Admit bounded Hypa inspection wrappers at the final bash policy gate, including exact executable paths resolved from the runtime PATH, while retaining native read-only validators and rejecting nested or unsupported wrapper modes.
+
+## 1.4.4
+### Patch Changes
+
+- c2fd867: Bind ready-plan revision and completion to accepted native user or owned Plan deliveries, with execution-time one-use completion tickets. Invalidate readiness at native acceptance, preserve unique provenance amid distinct queued steers/follow-ups, and fail closed on identical-content collisions. Persist compact validated branch-local handoff attribution across reload/clear without storing prompt bodies or rewriting user text/images. Bound pending provenance and reject authenticated stale runtime deliveries without unbounded replay caches. Preserve delivery provenance across delayed input handlers and workflow retirement, abort only positively attributed stale native requests, and fence cached state/retention against the live full native branch before persistence, tool policy, or model guidance. Keep late canceled authentication from consuming the source plan. Retain bounded unfinished accepted-native handoff provenance across pre-commit retirement, cancel only the exact still-current owned operation (not automatic retention cleanup of its accepted first request), and do not let candidate expiry authorize authenticated old deliveries. Preserve independent real-input literal/image exemptions and loaded-module factory authentication without replay caches. Pin the complete authoritative Plan-state entry as well as the native branch prefix, so descendant state cannot inherit ancestor authority before delayed tree notification; refresh source anchors only after successful owned appends and rebuild fresh destination setup state. Verify public-SDK delayed message/input/context/tree races, long-clock and reload controls, equal-payload distinct native state entries, and guard-disabled failure evidence.
+- Updated dependencies [c2fd867]
+  - @signalridge/pi-ui@1.4.0
+
+## 1.4.3
+### Patch Changes
+
+- 3364cc0: Adopt Pi 1.0.4's host-provided dependency contract: declare imported Pi and TypeBox modules as `*` peers rather than installing duplicate runtime modules, and align Pi development pins with the repository's tested 1.0.4 baseline. The wildcard identifies host module ownership; it does not promise compatibility with every Pi version.
+- 3364cc0: Freeze planning tool permissions across late registrations and nested calls, restore branch-local state on committed tree navigation, cancel pending questions with their owning workflow, and keep completion model-only. Guard captured shortcut handlers until reload and remove unused fresh-session parent snapshots after vetoes or pre-replacement failures.
+- 3364cc0: Preserve canonical transcript-restored target tools, including empty loadouts, during tree navigation before applying branch-local planning restrictions. Retain in-memory parent snapshots once fresh-session setup begins so failures after destination commit remain resumable, while pre-commit failures still clean up.
+- Updated dependencies [3364cc0]
+- Updated dependencies [3364cc0]
+- Updated dependencies [3364cc0]
+  - @signalridge/pi-ui@1.3.3
+
+## 1.4.2
+### Patch Changes
+
+- 8190516: Clarify that explicitly enabling an Agent extension tool during Plan mode delegates under the child's separate tool policy; the default read-only plan policy does not constrain that child.
+- 8190516: Extend the tested Pi host compatibility range through 0.87.x while retaining supported older hosts. Validate the published extensions against Pi 0.87.1 and adapt changed provider, session-context, and lifecycle contracts where necessary.
+- 8190516: Add Pi 0.99.1 to the supported host peer ranges while retaining Pi 0.84–0.87 compatibility. Align Pi development dependency pins with 0.99.1 for validation against the new host.
+- Updated dependencies [8190516]
+- Updated dependencies [8190516]
+  - @signalridge/pi-ui@1.3.2
+
+## 1.4.1
+### Patch Changes
+
+- d9219d4: Correct shipped documentation that contradicted the code or the manifest.
+  
+  - `pi-subagents`: the summary line still advertised protocol-v3 spawning while
+    the feature list and the managed-spawn section described v4.
+  - `pi-worktree`: the workspace-switching section named `/tree`; the registered
+    command is `/worktree`.
+  - `pi-workflows`: removed an orphaned sentence fragment left behind by an edit
+    to the saved-workflow paragraph.
+  - `pi-plan-mode`, `pi-goal`, `pi-usage-extension`: the stated Pi floor
+    (`0.80.6`, `0.42.4+`) contradicted the declared `^0.84.0` peer range, which
+    resolves to `0.84.x`. `pi-usage-extension` also carried a "Last updated"
+    stamp from a version that predates the workspace baseline.
+  - `pi-welcome`: the example card was a real session capture. It is now a
+    generic sample, and Install moved above the configuration sections instead of
+    sitting below them.
+- 1f586f8: Prevent fresh implementation from silently submitting the approved plan to a different or missing destination model. Preserve the handoff in the replacement editor for explicit model confirmation, and reject source model changes during authentication.
+- 1f586f8: Expand Pi peer support to `^0.84.0 || ^0.85.0`, retaining 0.84 compatibility while admitting 0.85 releases. The previous zero-major caret range excluded Pi 0.85.1. Update existing Pi development dependency pins to 0.85.1.
+- d9219d4: Converge every README on one house style: plain sentence-case headings, no
+  decorative emoji.
+  
+  Ten packages carried an emoji heading scheme inherited from their upstream
+  forks while the other nineteen used plain headings, so the same monorepo
+  rendered as two unrelated projects on npmjs.com. Headings are now emoji-free
+  and titles are sentence case.
+  
+  Also removes the `Keywords` section from those ten. It duplicated each
+  package's `package.json` `keywords` field, which is what npm actually indexes,
+  and no plain-style README carried one. `Installation` is now `Install`
+  everywhere.
+  
+  Headings that were Title Case are sentence case too, so one convention now
+  covers the whole monorepo. Existing in-page anchor links are unaffected:
+  GitHub lowercases heading slugs already.
+  
+  Documentation only — no runtime change.
+- Updated dependencies [1f586f8]
+- Updated dependencies [1f586f8]
+- Updated dependencies [1f586f8]
+- Updated dependencies [1f586f8]
+  - @signalridge/pi-ui@1.3.1
+
+## 1.4.0
+### Minor Changes
+
+- 07350d4: Standardize extension-owned popup surfaces with an idempotent Pi-style border adapter. Native Pi dialogs retain their built-in framing and RPC behavior; custom menus and overlays gain consistent border rules.
+
+### Patch Changes
+
+- Updated dependencies [07350d4]
+  - @signalridge/pi-ui@1.3.0
+
+## 1.3.1
+### Patch Changes
+
+- f714ea0: Publish the package versions already prepared by the previous release transition after its first publish attempt was blocked before npm publication.
+
+## 1.3.0
+### Minor Changes
+
+- b6cf242: `plan_mode_question` now asks a batch as a navigable sequence instead of a one-way run.
+  
+  The questions still arrive together and are answered one screen at a time, which is the right shape — a single screen holding four multi-option questions does not fit a terminal. What was missing was the navigation: no sense of how many questions remained, and no way back, so a misread option could only be fixed by cancelling the whole batch and making the model ask again.
+  
+  Each prompt now shows its position (`[2/4]`), and every question after the first offers a Back choice that returns to the previous one. Answers are held by position rather than appended, so revising one overwrites it instead of leaving a stale answer sitting behind its correction. An empty free-form answer now re-asks that question rather than cancelling the batch — opening the editor and thinking better of it is a correction, not a decision to discard everything already answered.
+  
+  A single question is unchanged: no position marker, and no Back affordance that could only ever cancel. Cancellation semantics are otherwise identical, including the plan-mode-ended check after every prompt.
+
+### Patch Changes
+
+- b6cf242: Peer dependency ranges now name the versions actually validated against, so an untested host combination fails at install time instead of silently at runtime: `@earendil-works/pi-coding-agent`, `pi-ai`, `pi-tui`, and `pi-agent-core` move from `"*"` to `^0.84.0`, and `typebox` from `"*"` to `^1.3.11`.
+  
+  Shared dependencies now carry ONE declared range across every package that uses them, and `bun run check:shared-deps` keeps it that way.
+  
+  `@narumitw/pi-tui-kit` was declared at three disjoint floors — `^0.54.0`, `^0.51.0`, and `^0.49.1` across nine packages — and the lockfile duly resolved three copies (0.54.0, 0.51.0, 0.49.3) installed side by side. For a shared rendering surface drawing into one terminal inside one host process, that means a theme rendering one way in one extension and another way in the next, with nothing failing at install to say so. All nine now declare `^0.54.0` and the install resolves a single copy. `@sinclair/typebox` likewise converges on `^0.34.50`.
+  
+  The new check covers `dependencies` and `peerDependencies` and compares range strings rather than their semantics: two ranges that merely overlap are still a finding, because the goal is one intentional answer per dependency rather than an accidental intersection. `devDependencies` are deliberately out of scope — a build tool is not a shared surface, and `pi-subagents` intentionally carries its own toolchain. `docs/package-boundaries.md` documents the Kit as a shared surface for the first time.
+
+## 1.0.0
+### Major Changes
+
+- Adopt a unified 1.0.0 across every published package.
+  
+  The version numbers no longer track their upstream forks individually; from this release each package
+  is versioned on its own merit against the Signalridge line, and 1.0.0 is the shared starting point.
+  Packages whose behavior changed in this release document that change in their own changeset entries;
+  the remainder are re-released unchanged so the whole set shares one baseline.
+
+## Unreleased
+
+- Make Plan mode bash enforcement fail closed for shell composition, expansion, mutation, and unsafe Git or GitHub CLI arguments.
+- Preserve an in-memory planning branch through fresh implementation replacement by snapshotting it as a private temporary parent session.
+- Require `git --no-optional-locks status` and both `--no-ext-diff` and `--no-textconv` for Plan mode Git inspection.
+- Reject bare `git branch` operands in Plan mode while allowing explicit read-only listing filters.
+- Require `--no-ext-diff` and `--no-textconv` for patch-producing `git show` and `git log` inspection to prevent configured diff helpers from running.

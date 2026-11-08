@@ -1,0 +1,90 @@
+# Changelog
+
+## 1.2.7
+### Patch Changes
+
+- c00f9f9: Selectively port upstream compatibility fixes while retaining local safety behavior:
+  
+  - Honor live terminal color and hyperlink capabilities, and keep plain PR references inline without duplication.
+  - Bound timestamp formatter reuse and refresh resolved system locale/time-zone defaults after environment changes.
+  - Embed native working status only in the history extension's fallback editor.
+  - Give each side thread an independent provider session identity that survives in-memory follow-ups and resume.
+
+## 1.2.6
+### Patch Changes
+
+- c2fd867: Retire outgoing PR monitoring before replacement and keep ambient Git/GitHub discovery, watchers, polling and status writes out of print and RPC modes. Manual PR queries remain callable.
+
+## 1.2.5
+### Patch Changes
+
+- 3364cc0: Observe terminal typing and paste activity when cancelling recaps, preserve shell bangs and native mouse positions when the editor scrolls, track executed commit results and streaming activity in TUI tab titles, and confirm executable absence before classifying silent GitHub CLI failures as missing gh.
+- 3364cc0: Adopt Pi 1.0.4's host-provided dependency contract: declare imported Pi and TypeBox modules as `*` peers rather than installing duplicate runtime modules, and align Pi development pins with the repository's tested 1.0.4 baseline. The wildcard identifies host module ownership; it does not promise compatibility with every Pi version.
+- 3364cc0: Retire GitHub watchers and refresh timers safely when SDK contexts are disposed, avoid headless title inactivity timers, and stop title settlement polling on invalidated contexts. Cancel pending resume and fork recaps when the user types before their deadline.
+
+## 1.2.4
+### Patch Changes
+
+- 8190516: Extend the tested Pi host compatibility range through 0.87.x while retaining supported older hosts. Validate the published extensions against Pi 0.87.1 and adapt changed provider, session-context, and lifecycle contracts where necessary.
+- 8190516: Add Pi 0.99.1 to the supported host peer ranges while retaining Pi 0.84–0.87 compatibility. Align Pi development dependency pins with 0.99.1 for validation against the new host.
+- 8190516: Keep a fresh GitHub pull request request or its existing poll when the branch watcher finishes starting, avoiding duplicate CLI calls and discarded status updates. Still refresh after an aborted turn or when no request has started.
+- 8190516: Refresh the current HEAD immediately when it changes during watcher discovery, coalesce agent-turn and branch-debounce requests, and keep startup and bounded refresh retries working through transient statusline or timer failures. Clean up temporary Git fixtures after watcher tests.
+- 8190516: Run the initial GitHub pull request refresh in the background so slow CLI calls do not block session startup. Keep startup discovery and refresh owned by the session so turn cancellation cannot disarm branch watching or periodic updates, while stale work is cancelled on session and branch changes.
+
+## 1.2.3
+### Patch Changes
+
+- 1f586f8: Expand Pi peer support to `^0.84.0 || ^0.85.0`, retaining 0.84 compatibility while admitting 0.85 releases. The previous zero-major caret range excluded Pi 0.85.1. Update existing Pi development dependency pins to 0.85.1.
+- d9219d4: Converge every README on one house style: plain sentence-case headings, no
+  decorative emoji.
+  
+  Ten packages carried an emoji heading scheme inherited from their upstream
+  forks while the other nineteen used plain headings, so the same monorepo
+  rendered as two unrelated projects on npmjs.com. Headings are now emoji-free
+  and titles are sentence case.
+  
+  Also removes the `Keywords` section from those ten. It duplicated each
+  package's `package.json` `keywords` field, which is what npm actually indexes,
+  and no plain-style README carried one. `Installation` is now `Install`
+  everywhere.
+  
+  Headings that were Title Case are sentence case too, so one convention now
+  covers the whole monorepo. Existing in-page anchor links are unaffected:
+  GitHub lowercases heading slugs already.
+  
+  Documentation only — no runtime change.
+
+## 1.2.2
+### Patch Changes
+
+- f714ea0: Publish the package versions already prepared by the previous release transition after its first publish attempt was blocked before npm publication.
+
+## 1.2.1
+### Patch Changes
+
+- b6cf242: Peer dependency ranges now name the versions actually validated against, so an untested host combination fails at install time instead of silently at runtime: `@earendil-works/pi-coding-agent`, `pi-ai`, `pi-tui`, and `pi-agent-core` move from `"*"` to `^0.84.0`, and `typebox` from `"*"` to `^1.3.11`.
+  
+  Shared dependencies now carry ONE declared range across every package that uses them, and `bun run check:shared-deps` keeps it that way.
+  
+  `@narumitw/pi-tui-kit` was declared at three disjoint floors — `^0.54.0`, `^0.51.0`, and `^0.49.1` across nine packages — and the lockfile duly resolved three copies (0.54.0, 0.51.0, 0.49.3) installed side by side. For a shared rendering surface drawing into one terminal inside one host process, that means a theme rendering one way in one extension and another way in the next, with nothing failing at install to say so. All nine now declare `^0.54.0` and the install resolves a single copy. `@sinclair/typebox` likewise converges on `^0.34.50`.
+  
+  The new check covers `dependencies` and `peerDependencies` and compares range strings rather than their semantics: two ranges that merely overlap are still a finding, because the goal is one intentional answer per dependency rather than an accidental intersection. `devDependencies` are deliberately out of scope — a build tool is not a shared surface, and `pi-subagents` intentionally carries its own toolchain. `docs/package-boundaries.md` documents the Kit as a shared surface for the first time.
+
+## 1.0.0
+### Major Changes
+
+- Adopt a unified 1.0.0 across every published package.
+  
+  The version numbers no longer track their upstream forks individually; from this release each package
+  is versioned on its own merit against the Signalridge line, and 1.0.0 is the shared starting point.
+  Packages whose behavior changed in this release document that change in their own changeset entries;
+  the remainder are re-released unchanged so the whole set shares one baseline.
+
+### Patch Changes
+
+- Narrow what a cancelled turn suppresses in the pull request status. A status that was already fetched successfully is now rendered even if the turn is aborted while the handler resumes, and a genuine `gh` failure — a missing binary, a broken login — is still reported when the abort races it, instead of leaving the previous status in place until the next poll. An already-cancelled turn still skips the `gh` call entirely.
+- Keep the rendered pull request status and its expiry timer intact when a turn is aborted, so cancelling with Ctrl+C no longer replaces good PR status with a failure message.
+
+## Unreleased
+
+- Refresh package metadata and Pi namespace compatibility.

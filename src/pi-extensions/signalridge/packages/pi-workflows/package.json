@@ -1,0 +1,64 @@
+{
+  "name": "@signalridge/pi-workflows",
+  "version": "1.10.1",
+  "description": "Deterministic JavaScript orchestration workflows backed by pi-subagents managed spawning.",
+  "type": "module",
+  "license": "MIT",
+  "private": false,
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "workflow",
+    "dag"
+  ],
+  "piExtension": {
+    "lifecycle": "stable"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "@signalridge/pi-subagents": ">=1.9.0",
+    "@sinclair/typebox": "*"
+  },
+  "dependencies": {
+    "@signalridge/pi-subagents-protocol": "^1.6.0",
+    "@signalridge/pi-ui": "^1.4.0",
+    "acorn": "^8.16.0"
+  },
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ],
+    "skills": [
+      "skills/workflow-authoring",
+      "skills/workflow-patterns",
+      "skills/workflow-review"
+    ]
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/signalridge/pi-extensions",
+    "directory": "packages/pi-workflows"
+  },
+  "homepage": "https://github.com/signalridge/pi-extensions/tree/main/packages/pi-workflows",
+  "bugs": {
+    "url": "https://github.com/signalridge/pi-extensions/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "src",
+    "skills"
+  ],
+  "scripts": {
+    "test": "vitest run test --config vitest.config.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check .",
+    "check": "bun run lint && bun run typecheck && bun run test",
+    "format": "biome check --write ."
+  }
+}

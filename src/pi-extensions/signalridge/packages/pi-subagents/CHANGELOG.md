@@ -1,0 +1,1295 @@
+# Changelog
+
+## 1.15.2
+### Patch Changes
+
+- c00f9f9: Honor definition isolation, including explicit false/off, on ordinary RPC and registry spawns before queue/worktree allocation while preserving managed request-first and internal generation policy.
+  
+  Enforce model scope on the final untiered runner model without rejecting legacy overrides discarded by an Agent tier; inherited and configured defaults retain warning-only behavior.
+  
+  Snapshot completion notification text and activity before delayed individual/group delivery, preserving exact-attempt result consumption and retiring stale-session notifications without changing followUp or smart-group semantics.
+
+## 1.15.1
+### Patch Changes
+
+- 4d37546: Retain worktree contents and Git registration when preservation fails, verify directory removal and deregistration before reporting cleanup success, and replace destructive recovery advice with inspection and save guidance. Report the preservation branch if removal is refused. Preserve missing-checkout registrations for detached HEAD, reflog, and index recovery, using metadata-only Git recovery locks across shutdown, reload, and later pruning, including when execution or descendant pins prevent checkout cleanup. Preserve existing locks, report lock failures, and defer all global orphan pruning while any worktree cleanup remains unresolved. Quote recovery paths literally so shell metacharacters cannot execute.
+
+## 1.15.0
+### Minor Changes
+
+- a4dc1de: Enforce missing per-invocation safety budgets on resumed agents, including foreground/background calls, nested resumes, mentions, and reused managed threads. Share fresh/resumed turn, token, and tool-call enforcement and terminal outcome mapping; preserve configured grace and tool timeouts. Resume inherits the original invocation's turn budget when not overridden, respects authoritative frontmatter/default policy, validates explicit limits like spawn, and does not let zero erase a configured cap. Nested resumes resolve only their branch-local frontmatter through an in-process budget-policy capability; internal callers without it retain the admitted invocation budget rather than consulting the root registry. Authoritative frontmatter zero remains unlimited after a finite earlier invocation. A retained session's finite or unlimited policy survives later default changes; one manager-resolved cap drives enforcement and queued/running UI counters. Activity updates are invocation-owned and lifetime usage is counted only once.
+  
+  Dispose grouped notifications and pending batch/nudge timers synchronously at confirmed shutdown, retire invocation-owned foreground progress/spinner callbacks before any teardown await, fence captured delivery callbacks, and preserve managed lifecycle/usage receipts while cooperative child teardown completes. Refused/failed resume admissions retire their own UI callbacks, while admitted lifetimes own final cleanup; mention notifications are fenced after asynchronous admission. Vetoable navigation remains unchanged.
+  
+  Selective upstream parity references: tintinweb/pi-subagents `d7c9ec0b027b91c7ab9da0fa5f4ae203474a5bdf`, `ca93a5247e72e7053fcd10bea7125d6c4205f949` (unreleased after the 0.22 tag), and `83be963a969eb359af29cbbb4d4af2d01748bfb5` (released in 0.22). The integrated engine is not imported; managed protocol v4 and payloads are unchanged. Event-based budgets cannot forcibly terminate a provider or tool that ignores abort.
+
+### Patch Changes
+
+- a4dc1de: Distinguish expandable Workflow groups from individual agents with a dedicated `▸` type mark across all run outcomes. Remove the duplicate trailing blank row before the footer while preserving Fleet navigation, exact-owner conversation opening, and the existing Workflow detail UI.
+
+## 1.14.0
+### Minor Changes
+
+- 0ec64d1: Gate admitted child edit, write, and bash operations through a synchronously captured root human approval service. Preserve tool admission and legacy ask-tools policy, reject canonical shadowing and duplicate child approval resources, retain ownership across resume, and exclude human review time without resetting execution budgets. Managed protocol and journal formats remain v4.
+
+### Patch Changes
+
+- 74b65a5: Bound edit call rendering without IO or diff work; retain captured service liveness and exact-name admission through post-approval IO; reject live child canonical conflicts even when SDK metadata still wins. Replace delegated bash dispatch with an owned POSIX backend guarded after CWD preparation, preserving the SDK output layer while owning process-group/IPC cleanup. Preserve native editor paste/cursor/Undo state with an admitted non-capturing UI bridge, and hide unfocused reviews so foreign native questions remain visible and answerable.
+  
+  Refuse Bun/compiled application and unknown interpreter capabilities before approval or subprocess startup instead of executing the host application as a supervisor. Use lossless hard wrapping, whole-grapheme and native-normalized Thai/Lao escaping, and explicit compact-preview whitespace/backslashes so spacing marks and distinct commands remain inspectable through actual terminal output.
+- 0925139: Bound synchronous file-review diff work before generation, capture bash execution options and environments, require exact per-name canonical review bindings, and close owned review overlays by identity. Recheck cooperative adapter admission after child tool-call normalizers and carry the same captured approval-service and branch-owner guard through background startup to command dispatch. Preserve existing v1 approval and v4 managed contracts; document review limits and trusted-extension boundaries.
+- Updated dependencies [74b65a5]
+- Updated dependencies [0ec64d1]
+- Updated dependencies [0925139]
+  - @signalridge/pi-approval-core@1.3.0
+
+## 1.13.0
+### Minor Changes
+
+- 2c7f8f1: Add user-controlled foreground-to-background handoff without restarting the child session, an adaptive conversation observer, and authoritative workflow Fleet rows through an optional validated UI protocol. Keep controls bound to an exact session and managed attempt, preserve steering drafts on native rejection, and retain cumulative activity and append-only transcripts across managed thread reuse.
+
+### Patch Changes
+
+- Updated dependencies [2c7f8f1]
+  - @signalridge/pi-subagents-protocol@1.6.0
+
+## 1.12.0
+### Minor Changes
+
+- c2fd867: - Add an independently implemented, explicitly opted-in background-only parent clarification broker. Main-only answer_subagent_question validates one-use bounded IDs, original child/session/branch/attempt ownership and offered choice tokens; raw choices stay separate from sanitized request-local display. Coalesce bounded pending questions into ordinary prepared idle/settled extension turns without cloning a model, rewriting user text/images, copying parent history, or adding question storage/settings. Cancellation/timeout/retirement returns structured no-answer, never approval. Default human contact, ask_tools and external permission gates remain unchanged. Reject unsupported foreground/scheduled/mode-changing resume requests before spawn and leave managed protocol-v4 payloads unchanged.
+  - Fence parent questions to captured public session-manager identity and complete native branch prefixes at both channel construction and each live question invocation, including resumed-child metadata divergence before delayed committed-tree notifications. Track observed root preparation separately from native isIdle and release package-owned handled mentions with INPUT-scoped readiness leases; native throws continue preparation and another concurrent prompt's lease remains intact. Authenticate factory-local extension wakes with bounded nonce/MAC tokens and constant-memory historical proof recognition. Separate accepted-frame provenance and public ctx.signal/native-end run ownership from the outbox flight: a competing preparation's busy-failure settlement cannot erase the executing frame. Distinct frame tokens and authenticated empty-content native metadata prove only unambiguous admitted frames at public message boundaries, without guessing from promptless agent_start or stripping verbatim user quotations. An INPUT-observed copy of an unprepared frame token retires that bounded admission as ambiguous: neither prompt receives proof, abort, question context, or text/image stripping; affected questions return no-answer, while later ordinary input contexts can receive new questions. Recognize the authenticated leading token boundary plus its retained ambiguous admission even after native SDK image hints are appended; suppress only that question channel without creating control ownership, aborting, or modifying user data. Request-local context filters proven control pairs and only the proven obsolete control run can be aborted. ACK delivery against the exact flight, bound each question to one wake attempt with 30-second unacknowledged no-answer recovery, and retain unresolved accepted preparations within a fixed admission cap. Document external handled/auth-rejection and ambiguous-preparation readiness limits, native concurrent-prompt busy rejection, and the absence of atomic pre-persistence cancellation; verify real SDK later-preparation double barriers, user/proof message-start/end awaits through busy settlements, copied-token release orders with/without images and real default-AUTO 4096x4096 PNG normalization while another child's question remains pending, guard-disabled controls, handled mentions, resumed-child summaries, and live ownership without private scheduler/renderer/history patches. Human permission gates and child answer-tool capability isolation remain unchanged.
+  - Exclude pi-background from child resource loading before factories execute, including default inherited loaders and wildcard selection. Refuse intentional extension selections by name and warn on filtered inheritance/tool selectors: delayed process exits must not wake a retained child after manager completion, concurrency-slot release, or worktree cleanup. Merge configured and explicit ownership by canonical real file identity, including configured generic file symlinks and direct glob/conventional entries resolved through Pi's public package manager. Canonical declaration probes remain additive across ancestor manifests and disabled resource preferences, so an ordinary lexical owner cannot conceal a background target. Retain package names and source aliases for loaded-name validation and live `ext:` tool narrowing. Ordinary extensions remain available and no background settings schema is duplicated.
+  - Selectively port tintinweb/pi-subagents commit 7da6bef828d7582ee33386ece9379c170e7742c4 (2026-10-09, #374; reported by @BarrMan): FleetView recognizes non-inheriting custom editors by callable getText/setText while preserving dialog/selector input ownership and unknown-focus fallback. Raw inherit_context remains refused; no clone-parent-history behavior is imported.
+  - Separate per-resource declaring ownership from admission/exclusion alias unions, probe directory-backed module entries with public Node resolution without factory evaluation, and validate explicit sources before cross-source deduplication. Existing file/package aliases execute once; selecting another package's canonical entry no longer suppresses an alias owner's unrelated entries.
+  - Add independently implemented container-first workflow-owner groups and a bounded retained-child inspector, inspired by tintinweb/pi-subagents 221df02323c6b6350ea8474579e0ee0f6cc84cea/fd8d81618d80ae83a3faf40cb87dae99cca33264 and collision-only discriminators from nicobailon/pi-subagents 69673c7fbf3351e54a5b0786a7e9d9fff625a749. Counts describe retained children only; no authoritative workflow status/name/phase inference, upstream engine import, or new RPC. Preserve upstream license attribution.
+  - Keep Fleet selection by stable ID across refresh/linger, retain mounting and public structural focus evidence during invalidation, and recover overlay ownership after opener errors/disposal. Bind child conversation controls to their retained session and owner attempt so thread replacement cannot receive stale commands.
+  - Preserve rejected steering drafts (including boolean/async false and thrown failures) with an error while retaining legacy void callbacks. Completed viewers use retained lifetime usage and known compaction statistics without unguarded disposed-session access. Encode scheduled-job display copies and UI labels with the shared pi-ui sanitizer without rewriting stored prompts/paths/messages.
+
+### Patch Changes
+
+- Updated dependencies [c2fd867]
+  - @signalridge/pi-ui@1.4.0
+
+## 1.11.1
+### Patch Changes
+
+- 3364cc0: Gate project agent definitions, own settings, and custom tool descriptions on the host's fail-closed project trust decision. Reject denied definition provenance before child package resolution, including fallbacks and global aliases into denied roots; refresh configuration authority on session replacement and reload.
+- 3364cc0: Use patched Vitest 4.1.11 for development and regression testing without moving to a new major version. Refresh compatible transitive dependencies to include fixed source-map and brace-expansion releases.
+- 3364cc0: Inherit the parent's public Pi project-trust decision before child resource resolution instead of accepting the SDK's trusted default. Unknown trust and different configuration roots deny project settings, extension factories, skills (including named preloading), and MCP configuration without prompting or granting trust. Explicit project resource paths cannot bypass denial. Preserve global resources, child policy restrictions, and trusted parent configuration during worktree execution and nested delegation; bind built-in MCP configuration discovery to that same trusted configuration root.
+- 3364cc0: Preserve denied parent resource provenance when a child changes its configuration root. Reject explicit parent extensions and filter configured/discovered extensions and skills using both denied roots, including canonical aliases, before extension execution or skill injection. Named skill preloading also rejects denied sources behind global-root ancestor aliases. Genuine global resources and trusted parent configuration during worktree execution remain available; this resource trust boundary is not an OS sandbox or containment of arbitrary global extension behavior.
+- 3364cc0: Fingerprint tracked gate inputs without textconv or external diff helpers, and retain full binary-safe changes so transformed or abbreviated diffs cannot reuse a stale passing verdict.
+- 3364cc0: Declare `@sinclair/typebox` as a host-provided peer dependency with a `*` range instead of a runtime dependency, avoiding duplicate runtime modules and Pi extension-loader warnings.
+- 3364cc0: Reject native global settings and MCP configuration aliases into retained denied project roots before SDK parsing or package resolution. Walk raw path components and symlink targets without collapsing dot segments, so a traversed denied directory cannot be hidden by a later `..` or an outward relay. Preserve genuine global configuration and aliases into approved parent roots without duplicating host configuration schemas.
+- 3364cc0: Capture configuration trust before nested agent discovery and invocation defaults, and preserve denied ancestor roots across nested delegation. Reject global aliases into denied parent or child configuration roots before definition admission, model setup, or resource resolution while retaining authorized global definitions and standalone discovery defaults.
+- 3364cc0: Adopt Pi 1.0.4's host-provided dependency contract: declare imported Pi and TypeBox modules as `*` peers rather than installing duplicate runtime modules, and align Pi development pins with the repository's tested 1.0.4 baseline. The wildcard identifies host module ownership; it does not promise compatibility with every Pi version.
+- 3364cc0: Close configuration-admission gaps: apply model scope only from admitted settings at the captured configuration root, retain ancestor denials, and reject resource aliases that traverse denied project paths before escaping outside. Refresh provider-facing Agent descriptions and configuration-derived parameter descriptions through Pi's public tool-registration API when preparing prompts and continuations, preserving inactive tools. Disable gate-result caching while untracked files exist and prevent external diff commands during fingerprint inspection.
+- 3364cc0: Keep Goal terminal tools directly declared but unavailable to nested execution, where termination is not propagated. Verify direct termination and settlement-gated queue advancement against the installed Pi 1.0.4 host and codemode.
+  
+  Translate Pi exec results into the existing gate executor contract, failing killed commands even when their code is zero and enabling successful git fingerprint inspection. Exercise real-SDK exposure, nested approval, policy, and navigation regressions on Pi 1.0.4 instead of skipping them.
+- Updated dependencies [3364cc0]
+- Updated dependencies [3364cc0]
+- Updated dependencies [3364cc0]
+- Updated dependencies [3364cc0]
+  - @signalridge/pi-subagents-protocol@1.5.1
+  - @signalridge/pi-ui@1.3.3
+
+## 1.11.0
+### Minor Changes
+
+- 8190516: Refuse automatic `inherit_context: true` before child creation on current Pi hosts: the parent projection precedes request-local redaction hooks and child provider routing cannot be pinned to the parent's physical endpoint. Supply a deliberately sanitized summary in the Agent task instead; previously persisted children containing inherited parent history must start a new session rather than resume. Carry the parent's checked ModelRuntime into child and mention sessions, failing before provider dispatch on hosts where an unavailable or incompatible runtime would otherwise silently lose custom providers and virtual routes.
+- 8190516: Fail closed when raw `inherit_context: true` would copy pre-hook parent history into a child request: top-level, nested, and managed spawns now require an explicitly sanitized task summary instead, and child sessions persisted with inherited-history prompts cannot resume. Preserve the parent's configured providers and virtual model routes through a checked runtime bridge; refuse child creation on capable Pi hosts when that bridge is missing or incompatible rather than silently starting with a fresh model runtime. Older supported hosts retain their legacy model-registry option.
+
+### Patch Changes
+
+- 8190516: Keep a bounded, compaction-aware parent-history renderer for tests and a future host-safe inheritance API, prioritizing recent turns and summaries and retaining visible shell output tails. Current `inherit_context: true` no longer dispatches this pre-hook history to a child provider; see the separate fail-closed privacy change.
+- 8190516: Respect Pi's `exposure` and `defaultActive` settings when exposing child extension tools, without reactivating tools deliberately disabled during a later turn. Bound selected extension `tool_call` handlers, including late registrations and nested tool calls, under a shared per-call deadline while preserving `pi.on` unsubscription; interactive `ask_tools` confirmation remains unbounded until the human responds. A timed-out hook returns a blocked result but cannot cancel side effects that continue after the Promise race.
+- 8190516: Clarify that approving an `ask_tools` prompt allows subsequent calls to that tool for the whole child session, including resumed turns. The confirmation now names that scope rather than implying approval is limited to the displayed call, and parallel first calls share one approval decision instead of presenting contradictory dialogs.
+- 8190516: Clarify that tool approvals survive resumed turns of the current in-memory child but are requested again after reopening its session from disk or restarting Pi.
+- 8190516: Keep mention routing live when another extension cancels session or tree navigation; fence in-flight clones when the transition commits, and avoid a stale clone provider call if the origin changes during resource loading.
+- 8190516: Discard pending off-screen agent mentions when their originating session or branch is replaced, including direct fallback after a failed clone; abort a hidden provider stream that remains active after replacement. Record the background spawn before UI and event updates so a post-spawn error cannot start a duplicate agent, while pre-spawn failures still fall back directly.
+- 8190516: Preselect child extensions through Pi's public package resolver before loading restrictive include/exclude policies on hosts with replaceable built-ins. An excluded discovered extension can no longer register `/mcp` first and displace a selected built-in; explicit extension paths retain priority, host-disabled built-ins remain disabled, and missing sources or changed settings fail clearly instead of silently dropping selected capabilities.
+- 8190516: Keep `skills: false` and named-skill subagents from inheriting skills added by loaded extensions via `resources_discover`. Apply the child skill policy after every Pi resource update, while leaving `skills: true` discovery unchanged.
+- 8190516: Enforce child `ext:` tool narrowing and `ask_tools:` consent through Pi's public `tool_call` event, including nested codemode/MCP `ctx.executeTool()` calls that bypassed the model-only hook. The policy runs before other extensions can mutate the call event and checks the effective registered tool source, so same-name tools from unselected extensions cannot borrow a selected tool's permission. Pi 0.99 children now load the SDK's public codemode, tool-search, and MCP built-in factories subject to `extensions:`, `exclude_extensions:`, and `ext:` selectors; older hosts remain supported.
+- 8190516: Resolve full provider-qualified partial model patterns before treating a colon as a thinking suffix, matching Pi's enabled-model scope selection for model IDs containing colons.
+- 8190516: Extend the tested Pi host compatibility range through 0.87.x while retaining supported older hosts. Validate the published extensions against Pi 0.87.1 and adapt changed provider, session-context, and lifecycle contracts where necessary.
+- 8190516: Add Pi 0.99.1 to the supported host peer ranges while retaining Pi 0.84–0.87 compatibility. Align Pi development dependency pins with 0.99.1 for validation against the new host.
+- 8190516: Resolve restrictive subagent extension policies before Pi loads extension factories, so an excluded discovered extension cannot replace a selected Pi 0.99 built-in. Preserve host-disabled built-ins and explicit source priority; report missing sources or changed settings instead of silently dropping a requested extension.
+- 8190516: Maintain a projection-aware parent-context formatter that respects persisted context-edit omissions, replacements, and compaction boundaries; older hosts use resolved session context instead of raw pre-compaction branch entries. The formatter is not dispatched by the current child runtime because Pi does not expose request-hook-redacted context or an atomically pinned child destination; automatic inheritance now fails closed.
+- 8190516: Resolve enabled model scope against the current registry on every check instead of reusing an allowed set across projects or availability changes. Honor Pi's bare names, glob patterns, and thinking-suffixed model references in addition to exact IDs, including its provider-qualified partial matching and thinking-suffixed glob precedence. Malformed entries cannot erase a configured project scope, and a list with no available matches now refuses caller-supplied model choices instead of disabling the opt-in scope guard; pinned and inherited models retain their warning policy.
+- 8190516: Retain Pi's tree-navigation attempt signal for branch ownership and deduplication. Active child or workflow work now causes a non-destructive preflight veto rather than pre-veto quiescence; accepted tree changes fence late old-branch callbacks. A second attempt rechecks live work instead of reusing state from a canceled attempt. Pi still lacks an atomic post-veto, pre-leaf commit hook: work started during asynchronous summarization may need to be quarantined on commit.
+- 8190516: Keep model-assisted agent mentions on Pi 0.84–0.99 without silently exposing the parent's raw, pre-hook conversation to the hidden provider turn. The throwaway session now sees only the current mention text, a static narrow system prompt, and its single Agent tool; it receives no parent history, system prompt, other tools, or summaries. Pi's public extension context cannot replay programmatic parent privacy hooks, so partial hook copying is not a safe fix. Pin the Agent call to the mentioned type and report success only after background spawn acknowledgement. Fence asynchronous dispatch to its originating session; a policy refusal cannot be retried through direct spawning, and a direct infrastructure fallback revalidates that the selected agent type remains enabled. Explicit child `inherit_context: true` is refused under the current host APIs rather than forwarding unredacted parent history; pass a reviewed, sanitized task summary instead.
+- 8190516: Block session switches and tree navigation while subagents, workflows, or provider cleanup remain unsettled, without stopping work on a cancellable attempt. Confirmed shutdown coordinates workflow-owned cleanup before retiring the subagent RPC responder; confirmed tree changes fence stale callbacks and keep old terminal facts off the new branch. Pi's hook ordering still leaves a narrow, non-atomic interval between preflight and commit, so new work during summarization is quarantined on commit rather than guaranteed to finish.
+- Updated dependencies [8190516]
+- Updated dependencies [8190516]
+  - @signalridge/pi-ui@1.3.2
+
+## 1.10.3
+### Patch Changes
+
+- e939fa0: Fix Pi 0.85.1 tool-approval argument forwarding, ambient-auth and credential-specific model routing, and cross-platform workspace session validation.
+
+## 1.10.2
+### Patch Changes
+
+- 65e2481: Show supervisor questions in subagent input dialogs and identify the asking agent by its actual name.
+
+## 1.10.1
+### Patch Changes
+
+- 1f586f8: Preserve resumable cancellation when a workflow pauses during successful timeout cleanup, and retain finalized subagent output alongside observer failures. Avoid retaining descendant-owned mouse gestures in bordered components. Track successful writes using final rewritten paths, and distinguish uncertain changes observed during failed calls from confirmed agent modifications while keeping both discoverable in file browsing. Preserve exact filesystem paths and lazy-directory scan state when discovering session-observed changes, including changes injected during an active scan.
+- 1f586f8: - Bound workflow cancellation drains and durably fence unconfirmed cleanup, aborting sibling agents and releasing foreground callers.
+  - Await managed timeout cleanup before script continuation and terminal publication.
+  - Keep failed retry text and length responses discarded by overflow-compaction retry out of successful subagent fallbacks, while retaining valid pre-compaction and non-retried length output.
+  - Account for native prompts spanning reporter activation without dropping out-of-order wait debt.
+  - Reconcile settlement after observer-triggered manual compaction with run/session ownership.
+  - Preserve clipped overlay hit ranges and native container ancestry for editor autocomplete focus.
+  - Reconcile errored writes and edits against pre/post mutation evidence, retaining invocation cwd and releasing evidence when blocked or aborted preflight bypasses tool results.
+- d9219d4: Correct shipped documentation that contradicted the code or the manifest.
+  
+  - `pi-subagents`: the summary line still advertised protocol-v3 spawning while
+    the feature list and the managed-spawn section described v4.
+  - `pi-worktree`: the workspace-switching section named `/tree`; the registered
+    command is `/worktree`.
+  - `pi-workflows`: removed an orphaned sentence fragment left behind by an edit
+    to the saved-workflow paragraph.
+  - `pi-plan-mode`, `pi-goal`, `pi-usage-extension`: the stated Pi floor
+    (`0.80.6`, `0.42.4+`) contradicted the declared `^0.84.0` peer range, which
+    resolves to `0.84.x`. `pi-usage-extension` also carried a "Last updated"
+    stamp from a version that predates the workspace baseline.
+  - `pi-welcome`: the example card was a real session capture. It is now a
+    generic sample, and Install moved above the configuration sections instead of
+    sitting below them.
+- 1f586f8: Expand Pi peer support to `^0.84.0 || ^0.85.0`, retaining 0.84 compatibility while admitting 0.85 releases. The previous zero-major caret range excluded Pi 0.85.1. Update existing Pi development dependency pins to 0.85.1.
+- d9219d4: Converge every README on one house style: plain sentence-case headings, no
+  decorative emoji.
+  
+  Ten packages carried an emoji heading scheme inherited from their upstream
+  forks while the other nineteen used plain headings, so the same monorepo
+  rendered as two unrelated projects on npmjs.com. Headings are now emoji-free
+  and titles are sentence case.
+  
+  Also removes the `Keywords` section from those ten. It duplicated each
+  package's `package.json` `keywords` field, which is what npm actually indexes,
+  and no plain-style README carried one. `Installation` is now `Install`
+  everywhere.
+  
+  Headings that were Title Case are sentence case too, so one convention now
+  covers the whole monorepo. Existing in-page anchor links are unaffected:
+  GitHub lowercases heading slugs already.
+  
+  Documentation only — no runtime change.
+- 1f586f8: Keep goal iteration and continuation numbering correct when Pi compacts between tool results and the next response within one run. Preserve existing response limits and manual/post-run compaction handling.
+  
+  Capture subagent invocation results from finalized assistant events with bounded message retention so compaction cannot hide a final error or mix in historical output. Recognize explicitly selected PowerShell when the host provides it, without requiring its export on older Pi versions or expanding default wildcard tools.
+  
+  Use real session contexts for workflow replay and live TUI progress, release widget bindings on shutdown, and allow foreground checkpoint dialogs in RPC mode while retaining print-mode defaults. Cancel unanswered dialogs with their owning execution on tool abort, pause, stop, disposal, or fatal failure without journaling cancelled answers.
+- Updated dependencies [1f586f8]
+- Updated dependencies [1f586f8]
+- Updated dependencies [1f586f8]
+- Updated dependencies [1f586f8]
+  - @signalridge/pi-ui@1.3.1
+
+## 1.10.0
+### Minor Changes
+
+- f05185e: A workflow now runs at the width of the host's subagent pool rather than a
+  number it picked blind, and stops charging queue time against the agent waiting
+  in it.
+  
+  Two facts were missing on the pi-workflows side, and they compounded. It had no
+  way to learn `maxConcurrent`, so its own width was a constant guess. And a
+  dispatched agent was treated as a running one, though a managed spawn takes a
+  background slot like any other and waits when the pool is full, so a batch
+  dispatched behind a busy pool could fail as timeouts with none of it having run.
+  
+  - The ping reply can now carry the peer's live `maxConcurrent`, and pi-workflows
+    makes it both the default width and the ceiling: an unnamed `concurrency` takes
+    the pool size, and a named one is clamped to it, with the clamp recorded in the
+    run log so a caller who asked for a number learns why it got another. It is
+    read at each start and resume rather than frozen onto the run, because the pool
+    is a setting the user can change in between. One setting therefore governs the
+    whole fleet, which is what the ownership boundary already said and what the
+    code can now honour.
+  - **This narrows the common case, and that is the point.** The pool defaults to
+    4 background slots, so a default pair now runs a fan-out four at a time where
+    it used to dispatch `hardwareConcurrency - 2`. Nothing runs slower for it —
+    dispatching twelve into four slots only ever queued eight, ahead of the host's
+    own spawns — but the width a run reports is now the width it actually has, and
+    `maxConcurrent` is the single place to raise it for workflows and every other
+    background agent at once. A host that had already raised it gets the wide
+    fan-outs its setting always implied.
+  - The field is **requested by name** (`include: ["maxConcurrent"]`) rather than
+    volunteered. A ping envelope is parsed with `rejectUnknownKeys`, so a peer that
+    simply added a field would make every already-published caller reject the
+    handshake and lose workflows entirely. Asking keeps both directions working: an
+    older peer answers without it and the caller falls back to 16, and a caller that
+    never asks gets the v4 envelope unchanged. No version bump, no capability, no
+    lockstep release. Both READMEs document the mechanism, since `include` is now
+    part of the public cross-extension contract.
+  - `agentTimeoutMs` now counts from the moment the host reports the agent left its
+    queue. The clock is still armed at dispatch and restarted on that report, not
+    armed only by it, so a report that never arrives degrades to the old behaviour
+    rather than to an agent that can hang forever. A report that arrives *after* the
+    agent settled is ignored, so a late or duplicate one cannot leave a live timer
+    behind to abort a finished agent.
+  
+  The engine already subscribed to `subagents:started` and already filtered it by
+  workflow owner, so the start signal is the event it was discarding.
+  
+  `getMaxConcurrent` is required on the RPC bridge rather than optional. The other
+  bridge members are capabilities, advertised in the ping and rejected outright
+  when missing, so forgetting one fails loudly; a missing pool size has no
+  capability bit and no failure — the caller would silently fall back to its own
+  guess and run at the wrong width. Required is what makes that omission a compile
+  error instead of a quiet wrong answer.
+
+### Patch Changes
+
+- Updated dependencies [f05185e]
+  - @signalridge/pi-subagents-protocol@1.5.0
+
+## 1.9.1
+### Patch Changes
+
+- fabe89a: Document how a workflow now reaches this catalogue.
+  
+  The "One catalogue, including for workflows" section said a workflow script names
+  a key from `agentTiers` directly, with "no second workflow-tier vocabulary and no
+  mapping layer" and `agent({ tier: "low" })` examples. pi-workflows scripts now
+  name a *strength* and a table on that side chooses the tier, so every claim in
+  that section was inverted and its example is rejected before dispatch.
+  
+  The claim it was protecting is still true and is now stated where it belongs:
+  there is no second tier catalogue and no second resolver, a `strengths` value is
+  a key in this catalogue and never carries its own `model`/`thinking`, and a
+  request arriving here is indistinguishable from a spawn that named the key
+  itself. Also notes that the shipped `low`/`medium`/`high` profiles are what
+  pi-workflows' default table maps onto, so renaming them leaves workflows on the
+  ordinary untiered path rather than breaking them.
+  
+  Drops a stale pointer to `workflow.tiers`, a settings key this package no longer
+  reads.
+
+## 1.9.0
+### Minor Changes
+
+- c1b1741: Protocol v4: workflows use the Agent-tier catalogue directly.
+  
+  The wire contract changes, so the three packages move together: `pi-workflows`
+  now declares `"@signalridge/pi-subagents": ">=1.9.0"`, and a peer outside that
+  range fails the startup handshake with a diagnostic naming both packages rather
+  than failing mid-run.
+  
+  The `small | medium | large` workflow-tier vocabulary and its mapping layer are
+  gone. A managed request names an Agent tier — a key in the host's own
+  `agentTiers` catalogue — and `resolveAgentTier()` is the single resolver for
+  every spawn path. Removed with it: the wire's mapped `agentTier` field, the
+  `workflow` settings key (retired with a warning naming it; `agentTiers.defaultTier`
+  replaces `workflow.defaultTier`), and the per-call `model`/`thinking` selectors,
+  which the validator now rejects rather than accepting and ignoring.
+  
+  Every v4 capability is required and every ping carries the host's tier catalogue,
+  so an incomplete peer fails one check instead of five optional ones. Fresh
+  installs ship `low`/`medium`/`high` profiles, all inheriting their model, and a
+  managed call that names no tier falls back to `medium`, so a workflow runs on an
+  unconfigured machine without this package choosing a vendor. Because `medium`
+  inherits, that fallback lands on the parent session's model — it commits to an
+  effort level, not to a vendor, so it does change the thinking level a managed
+  call runs at when the parent session is set higher, and it does not move the
+  work anywhere cheaper. What it buys is a named policy with a durable snapshot
+  and a scope check; a workspace that wants cheaper managed work names a
+  `defaultTier` whose profile pins a model. The fallback is scoped to calls that
+  cannot inherit a parent model rather than being installed as
+  `agentTiers.defaultTier`: a shipped catalogue default would have applied to
+  every ordinary `Agent` spawn as well, silencing `defaultModel` and pinning a
+  thinking level on machines that configured neither. The catalogue no longer
+  ships a `fast` profile; it was the same (model, thinking) pair as `low`, and the
+  one agent that named it (Explore) now names `low`. A user agent file that still
+  says `agentTier: fast` is reported by the existing unknown-reference check when
+  settings and agents load, rather than failing at its first spawn.
+  
+  `agentTiers.defaultTier` therefore has three states, and `/agents → Settings`
+  offers all three rather than rendering two of them as one word: a named tier,
+  `unset` (managed calls reach the shipped fallback), and `none` (recorded as
+  `noDefaultTier`, which withdraws the fallback so managed calls fail closed).
+  `setDefaultAgentTier` takes that choice as a tagged value, so a caller cannot
+  express "no default" without saying which of the two it means.
+  
+  `resolveAgentTier` gained `requireTier` for that fallback, and the two things
+  pre-resolution callers need are both answered by the resolver rather than
+  restated beside it: `agentTierApplies()` for "will a tier own this spawn's
+  model?", and `selectAgentTier()` for the tier key itself, which the managed
+  path needs to label a tombstone and the lifecycle events before the runner has
+  resolved anything.
+  
+  Because a tier now owns model resolution outright, the spawn paths stop
+  pre-resolving one — and with it they stopped producing the model name the agent
+  UI shows. The resolution callback carries that label back instead, so a tier
+  that pins a model still names it in the viewer and the agent list, and a profile
+  that inherits correctly shows none. The label rides beside the snapshot rather
+  than inside it: the snapshot is a durable policy record a managed tombstone
+  persists and revalidates, and a cosmetic string does not belong in it.
+  
+  Workflow resume now keys each cached call on the policy for that call's own tier
+  rather than on a whole-catalogue fingerprint, so defining or editing an unrelated
+  tier no longer forces a full re-execution — but only for a call that names its
+  tier. A call that names none keeps the whole-catalogue key, because the host
+  resolves those as `call > agent frontmatter > defaultTier` and frontmatter is
+  not on this wire: an agent reaches a managed caller as a name. Keyed on
+  `defaultTier`, such a call would be wrong twice over — replaying stale work
+  after an edit to the tier its agent actually declares, and re-executing after an
+  edit to a default it never reached. `agentTierPolicyIdentity()` therefore
+  requires a tier rather than accepting `undefined` and folding the default in, so
+  the wrong call cannot be written. Journal schema v4 and managed tombstone schema
+  v2 are quarantined from older facts rather than migrated.
+  
+  The tier catalogue belongs to the user, names included. The built-in workflows
+  and the ad-hoc script ship with this package, so a tier name they use that the
+  host does not define is dropped in favour of the host's default rather than
+  failing the run — they cannot assert which names exist on someone else's
+  machine. A script the user wrote still fails closed on an undefined tier, since
+  that is a typo in a catalogue they own. Shipped-ness travels with the script
+  rather than with the frame that called it, so a user script that reaches a
+  built-in through `workflow(name)` applies the built-in's rule to the built-in;
+  the authoring skill now says outright that `low`/`medium`/`high` are the shipped
+  profiles rather than names an authored script may assume.
+  
+  The managed routing policy published on the wire reports the default a managed
+  call will actually get, fallback included, so a peer's replay identity cannot
+  disagree with the host's selection; its sorts are code-unit rather than
+  locale-dependent, so the same catalogue fingerprints identically everywhere. The
+  workflow peer re-pings per start and resume instead of pinning the catalogue it
+  saw at session start, and reports the host-selected tier back through an
+  `onTierResolved` callback rather than by mutating the dispatch options.
+  
+  Fixes: a nested spawn no longer relabels an agent's frontmatter tier as
+  caller-requested, which had turned a `scopeModels` warning into a refusal and
+  misattributed the choice; the scheduler no longer freezes a frontmatter tier into
+  a job, so editing the agent file takes effect at fire time; retired managed spawn
+  keys are now bounded instead of growing for the life of a session; a
+  scope refusal for a tier whose profile inherits its model now names the model
+  that would have run instead of the literal `undefined`; and the retired
+  `workflow` key warns once per process rather than on every settings read and
+  every project write.
+  
+  The tier-key predicate and its length bound now have a single definition, in
+  `pi-subagents-protocol`, which `pi-subagents` re-exports. The wire is the
+  narrower of the two gates — a key one accepted and the other rejected could
+  never reach a peer — so a second copy could only ever be a way for them to
+  disagree. That one definition now also governs `blockedProfiles`, which was
+  being validated by a helper that trims first: `" low"` became `"low"` there
+  while the same value in `profiles` or `defaultTier` was refused outright. All
+  three reject.
+  
+  `/agents → Settings` no longer names the fallback tier in the `unset` row's
+  label. Which tier `unset` reaches depends on the catalogue, and a workspace that
+  edits or deletes the shipped `medium` profile leaves it reaching nothing — at
+  which point `unset` and `none` behave identically. The row's description asks
+  the resolver what `unset` would currently resolve to and says that, including
+  when the answer is "nothing".
+  
+  `pi-workflows` also gained the session-lifecycle handling this routing work
+  needed to sit on. The engine has an explicit dispose lifecycle, so a protocol
+  probe or a start that is in flight when a session ends rejects with a disposed
+  error instead of resolving against an engine nobody owns. The tool, command and
+  widget surfaces register exactly once and resolve the *current* engine on each
+  use, rather than closing over the one that existed when they were registered —
+  a session replacement previously left them pointing at a disposed engine. Tool
+  and command handlers report failures as results rather than throwing out of the
+  host's dispatch, and the lifecycle handler accepts `subagents:created` and
+  `subagents:started` so a spawn's identity is recorded from the first event that
+  carries it rather than only at completion.
+
+### Patch Changes
+
+- c1b1741: Durability and containment fixes found in a repository-wide scan.
+  
+  `pi-gpt-fast` rewrote pi's own global `settings.json` with a plain
+  `writeFileSync`. That file is shared with pi and every other extension, and this
+  one is the only writer of it; a torn write would have left the user with no pi
+  configuration at all rather than just no gpt-fast setting. It now writes a temp
+  file and renames, matching every other settings writer in the repository.
+  `pi-goal` gets the same treatment for its cross-project goal state file, which
+  its own settings module already did.
+  
+  `pi-ralph-wiggum` resolved `/ralph start <path>` straight against the session
+  cwd, so `../../notes.md` would create directories and a file outside the project
+  the user opened — silently, before the loop started. This extension drives long
+  unattended loops, so that command is as likely to come from a model as from a
+  person. Task-file paths are now required to stay inside the workspace, on the
+  command, on the `ralph_start` tool, and on the paths read back out of persisted
+  state, so a state file written earlier or edited by hand cannot pull a file in
+  from outside either.
+  
+  The containment test canonicalizes both sides before comparing, because a purely
+  lexical one is defeated by a symlink: every segment of `linked/plan.md` reads as
+  inside the workspace when `linked` is a door out of it. `realpathSync` throws on
+  a path that does not exist yet — the ordinary case, since `start` is usually
+  creating the file — so it resolves the deepest existing ancestor and re-attaches
+  the not-yet-created suffix, which cannot itself be a link. The traversal test
+  matches a `..` segment rather than a `..` prefix; the prefix form also rejected
+  `..notes.md`, an ordinary filename sitting in the workspace.
+  
+  Every remaining bare `catch {}` now says why the error is safe to drop, matching
+  the convention the rest of the repository already follows.
+- Updated dependencies [c1b1741]
+  - @signalridge/pi-subagents-protocol@1.4.0
+
+## 1.8.1
+### Patch Changes
+
+- 28c8aa1: Remove non-functional references to external product names from package descriptions, examples, and comments. Provider identifiers required for runtime compatibility remain unchanged.
+
+## 1.8.0
+### Minor Changes
+
+- 3c6a02e: Improve the subagent conversation viewer with a full Pi-style box border, upstream-aligned layout, and height-safe chat controls. Running agents can chat in the viewer, while `steer_subagent` and `@handle message` queue messages safely for queued runs; `/agents` can stop a queued run before it has a session, and cancelled queued resumes no longer leak messages or transcript subscriptions into later resumes.
+
+## 1.7.0
+### Minor Changes
+
+- 07350d4: Standardize extension-owned popup surfaces with an idempotent Pi-style border adapter. Native Pi dialogs retain their built-in framing and RPC behavior; custom menus and overlays gain consistent border rules.
+
+### Patch Changes
+
+- Updated dependencies [07350d4]
+  - @signalridge/pi-ui@1.3.0
+
+## 1.6.1
+### Patch Changes
+
+- f714ea0: Publish the package versions already prepared by the previous release transition after its first publish attempt was blocked before npm publication.
+- Updated dependencies [f714ea0]
+  - @signalridge/pi-subagents-protocol@1.3.1
+
+## 1.6.0
+### Minor Changes
+
+- bae8689: Complete the managed workflow parity and hardening pass. Workflows now forward and validate exact model/thinking, toolset, denylist, thread, and per-call worktree intent while pi-subagents remains the policy and lifecycle owner. Script resume accepts edited revisions, workflow removal is durable, stale lifecycle events are rejected, provider-limit errors pause runs, and the live progress/effort/trigger settings are persisted and bounded. Run identity is durable before dispatch, pause/dispose stop owned agents and reject waiters, and every background start/resume delivers its result. The protocol adds only optional fields and capability metadata, preserving older policy-free managed-spawn consumers; workflows fail closed with a diagnostic when the peer does not advertise managed policy support.
+- b6cf242: - `name:` frontmatter is now the agent type, matching Claude Code: a `.md` agent declaring `name: code-reviewer` registers as `code-reviewer` regardless of filename; a colon in the declared name is refused (reserved for plugin scopes) and an empty/whitespace name falls back to the filename. Priority/skip keys use the declared name.
+  - Transcript streaming re-anchors safely on resume: new `ensureOutputFile()` creates a transcript without truncating it, and `streamToOutputFile()` accepts a `startIndex` so a resumed run appends after turns already on disk instead of duplicating or destroying them.
+  - A background resume now notifies under its **own** tool call id. `record.toolCallId` is written when an agent is spawned and emitted as `<tool-use-id>` on completion; `resume` clears `resultConsumed`, so a resumed run notifies again. Leaving the field alone pointed that notification at the tool call the original spawn had already answered, and a resume carrying no tool call of its own (a prompt mention) inherited a stale one instead of clearing it. Assigned unconditionally, ahead of both the foreground and background resume paths.
+  - Settings persistence (`saveSettings`) is now atomic (temp-file + rename), matching the canonical pattern, so `/agents → Settings` writes can never tear.
+  - `@handle message` typed at the prompt now addresses that subagent instead of the main model, matching Claude Code's prompt-mention grammar. One handle covers the agent's whole lifecycle: it is steered while running, resumed once finished, reopened from its session file after eviction, and started fresh when the name is an agent type that has never run. `@main` addresses the main conversation and is the one name never allocated; a bare `@handle`, `@src/foo.ts summarize this`, and ordinary prose all fall through untouched. Top-level conversations now persist to disk by default (`rememberAgents`) so there is something to reopen — frontmatter `persist_session:` still wins, and nested agents never persist. `@` completion lists what each row will actually do (send message / resume / start agent), with every description sanitized before truncation. Dispatch is TUI-only: headless would answer with silence. Toggle with `agentMentions` in `subagents.json` or `/agents → Settings`.
+  - `agentMentions` becomes tri-state — `model` (new default), `direct`, `off`; a boolean still reads as `model`/`off`. In `model` mode a mention that names an agent *type* has its turn taken by an off-screen clone of the conversation: same messages, same system prompt, same model, in a throwaway in-memory session holding exactly one tool. The started agent therefore gets a prompt written with conversation context instead of only the words after the handle, and nothing reaches the transcript — the visible turn Claude Code spends narrating a decision the user already made by typing the handle is skipped. The spawn belongs to the real session, not the copy: the clone is handed the actual registered `Agent` tool, re-bound to the main `ExtensionContext` (the fork's would file the transcript and `rootSessionId` under the throwaway session) and called with no tool-call id, since the real session never issued the one the clone's turn produced. The copy gets one use of that tool. The clone never rejects — a failure falls back to starting the agent directly rather than leaving a toast and nothing running. Messaging and resuming an existing agent stay direct in every mode.
+  - New `gate:` frontmatter — one shell command the HOST runs after the agent finishes, whose pass/fail is appended to the agent's result. An agent saying it finished is not evidence that it did, and an acceptance level meaning "the agent asserted it did the work" is a claim from the party whose claim is in doubt; a command that either exits 0 or does not is different in kind. The verdict lands directly beneath the agent's own summary, so a confident claim and a failing check are read together. It does not steer the agent to fix what failed — the gate is evidence for the caller, not another turn. Verdicts are memoized on (command, workspace fingerprint), where the fingerprint hashes HEAD, `git status --porcelain`, AND the diff, since porcelain reports *that* a file changed but not to what; outside a repository, or whenever the state cannot be established, the cache is skipped rather than guessed, because a wrong hit reports a stale pass. A gate that cannot run reports as failed, never as a silent green.
+  - New `ask_tools:` frontmatter — the third answer between `tools:` and `disallowed_tools:`. Those are static, which forces a bad choice for a tool that is usually fine and occasionally not: grant `bash` and hope, or withhold it and cripple the agent. `ask_tools:` names the tools whose calls need the user to agree first, shown with the actual arguments so there is something real to approve. The approver is the human, never a model — an LLM arbitrator exists upstream only because those subagents run headless in another process and cannot reach a person, and putting a model in that seat where a person is reachable is a security regression. It fails **closed**: with no interactive session the call is refused, with a reason naming the fix, because failing open would delete the rule exactly where it matters most. A decline tells the model not to retry; an approval lasts the run, since prompting on every call trains the user to approve without reading. Applies to `isolated:` agents too, and round-trips through eject.
+  - New `contact_supervisor` tool: a subagent can now ask its human a question and wait for the answer. `steer_subagent` only ever sent guidance downward, so a child that hit a real fork in the road could only guess and have the guess surface later in its result. The answer comes from the person, not a supervising model — our subagents share the parent's `ExtensionContext`, so the parent's UI is directly reachable, which is both cheaper and more correct than delegating the judgement, and is why this is one promise rather than a filesystem channel. Free-text or a picker when the child offers concrete options. It is injected only where a human can actually answer (never headless, never for `isolated:` agents) rather than stubbed, and an unanswered or undeliverable question tells the child to proceed on its own judgement and state its assumption — a dismissed dialog must never stall or fail a run. Question and option text is sanitized and bounded before it reaches the terminal. Toggle with `supervisorQuestions`.
+  - `/agents → <agent> → Refine with Claude`: model-assisted rewrite of an existing agent definition, with rollback. The generate wizard covered creation; this is the other half, under the same guarantees — the child runs with the symbol-keyed zero-tool policy so it cannot touch the file, returns the whole revised file as text, and the parent validates it and commits through `atomicReplaceFile` against the snapshot read before the run, so a concurrent editor can only make the commit fail rather than lose a write. A malformed or unchanged result writes nothing. After the write, the previous version is offered back in one keystroke; the restore is itself guarded against a third edit that arrived in between, and says so instead of discarding it.
+  - Agent name badges: an agent declaring `color:` (a Claude Code palette name, an Agency Agents alias, or `#RRGGBB`) renders its name as a background badge in FleetView and the conversation viewer. Two local differences from the upstream this is modelled on: the name passes through `sanitizeDisplayText` **before** the escape sequences wrap it — sanitizing afterwards would strip the badge's own codes, and not sanitizing would let a crafted `display_name` redraw the parent terminal — and badge colour composes with the existing status colouring through a `fallbackColor`, so an agent without a badge still reads as running/failed/done exactly as before. Text colour is chosen per badge by WCAG contrast rather than one fixed inverse, which keeps the light half of the palette readable, and the palette is quantized to xterm-256 when the theme reports that mode, with contrast judged against the colour the terminal will actually show. An invalid colour costs the badge, never the agent. `color:`, `max_tokens:`, and `max_tool_calls:` all round-trip through agent-file eject — an explicit `0` budget is written out too, since it is a real opt-out of a project default.
+  - Per-run resource budgets: `defaultMaxTokens` and `defaultMaxToolCalls` settings, with `max_tokens:` and `max_tool_calls:` frontmatter overriding them per agent. `maxTurns` bounds how many turns an agent takes and nothing about what a turn costs — a single turn can burn an arbitrary number of tokens or tool calls — so these are the missing bound, in the same soft/hard shape as the turn limit: a wrap-up steer at 80% of the budget, an abort at 100%. The steer deliberately arrives at 80% rather than 100%, since an agent told to produce its final answer needs allowance left to produce it. `0` means unlimited (matching `defaultMaxTurns`) and both ship off; tool calls are counted on completion, not on start.
+  - Nested delegation now has a **horizontal** bound: `maxSubagentSpawnsPerBranch` (default 64) caps the cumulative descendants any one top-level agent may start over its whole life. `maxSubagentDepth` only ever bounded how DEEP nesting goes, so with nesting on by default (depth 2) a single top-level agent could fan out without limit — its only cost per child is one of its own turns, and max turns is commonly unlimited. Enforced in the manager, so every path into a nested spawn is covered, and counted cumulatively rather than concurrently on purpose: a loop starting one child at a time, forever, is exactly the shape a concurrency limit does not catch. Grandchildren count against the same top-level root, so a new nesting level cannot mint a fresh allowance. `0` is refused rather than read as "unlimited" — turn nesting off with `maxSubagentDepth`, which says so. Configurable in `subagents.json` or `/agents → Settings`.
+  - `/agents → Diagnostics` gained a tier **liveness** probe and an agent-file accounting line, and two of its existing checks were wrong. A tier can name a model that resolves to an error string — no registry entry, or no auth configured — while every reference check still passes, so the failure used to surface at the first spawn that needed it, minutes into a task; it is now caught up front (`inherit` is exempt, having no model reference to probe). The new agent-file line reports files present but not loaded (malformed frontmatter, a reserved `:` in `name:`, or shadowing), which load-time warnings can no longer answer once they have scrolled away. Fixed: a *missing* agent directory was reported as unreadable, so a permissions failure was claimed on every healthy workspace; and the file count now excludes the built-in agents, which have no file behind them and made the denominator meaningless.
+  - New `/agents → Usage`: session-cumulative tokens per agent type, with run counts and an input/output/cache-write breakdown. Accumulated on each record's terminal callback rather than scanned from live records, which are evicted after they finish — the expensive agents are exactly the long-finished ones a scan would drop. Reported in tokens, not currency: the model registry carries no per-token price for text models, and a dollar figure would have to come from a hardcoded table that silently goes stale.
+  - Host peer ranges narrowed from `>=0.80.0` to `^0.84.0`, matching every other package in the repository. The old unbounded range promised compatibility with host versions that were never tested; `^0.84.0` names the one that is.
+  - Shipped default `agentTiers.profiles.fast` for read-only search: the built-in Explore agent now declares `tier: fast`, and a fresh install resolves it to a provider-neutral low-thinking profile instead of inheriting the parent session's most expensive model. User-defined `fast` overrides it; deleting it tombstones rather than silently returned; untouched shipped tiers are never materialized into `subagents.json`.
+
+### Patch Changes
+
+- Updated dependencies [bae8689]
+  - @signalridge/pi-subagents-protocol@1.3.0
+
+## 1.5.0
+### Minor Changes
+
+- a6cf423: Add a settings interface for the subagent default model and tier. Both were
+  previously reachable only by hand-editing `subagents.json`.
+  
+  `/agents → Settings` gains two rows. **Default model** writes a new
+  `defaultModel` key: the model a subagent runs when no tier picked one, slotting
+  in ahead of the parent session at the end of resolution, so a workspace can say
+  "subagents run on the cheap model" without first defining a tier catalogue. It
+  decides only the model — thinking still comes from the parent, since a level
+  nobody chose for a specific model is what a tier exists to express — and any
+  tier that applies overrides it. **Default tier** selects `agentTiers.defaultTier`
+  from the defined tier keys.
+  
+  `/agents → Model tiers` is a new menu for the catalogue itself: create a tier,
+  change its model, thinking or description, or delete it. The model picker
+  enumerates pi's own registry (narrowed to your scope when Scope models is on)
+  plus `inherit` and a typed escape hatch for a provider this machine has not
+  authed. The thinking picker offers only the levels the chosen model reports as
+  supported, rather than a fixed list whose extra entries `clampThinkingLevel`
+  would silently lower at spawn. A tier dropped as malformed stays listed as
+  `blocked` so redefining it retires the tombstone in one step, and deleting the
+  tier that `defaultTier` names clears the default in the same write rather than
+  leaving every untiered spawn to fail.
+  
+  Unlike a tier, an unresolvable `defaultModel` falls back to the parent model
+  instead of failing the spawn — a tier is refused because someone named that
+  policy at the call site, while `defaultModel` is the value nobody named, so one
+  unauthed provider must not take every spawn on the machine down with it. The
+  Settings row flags it as `(unavailable, fallback: inherit)`. `defaultModel`
+  accepts the literal `"inherit"`, which is how a project cancels a global default;
+  omitting the key still inherits whatever the global file set.
+
+## 1.4.0
+### Minor Changes
+
+- 72be09a: An agent no longer picks its own model.
+  
+  `model:` and `thinking:` in agent frontmatter are no longer read. Which model a
+  subagent runs is the tier catalogue's decision, and a per-file pin was a way
+  around it — silently, since nothing warned unless the file also named a tier. A
+  file that still carries them loads and runs exactly as before; the two lines
+  have no effect, and a warning names the file so the migration can be finished
+  one agent at a time.
+  
+  The built-in agents drop their own pin for the same reason: `Explore` named
+  `anthropic/claude-haiku-4-5`, which is both an end-run around the catalogue and
+  a vendor the machine may not have.
+  
+  The resulting fallback is simple and worth stating: with no tier passed, none in
+  the agent, and no `agentTiers.defaultTier`, a subagent runs on the parent
+  session's model.
+  
+  A `defaultTier` — or an agent's `tier:` — that names no defined profile is now
+  reported at startup with the available keys, rather than waiting for the first
+  spawn that needs it. `/agents` no longer advertises a pinned model in the type
+  list and writes `tier:` instead of `model:` when it regenerates an agent file.
+  
+  Programmatic callers and the legacy RPC still accept `model`/`thinking`. That is
+  an escape hatch for code, not a way to configure an agent.
+
+## 1.3.0
+### Minor Changes
+
+- 1860def: Name your model tiers, and stop the orchestrator choosing models by hand.
+  
+  A tier is one name for a (model, thinking) pair, defined in `subagents.json`:
+  
+  ```json
+  {
+    "agentTiers": {
+      "defaultTier": "medium",
+      "profiles": {
+        "small":    { "description": "Fast, cheap exploration", "model": "deepseek/deepseek-v4-flash", "thinking": "max" },
+        "research": { "description": "Long-context research",   "model": "kimi/k3",                    "thinking": "max" }
+      }
+    }
+  }
+  ```
+  
+  Keys are arbitrary — `small`/`medium`/`large` are an example, not a vocabulary.
+  A profile requires both `model` and `thinking` (either may be `"inherit"`);
+  `description` is optional and is what the host reads when choosing.
+  
+  Resolution order: the `tier` on the call, then `tier:` in the agent's
+  frontmatter, then `agentTiers.defaultTier`, then the agent's legacy
+  `model:`/`thinking:`, then the parent session. A tier that applies decides both
+  fields outright, and an agent carrying both a tier and legacy pins logs a warning
+  naming the file. Unknown keys, malformed profiles and unavailable models refuse
+  the spawn before it starts, naming the tier and where it came from — none of them
+  quietly substitutes another model.
+  
+  The catalogue is rendered into the `Agent` tool description at registration, so
+  the host knows the vocabulary before its first call rather than having to
+  remember a lookup tool. Custom descriptions gain `{{tierList}}`,
+  `{{compactTierList}}` and `{{defaultTier}}`.
+  
+  Resolution happens once, in `agent-runner.ts`, so the top-level `Agent` tool,
+  nested delegation, the scheduler and cross-extension RPC share one precedence and
+  one set of refusals.
+  
+  `pi-workflows` is untouched: its tiers stay the fixed `small | medium | large` of
+  the cross-package protocol, which is what keeps a workflow definition validatable
+  at parse time and portable between machines. The two systems share no fields.
+  
+  The agent conversation overlay now marks its own edges with a rule at the top
+  and the bottom. It floats over the transcript and previously drew no border at
+  all — two variables named `hrTop` and `hrMid` were a bold title row and a blank
+  line — so there was no telling where the agent's conversation ended and the
+  parent's resumed. Two rules, none in between: an inner rule competes with the
+  pair that marks the boundary, and a four-sided box would cost two columns on
+  every row for the same job.
+  
+  The LLM-facing `Agent` and nested-`Agent` schemas no longer accept `model` or
+  `thinking` — a caller picks a tier instead. This is a minor, not a major: a tool
+  schema is read by a model at runtime rather than compiled against, so no import,
+  settings key or RPC payload changes shape. Programmatic callers and the legacy
+  RPC still accept both fields, and agents with no tier configured behave exactly
+  as before. The migration is: define the profiles once, then replace each agent's
+  `model:`/`thinking:` with `tier: <name>`.
+
+## 1.0.0
+### Major Changes
+
+- Adopt a unified 1.0.0 across every published package.
+  
+  The version numbers no longer track their upstream forks individually; from this release each package
+  is versioned on its own merit against the Signalridge line, and 1.0.0 is the shared starting point.
+  Packages whose behavior changed in this release document that change in their own changeset entries;
+  the remainder are re-released unchanged so the whole set shares one baseline.
+
+### Patch Changes
+
+- Publish the screenshots and example template the README points at, so the npm page no longer renders broken images or a dead file reference.
+- Neutralize escape sequences, bidirectional overrides and binary content in subagent-derived text before rendering it, so a prompt-injected or poisoned child run can no longer repaint or reorder the parent's terminal.
+- Complete the terminal-safety pass over subagent-derived text. Custom agent files' `display_name` and `description` are neutralized as they are loaded, so a poisoned `.pi/agents/*.md` can no longer repaint the parent terminal through a widget row, fleet row, menu label or viewer header; the Agent tool's own call header, result body, error line and stop notifications, plus the completion-notification renderer, are scrubbed on the way into the transcript. An unterminated escape introducer now leaves the rest of the message visible instead of silently deleting it, a nested introducer no longer leaks the outer sequence's parameter bytes, short tool output containing a few control bytes is no longer discarded wholesale as binary, and previews are cut by code point so a truncated emoji can no longer reintroduce a lone surrogate. The agent widget and FleetView are also re-seated from the live session before each refresh, so a scheduler fire after `/new` or a session switch draws on the session that is on screen, and the widget's refresh ticker is torn down at shutdown.
+- Draw the agent widget and FleetView for runs that enter through the scheduler or a legacy cross-extension spawn, so an unowned background agent is visible while it works instead of only when it reports.
+- Graduate `@signalridge/pi-subagents` from `0.16.0-signalridge.1` to stable `0.16.0` while syncing upstream reliability fixes and hardening lifecycle quiescence, hot-reload registry handoff, capability-free record snapshots, agent-name validation, and fail-closed worktree preservation without changing Signalridge workflow and RPC behavior.
+- Updated dependencies
+  - @signalridge/pi-subagents-protocol@1.0.0
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+### Added
+- **Configurable workflow tiers:** `small`, `medium`, and `large` managed spawns now resolve model and thinking profiles inside pi-subagents, merge project settings over global settings, clamp unsupported thinking levels, and persist immutable resolution snapshots. Tier profiles support explicit `inherit` values, malformed policies fail closed with durable tombstones, and protocol discovery advertises the `workflowTiers` capability.
+- **`fallbackSubagent` — choose what happens when `subagent_type` doesn't resolve, including failing closed** ([#183](https://github.com/tintinweb/pi-subagents/issues/183) — thanks [@0xbentang](https://github.com/0xbentang)). Dispatch previously repaired every unresolvable type by substituting `general-purpose`, so a typo silently ran a different agent, model and tool policy — and for a background or scheduled call, execution began before the caller saw any indication. The new project setting names the substitute instead of assuming one: omitted keeps today's `general-purpose` behavior, any enabled agent name routes unresolvable calls there, and `none` (or the boolean `false`, which would otherwise be dropped as the wrong type and silently leave the fallback in place) disables it entirely so dispatch fails closed with an error listing the available types. Resolution now happens at one point shared by every caller-supplied spawn — the `Agent` tool, the scheduler at fire time, cross-extension RPC, and nested delegation — so a refused type never reaches `runAgent`, where the old three-tier fallback in `getConfig` would have substituted an agent anyway. Case-ambiguous names (two enabled agents differing only in case, reachable because agents are keyed by filename across three directories) are treated as unresolvable rather than resolved to whichever was registered first. The fallback note is emitted at resolution rather than after the run, so the background and schedule paths carry it too, and a scheduled job now stores the type that was actually requested instead of the substitute. Nested delegation keeps rejecting unconditionally whatever this is set to, so a project-level fallback cannot hand a nested caller an agent outside its allowlist. An explicitly configured fallback that is itself unknown or disabled is reported as the misconfiguration it is.
+- **Opt-in nested subagent delegation — a subagent can delegate to child agents of its own** ([#164](https://github.com/tintinweb/pi-subagents/pull/164) — thanks [@codesoda](https://github.com/codesoda)). Default-off and per-agent: a custom agent receives scoped `Agent`, `get_subagent_result`, and `steer_subagent` tools only when its frontmatter sets `allowed_subagents` (a comma-separated type list, or `all` — `true` and `"*"` are accepted the way `extensions:`/`skills:` take booleans), and never when it is `isolated`. The allowlist is a privilege boundary rather than a routing hint: a child runs with its own `tools:`, `extensions:`, and `isolated:`, so delegating grants the parent the union of what the listed agents can do — `all` reaches `general-purpose`. Nesting is depth-capped from the main session — main is 0, its subagents 1, their children 2 — through `maxSubagentDepth` in `subagents.json` (default `2`; `0` or `1` disables nesting project-wide) or `/agents → Settings → Nested depth`. A per-agent cap is deliberately not exposed yet: at the default project cap it could only restate what omitting `allowed_subagents` already says, and a tighten-only field is safe to add once someone raises that cap. An agent already at the cap is given no nested tools at all, rather than tools whose every call would fail. Everything a parent can do is ownership-scoped — it can fetch, resume, and steer only its own children — and unknown, disabled, or out-of-list types are refused rather than falling back to general-purpose. Nested spawns resolve agents from a registry built for their own config root (never the process-global registry the main session uses) and revalidate `model:` against Model Scope exactly like a top-level spawn. Nested records stay internal to their parent, absent from top-level tools, lifecycle events, and the agent UI, and are stopped when that parent finishes, is stopped, or ends a resumed turn — a hidden child must not outlive the only agent able to reach it. They still write their own `.output` transcript under the root session's directory (same `output_transcript` gate), so a nested run remains inspectable, and their token usage is folded into every ancestor's totals so nested spend stays attributable at any depth, and a nested result that ends `stopped`, `aborted`, or `steered` is labelled partial, the same guarantee top-level results carry. Nested children do not occupy `maxConcurrent` slots: their parent already holds one, and queueing them behind it would deadlock a parent waiting on its own child; the depth cap bounds how deep nesting goes, not how wide, so a `max_turns` on the delegating agent is what ceilings its fan-out. A subagent session no longer activates this extension at all — that is what keeps a child from building a second agent manager, and it is why the nested tools are injected directly instead; a subagent consequently also gets no `/agents` command, no cross-extension RPC handlers, and no `subagents:ready` event.
+- **Protocol-v3 managed spawning now resolves agent policy before dispatch and keys idempotency by spawn key across the root session.** Managed RPC reloads custom agents, applies `fallbackSubagent`, preserves validated owner metadata, and keeps immutable fingerprint/id/tier snapshots after UI record cleanup; legacy `subagents:rpc:spawn` strips owner metadata and remains unowned. The published runtime version advances to `0.16.0-signalridge.1` so tier-aware workflows cannot resolve against the pre-tier `0.15.0-signalridge.1` peer.
+
+### Fixed
+- **A disabled agent is no longer dispatchable, and no longer runs with a mixed identity** (found while implementing [#183](https://github.com/tintinweb/pi-subagents/issues/183)). The `Agent` tool resolved types with `resolveType()`, which reports a canonical name without checking `enabled` — so an agent disabled via `enabled: false` or `/agents → Disable` resolved successfully, produced no fallback note, and then split downstream: `getAgentConfig` returned the disabled agent's config to build the system prompt while `getConfig` returned general-purpose for tools, extensions, skills and prompt mode. The run therefore carried the disabled agent's instructions with a different agent's tool policy. Dispatch now requires the type to resolve to exactly one *enabled* agent, so a disabled type takes the fallback path — or is refused outright under `fallbackSubagent: none`.
+- **Queued background runs now report that they are queued.** Details, widgets, fleet rows, and conversation views no longer describe a waiting run as already running; the queue state remains distinct until dispatch begins.
+- **Steered runs now have a distinct completion label.** Notifications, tool results, widgets, menus, fleet rows, and the conversation viewer consistently say `wrapped up · turn limit` instead of presenting a steered run as an ordinary completion or generic error.
+- **The `/agents` run menu now counts and summarizes every retained terminal outcome.** Completed, stopped, aborted, steered, and failed records remain visible with distinct counts and labels rather than silently disappearing from the summary.
+- **Scheduled run status now preserves the most meaningful terminal outcome.** Failure and aborted states are no longer overwritten by a later generic completion update, and the status text matches the persisted record.
+- **A foreground agent result now says its output is complete, not partial — it is the *task* whose completion is in question** ([#174](https://github.com/tintinweb/pi-subagents/issues/174) — thanks [@killianMei](https://github.com/killianMei)). A foreground run that ended early was annotated `output may be partial`, which reads as *truncated, go retrieve the rest*. It isn't: a foreground result already carries the agent's entire output inline, and its parent has no agent id to retrieve anything with — the id travels in the tool result's renderer `details`, which is never serialized to the model, and only the background path prints `Agent ID:` in text. A parent acting on that reading therefore passed an id it had invented and got back `Agent not found: "<id>". It may have been cleaned up.`, which looks exactly like the record was evicted. It wasn't: foreground completion mutates the record in place, and nothing removes it outside the 10-minute cleanup timer (which keys on `completedAt`, so a long run doesn't age it), `clearCompleted()` on a session start/switch, or shutdown — none of which the report hit. Foreground results now carry their own outcome note stating that everything the agent produced is above and that it is the *task* whose completion is in question — hedged for a `steered` run, which was told to wrap up and did, so it may well have finished at the limit, and stated outright for `aborted` and `stopped`, neither of which ever delivered a final answer; the background notification and `get_subagent_result` keep the existing note, because their caller holds a 500-char preview and a real id, where the same sentence would be false. Every clause is a statement about state rather than an instruction to act: nothing here can measure whether a wording change improves parent behavior, so removing a false cue (which cannot induce new behavior) and adding an instruction (which can) are not equally safe — and an instruction like "ask before restarting" would also presume a user is present to ask, which is false under `pi -p`, in scheduled jobs, and in background-driven runs. Regression tests pin the record-retention contract, the absence of an id in foreground result text, and that a subagent session's own activation lifecycle can't evict the parent's records.
+- **Workflow cleanup callbacks remain observable during stop and failure settlement.** Synchronous queued/running stop callbacks are journaled without changing a requested stop into failure, while a parallel task failure stops remaining owned agents, blocks dependents, and settles cleanup before the failed workflow result.
+- **Branch and session replacement now stop and quiesce providers before clearing manager/session/worktree state.** Timed-out records are detached before tree replacement, so late continuations cannot persist a new tombstone, emit lifecycle events, or drain queued work into the replacement branch; provider/tool promises that remain unsettled keep their worktrees pinned with recovery diagnostics rather than risking deletion under a live process. Strict package-local linting and bounded scheduler E2E execution cover the fork baseline.
+- **Public agent records are immutable, capability-free snapshots.** `getRecord()` and `listAgents()` return fresh frozen copies, including nested owner and usage metadata, but omit live `AgentSession` and manager control handles; manager/UI internals use a private mutable path and the conversation viewer refreshes snapshots as runs change. External consumers therefore cannot forge ownership, change lifecycle routing, or directly steer/prompt a child through a leaked session.
+- **Detached records are fully quarantined after branch replacement.** Late AgentSession callbacks no longer reach lifecycle emitters, managed tombstone persistence, transcripts/UI hooks, or steering events after a record detaches; internal promise settlement and ordinary non-detached Agent behavior remain unchanged.
+- **Managed lifecycle controls are attempt-scoped and branch-safe.** Protocol-v3 managed requests now require an attempt owner; `stop-owned` and `quiesce-owned` reject missing/mismatched generations, advertise the required `ownedStop` capability, and branch replacement detaches timed-out records while suppressing late callbacks and dispatch completions.
+- **Synchronous spawn failures release background pool slots.** Runner throws now detach parent-signal listeners and clean up temporary worktrees before the failed record is removed, preventing queue starvation.
+- **Managed policy remains centralized and explicit.** Scheduled jobs persist the same resolved model input as immediate Agent calls, while managed RPC continues to accept only policy-free request fields and the manager requires its resolved policy seam; model fallback and scope checks stay in pi-subagents.
+- **Pre-aborted foreground and resumed agents preserve lifecycle state.** A foreground spawn cancelled before dispatch now still records `stopped`, marks its inline result consumed, and fires completion exactly once; resuming with an already-aborted signal returns the existing terminal record without clearing its result or invoking the runner.
+- **Detached background records release their concurrency slots.** Branch-quiescence timeouts and branch changes now release held slots exactly once and continue draining past detached queued records, so a never-settling provider cannot strand fresh work while late settlements remain quarantined.
+- **Worktree cleanup preserves the actual isolated checkout and fails closed.** Async shutdown inspects `git status` in the worktree itself, preservation failures leave recovery data in place, and direct filesystem fallback is limited to verified package-created paths with post-removal and Git-registration checks.
+- **Agent-file mutation is path-safe and loss-preserving.** Creation rejects unsafe filenames before touching disk or starting generation, preventing separators and traversal such as `../../outside`; replacement and deletion serialize cooperative writers, publish through non-clobbering links, and retain displaced inodes in hidden recovery artifacts so late editor saves are never overwritten or unlinked.
+- **The cross-extension manager registry has an explicit serialized liveness/reload handoff.** Healthy duplicate or child activations cannot evict the root; overlapping reloads queue behind a process-global takeover lock; and inactive owners or Pi `reload` replacements retire stale RPC responders and managers before claiming the process-global entry.
+
+## [0.14.3] - 2026-07-23
+
+### Fixed
+- **Subagents can use extension tools that register asynchronously, e.g. over MCP** ([#141](https://github.com/tintinweb/pi-subagents/pull/141) — thanks [@philipmw](https://github.com/philipmw)). MCP-backed extensions usually can't enumerate their tools until their servers connect, so they call `registerTool` from `session_start` (pi-mcp) or `before_agent_start` (context-mode) rather than at load — eagerly connecting during extension discovery would orphan child processes on pi's non-agent code paths (`--help`, config, trust probing). The agent runner, however, snapshotted `extension.tools` into a static `tools:` allowlist immediately after `loader.reload()` and *before* `bindExtensions()` fired `session_start`. Because pi's `allowedToolNames` gates tool **registration** — not merely the initial active set — a name missing from that snapshot was dropped permanently, so those tools never reached a subagent even though the main agent had them. The runner now leaves the allowlist unset so pi's live gate admits tools whenever they register, and expresses the name-stable part of the scope (this extension's own orchestration tools, built-ins the agent didn't ask for, `disallowed_tools:`) as a denylist that pi re-applies on every registry refresh. `extensions: false` / `isolated: true` keep the static allowlist unchanged — nothing can register asynchronously there, and a hard registry gate is the right boundary.
+- **`ext:` selectors keep narrowing correctly when tools register late** (fixes [#125](https://github.com/tintinweb/pi-subagents/issues/125)). Admitting late-registered tools is only half the problem: an `ext:` selector is an *allowlist*, and a not-yet-registered tool cannot be listed in one — which is why `tools: "*, ext:context-mode/ctx_execute"`, the exact configuration reported in #125, still saw nothing. `ext:` narrowing is now enforced on the **active** tool set (what the model actually sees) rather than the registry, re-derived from the loader's live extension maps — the same maps `registerTool` writes into — so a tool is judged against the selectors whenever it appears. Scope is re-applied on every `turn_end`, and the hooks live on the session rather than the spawning call, so steered and resumed turns stay scoped too. Turn 1 is guarded at call time instead: `before_agent_start` fires *inside* `prompt()` and can widen the tool set after that turn's tools are already snapshotted, leaving no window to narrow in, so an out-of-scope call there is refused rather than executed. Selecting a lazy extension (`ext:mcp`) now surfaces its tools; leaving one out still mutes it, no matter when it registers. Vetoing a call means wrapping the `beforeToolCall` hook pi installs on the session (pi exposes the veto to *extensions* as `pi.on("tool_call")`, but there is no equivalent for an SDK caller constructing a child session); the wrapper chains to pi's own hook so extension `tool_call` handlers still fire, and a `pi@latest` CI job guards that the hook stays reachable, so a future pi that moves it surfaces as a test failure rather than a silently missing veto.
+- **FleetView selection markers now match the rest of the UI** ([#155](https://github.com/tintinweb/pi-subagents/pull/155) — thanks [@xz-dev](https://github.com/xz-dev), closes [#122](https://github.com/tintinweb/pi-subagents/issues/122)). FleetView was the only view using `⏺` (U+23FA) / `◯` (U+25EF) for its selected/unselected rows; everywhere else — the conversation viewer and agent widget — uses `●` / `○` (U+25CF/U+25CB), the base geometric circles with the broadest terminal-font coverage (`◯` renders visibly oversized in many fonts). Selection is already carried by the accent-vs-dim color, so the exotic glyphs added nothing. FleetView now uses `●` selected / `○` unselected, converging on the codebase's existing pair.
+- **`get_subagent_result(wait: true)` is now cancellable** ([#159](https://github.com/tintinweb/pi-subagents/pull/159) — thanks [@exoulster](https://github.com/exoulster), fixes [#158](https://github.com/tintinweb/pi-subagents/issues/158)). The tool received the tool-call `AbortSignal` but ignored it, so pressing `Esc` during a wait couldn't cancel it — the call stayed blocked until the child finished, and pi could log a spurious `No running process to background.`. Cancelling now stops **only** the wait: the background agent keeps running, its result stays unconsumed, and its normal completion notification still arrives. Queued waits are abortable the same way. Because the wait no longer pre-marks the result consumed (a cancelled wait never consumes it), a successful wait still suppresses its own redundant notification by cancelling the held nudge on completion — the queued-wait poll interval was tightened so that cancellation reliably lands inside the notification hold window.
+- **User-scope agent memory honors `PI_CODING_AGENT_DIR`** ([#166](https://github.com/tintinweb/pi-subagents/pull/166) — thanks [@biowaffeln](https://github.com/biowaffeln)). The `user` memory scope hardcoded `~/.pi/agent-memory/<name>`, ignoring `PI_CODING_AGENT_DIR` even though every other config consumer (custom agents, enabled models, settings, skills) already routes through `getAgentDir()` — so anyone who relocated their config dir got a stray `~/.pi` resurrected the first time a `memory: user` agent ran. User-scope memory now resolves to `<agentDir>/agent-memory/<name>` (default `~/.pi/agent/agent-memory/`). Existing memories aren't orphaned: when the legacy `~/.pi/agent-memory/<name>` directory exists and the new location doesn't, it keeps being used — symlinked legacy dirs are ignored, consistent with the file's other symlink defenses — and once the new location exists it wins. Lazy fallback rather than auto-migration, so no files are moved.
+
+## [0.14.2] - 2026-07-17
+
+### Added
+- **`output_transcript` frontmatter + `outputTranscript` project setting — opt out of a subagent's `.output` transcript** ([#146](https://github.com/tintinweb/pi-subagents/pull/146) — thanks [@Thoughts-One](https://github.com/Thoughts-One)). Every subagent streams its full conversation to a per-subagent JSON-lines transcript under the OS temp dir (`<tmpdir>/pi-subagents-<uid>/…/<agent-id>.output`, owner-only `0700`, cleared on reboot); until now that write was unconditional. Set `output_transcript: false` on a custom agent to write no transcript file or path for it, or `outputTranscript: false` in `subagents.json` to make transcripts opt-in for the whole project (a custom agent's frontmatter overrides the project default). Useful when run transcripts shouldn't sit on disk for backup or DLP tooling to ingest. Scope is deliberately narrow — it governs only the `.output` transcript, not the persisted pi session (`persist_session`), worktree commits (`isolation: worktree`), or memory files — so keeping a run fully off disk means setting those too. Default is unchanged: with neither flag set, transcripts are written exactly as before. The write decision is centralized on `record.outputFile`, so every downstream consumer (streaming, notifications, the transcript footer) keys off a single gate.
+
+### Fixed
+- **Bordered conversation-viewer rows stay exact-width at double-width truncation boundaries** ([#153](https://github.com/tintinweb/pi-subagents/pull/153) — thanks [@xz-dev](https://github.com/xz-dev)). The conversation viewer pre-pads each row to the inner width and truncates it to fit between the `│` borders, but `truncateToWidth` was called without its `pad` flag — so when a truncation boundary fell mid-way through a double-width character (CJK, wide emoji), the result came back one column short and the right border shifted left by a column on that row. The row builder now truncates with padding on, restoring the trailing column, so every bordered row renders at exactly the box width regardless of where a wide glyph lands. A regression test sweeps a double-width character across every truncation boundary and asserts each rendered line is exactly the requested width.
+- **Isolated subagents keep extension-registered custom providers on pi 0.80.8+** (fixes [#151](https://github.com/tintinweb/pi-subagents/issues/151) via [#152](https://github.com/tintinweb/pi-subagents/pull/152) — thanks [@0xbentang](https://github.com/0xbentang)). pi 0.80.8 replaced `createAgentSession`'s `modelRegistry` option with `modelRuntime`, and the agent runner still passed the now-ignored `modelRegistry` — so pi built a *fresh* model runtime from disk for the child session. Because isolation also disables extension loading, that fresh runtime had neither the extension-registered custom provider nor its auth: an `isolated: true` agent pinned to such a provider failed preflight with `No API key found for <provider>`, while the same agent with `isolated: false` — or on any pi <0.80.8 — worked. The runner now forwards the parent session's `ModelRuntime` (read off the `ModelRegistry` facade on `ctx.modelRegistry`) as `modelRuntime` when the running pi exposes one, and still passes `modelRegistry` for the pre-0.80.8 range — so the fix spans the whole `>=0.80.0` peer range without changing it: older pi omits the new field and takes the legacy path, 0.80.8+ inherits the parent runtime. Extensions and tools stay isolated exactly as before — only the model providers and their auth are inherited. A `pi@latest` CI job guards the reachability of that runtime accessor (a `private` field the fix reaches through), so a future pi that renames or hides it surfaces as a test failure instead of a silent return of this bug.
+
+## [0.14.1] - 2026-07-14
+
+### Added
+- **`max` thinking level is now advertised in the frontmatter/tool/wizard choices** ([#147](https://github.com/tintinweb/pi-subagents/issues/147) — thanks [@justin-ramirez-gametime](https://github.com/justin-ramirez-gametime)). pi 0.80 added `max` to its `ThinkingLevel`, and the extension already forwarded the value unchanged, but the Agent tool description, generated-agent template, `/agents` creation wizard, and README all stopped at `xhigh` — hiding a valid capability. Those four surfaces now come from one shared list so they can't drift behind pi again. Actual availability still depends on the host pi version and the selected model; pi clamps unsupported levels down.
+
+### Fixed
+- **Runs whose final assistant turn failed are now reported as `error`, not `completed` with an empty result** (fixes [#144](https://github.com/tintinweb/pi-subagents/issues/144) — thanks [@possibilities](https://github.com/possibilities) for the diagnosis). pi resolves an exhausted-retries provider failure normally — the final assistant message carries `stopReason: "error"` plus an `errorMessage`, no rejection — so the manager mapped such runs to `completed` and every consumer (foreground tool result, `get_subagent_result`, background notifications, resume, scheduler, RPC events) saw a clean success reading `No output.` — or worse, an *earlier* turn's text presented as the fresh answer, since the history fallback walks past empty messages. The runner now inspects the final assistant message and reports a failure in two cases: the turn stopped with `stopReason "error"`, or it hit the output-token ceiling (`stopReason "length"`) having produced no text at all — a silent max-token death that reproduced the same empty-`No output.` symptom. Status still derives from how the final turn stopped, never from whether earlier turns produced text: empty-but-clean finals (tool-call-only or thinking-only endings) stay `completed`, a `length` stop that *did* produce text is a legitimate truncated answer and stays `completed`, partial-text provider errors are still failures, and the walk-back fallback keeps preserving partial output for aborted/steered runs. (An `aborted` final turn needs no special-casing here — the manager's hard-abort flag and `stopped` guard already surface it as `aborted`/`stopped`.) The response-text collector also no longer resets on user/tool-result `message_start` events (it tracked the last *message*, not the last *assistant* message). A failed run still surfaces any output it *did* produce: the tool result shows `Agent failed: <error>` followed by that text under a `Partial output before the failure:` label — and the history fallback is now bounded to the current invocation, so a failed **resume** no longer returns the *previous* turn's answer as this run's result (it returns empty). **Behavior change:** runs that previously ended `completed` with an empty result now end `error` carrying the provider message, and `subagents:failed` fires where `subagents:completed` did; scheduled jobs record `lastStatus "error"` for them.
+- **A subagent can allowlist a package-installed extension by its package name, not just its source directory** (fixes [#143](https://github.com/tintinweb/pi-subagents/issues/143) — thanks [@possibilities](https://github.com/possibilities)). Our extension-scoping (`extensions:` / `exclude_extensions:` / `tools: ext:…`) named an extension from its file path, and for an `index.ts` entry it used the parent directory — so a package installed via `pi.extensions: ["./src/index.ts"]` (like this one) only ever matched as `src`, an unstable, collision-prone name that no user would guess; `extensions: [pi-subagents]` silently matched nothing. An extension now also answers to its package's unscoped short name (`@tintinweb/pi-subagents` → `pi-subagents`), read from the nearest `package.json` whose `pi.extensions` manifest actually declares that entry. This is an **added alias** — the path-derived name keeps working, so nothing that already matched `src` breaks — and it fires only for genuinely manifest-declared package entries, so a loose extension is never misattributed to a co-located project's name.
+- **A pi-subagents activation that a child session filtered out no longer advertises or answers cross-extension RPC** (fixes [#142](https://github.com/tintinweb/pi-subagents/issues/142) — thanks [@possibilities](https://github.com/possibilities)). pi runs every extension factory *before* applying an agent's `extensions:` filter and only delivers lifecycle events (`session_start`, …) to the survivors, but the `pi.events` bus is shared with the filtered-out activations too. Because we registered the RPC handlers and emitted `subagents:ready` at factory time, a child agent whose `extensions:` omitted pi-subagents still saw a `subagents:ready` broadcast and a successful `subagents:rpc:ping`, yet every `subagents:rpc:spawn` failed with `No active session` — its `session_start` never fired, so the spawn handler had no context. The RPC handler registration and the `subagents:ready` broadcast now happen on the first bound `session_start` instead of at factory time, so a session that excludes pi-subagents stays completely silent on the RPC channels — behaving like a session where it was never installed, rather than advertising a spawn service it can't provide. Emitting readiness after all factories have loaded also closes a latent race where a consumer whose factory ran after ours could miss the event. No change for sessions that do load pi-subagents: `subagents:ready` still fires and RPC still works, just at `session_start`.
+
+## [0.14.0] - 2026-07-13
+
+### Added
+- **Project custom agents are also discovered from `.agents/agents/<name>.md`** ([#133](https://github.com/tintinweb/pi-subagents/pull/133) — thanks [@wenerme](https://github.com/wenerme); closes [#132](https://github.com/tintinweb/pi-subagents/issues/132)). Projects that keep their agent assets in the shared cross-tool `.agents` workspace (the same convention this extension already reads for `.agents/skills/`) can now define subagents there instead of duplicating files into `.pi/agents/`. Discovery precedence is `global < .agents/agents < .pi/agents`: on a name clash between the two project locations, **`.pi/agents/` wins** — `.pi` remains the project authority, and the `/agents` create/eject/disable flows keep writing there; `.agents/agents/` is a read location only.
+
+### Changed
+- **BREAKING: Dev/test toolchain now tracks pi 0.80.x; pi peer floor raised to `>=0.80.0`** (as diagnosed by [@philipmw](https://github.com/philipmw) in [#129](https://github.com/tintinweb/pi-subagents/pull/129)). The committed lockfile had pinned the `@earendil-works/pi-*` peers to 0.75.5 (the latest published when it was generated), so tests and typecheck exercised an older API surface than the pi that actually runs the extension — including 22 tests that silently never ran on 0.75.5 and now do (suite skip count 26 → 4 between the two lockfiles). The lockfile now resolves the peers to 0.80.6, and the test suite imports pi-ai's relocated faux/model helpers (`registerFauxProvider`, `getModel` — `/compat`-only since pi-ai 0.80) through a single re-export module, `test/helpers/pi-ai.ts`, so the next relocation touches one file. Because the test surface no longer resolves on ≤0.75.x, `peerDependencies` move from `>=0.74.0` to `>=0.80.0` to match what is actually tested. Migration: installs under pi <0.80 may emit unmet-peer warnings (or fail under strict peer resolution such as `npm --strict-peer-deps` / pnpm defaults) — upgrade pi to ≥0.80; runtime behavior itself is unchanged on any pi version, since pi substitutes its own bundled modules for extension imports at load time. Live-mode e2e (`PI_E2E_LIVE=1`) now fails fast with a clear error when the pinned `PI_PROVIDER`/`PI_MODEL` isn't in pi-ai's builtin catalog, instead of silently letting the session resolve a different model.
+
+### Fixed
+- **Output-file streaming survives session compaction** (fixes [#145](https://github.com/tintinweb/pi-subagents/issues/145) — thanks [@possibilities](https://github.com/possibilities) for the diagnosis). Compaction replaces `session.messages` with a shorter, summarized array, which stranded the streamer's write index past the new end — the flush loop never matched again and the agent's output file silently froze for the rest of the run, exactly on the long background runs that auto-compact. The streamer now flushes any not-yet-written tail when compaction starts and re-anchors its index to the rebuilt array after a successful compaction — deferred one microtask, because on the overflow-retry path pi trims the trailing error assistant message *after* emitting `compaction_end`, and a synchronous anchor would skip the first post-compaction message. Aborted and failed compactions leave the session untouched and change nothing. Verified against a real pi `AgentSession` driving a real `session.compact()` in the new e2e regression.
+- **FleetView no longer steals arrow/Enter/Esc keys from other interactive components** (fixes [#123](https://github.com/tintinweb/pi-subagents/issues/123) — thanks [@TommyC81](https://github.com/TommyC81) for the report). pi delivers terminal input to extension listeners *before* the focused component, and selector/input dialogs (`ctx.ui.select` & co.) swap the prompt editor out while `getEditorText()` still reads the detached — empty — editor. So while subagents were running, FleetView's empty-prompt gate passed and it consumed the navigation keys that belonged to whatever dialog was actually focused: other extensions' pickers (e.g. rpiv-ask-user-question), pi's own menus, and even `/agents → Settings` itself. FleetView now checks that pi's prompt editor is the focused component before touching any key (pi's editor is an `Editor` subclass; every dialog is not), and an in-progress list navigation is dropped the moment something else takes focus. Unknowable focus errs toward the editor, so list activation keeps working; non-`Editor` custom editor components simply flow keys through untouched.
+- **Widget and viewer lines keep their dim styling after nested color annotations** ([#136](https://github.com/tintinweb/pi-subagents/pull/136) — thanks [@xz-dev](https://github.com/xz-dev)). pi themes close a foreground color with a bare `\x1b[39m`, so the threshold-colored context-fill percent inside `formatSessionTokens` (warning at ≥70%, error at ≥85%) also terminated the surrounding dim style — the closing `)` and any following text on the widget's running-agent line and the conversation-viewer header bled to the terminal's default color. A small `fgPreservingNestedStyles` helper re-opens the outer color after each nested reset (derived from the theme itself, so it stays theme-agnostic and is a no-op under `NO_COLOR`).
+- **`get_subagent_result` with `wait: true` now waits for queued agents** ([#127](https://github.com/tintinweb/pi-subagents/pull/127) — thanks [@benrhodeland](https://github.com/benrhodeland)). A background agent past the concurrency ceiling sits in the queue with no run promise yet, so the wait path (gated on `status === "running" && record.promise`) skipped it and returned `No output.` immediately — the orchestrator read a queued agent as "finished with nothing". The wait now also covers `queued`: it polls until the queue starts (or stops) the agent, then awaits the run like any running agent. Most visible with parallel background spawns in one message, where spawns beyond `maxConcurrent` (default 4) queue.
+- **Subagent activations no longer clobber the `Symbol.for("pi-subagents:manager")` registry** ([#128](https://github.com/tintinweb/pi-subagents/pull/128) — thanks [@benrhodeland](https://github.com/benrhodeland)). Child sessions re-activate the extension in the same process (`session.bindExtensions` in the agent runner), and every activation overwrote the global registry slot — pointing cross-package consumers (RPC extensions, headless hosts) at a short-lived child manager whose shutdown could then delete the root session's entry entirely. The first activation now claims the slot, child activations leave it alone, and only the owning activation releases it (identity-checked) on shutdown.
+
+## [0.13.0] - 2026-06-30
+
+### Added
+- **Steer a running agent from the conversation viewer.** The live conversation overlay (FleetView's `Enter`, or `/agents → Running agents`) now lets you redirect an agent without leaving the view: press `Enter` to open an inline composer, type a message, `Enter` to send — `Esc` or an empty submit just returns. The message is delivered through the same path as the `steer_subagent` tool (`AgentManager.steer()` → `session.steer`, or queued onto `pendingSteers` if the session isn't ready yet), so it appears as a user message and redirects the agent after its current tool execution; feedback is the message showing up in the live transcript you're already watching. The affordance is offered only while the agent is still running/queued (mirrors the `x`/stop affordance), and the viewer stays modal — every existing shortcut (`x`/`x` stop, arrows/`j`/`k` scroll, `q` close) is untouched, and `Enter` was previously inert here so nothing is overridden. The idle footer was reorganized to actions-left / navigation-right so the full scroll-key hint (`↑↓ scroll · PgUp/PgDn or Shift+↑↓ · Esc close`) stays fully visible down to 80-column terminals; the `N lines · %` readout returns on the left whenever there's spare width.
+- **Forgiving model resolution for agent `model:` pins.** `resolveModel` now tolerates cosmetic id variations and falls back across providers, so a qualified or date-pinned config resolves widely instead of silently dropping to the parent model: `.` and `-` are treated as equivalent in version numbers (`claude-haiku-4.5` ≡ `claude-haiku-4-5`); a trailing `-YYYYMMDD` date stamp is optional (`anthropic/claude-haiku-4-5-20251001` matches an undated registry id); and a `provider/modelId` that isn't available under the named provider retries the bare id against every provider (the named provider is still preferred when present). An exact match still wins over a tolerant one, so dated snapshots aren't conflated — the precedence is exact → fuzzy-under-named-provider → same model under any provider → unavailable.
+- **`/agents → Agent types` shows each agent's full description and what its model resolves to.** The list now renders with `SettingsList` (like the Settings menu) instead of a flat selector: the highlighted agent's full description shows on its own line below the list, so long descriptions no longer wrap and push the agent names out of alignment. The model column shows the configured model, flags it `(unavailable, fallback: inherit)` when it can't be resolved against the registry (it would silently inherit the parent model at runtime), and surfaces the resolved target `(→ provider/id)` when resolution lands on a different provider or version than configured.
+- **`widgetMode` setting — control what the above-editor widget shows: `all` / `background` / `off`** ([#117](https://github.com/tintinweb/pi-subagents/pull/117) — thanks [@Alan-TheGentleman](https://github.com/Alan-TheGentleman); fixes [#118](https://github.com/tintinweb/pi-subagents/issues/118)). Foreground agents already render inline as the `Agent` tool result, so also listing them in the persistent widget double-rendered the same run (most visible in tmux/zellij). `widgetMode` (via `/agents → Settings → Widget`, or `subagents.json`) selects the widget's contents: `all` shows every agent (the previous behavior), `background` shows background/queued/scheduled/RPC runs but hides foreground, and `off` hides the widget entirely (agents still appear inline and in FleetView). Applied live — toggling refreshes immediately. Filtering keys off a new tri-state `AgentRecord.isBackground` captured at spawn (`true` = background, `false` = foreground, `undefined` = undeclared, e.g. a cross-extension RPC spawn), independent of the UI-only `invocation` snapshot — so scheduler- and RPC-spawned background agents stay visible instead of vanishing; only runs *known* to be foreground are dropped. The running-status line was also refactored from one multiline `Text` into two component rows, so rapid partial updates replace cleanly instead of leaving stale rows behind in terminal multiplexers — identical on-screen output, no more ghost lines.
+
+### Changed
+- **The built-in `Explore` agent's model pin is now `anthropic/claude-haiku-4-5`** (was `…-4-5-20251001`). The stale date stamp is dropped to match the `anthropic/claude-sonnet-4-6` / `anthropic/claude-opus-4-6` convention used by the create-agent wizard; combined with the forgiving resolution above, `Explore` now picks up its fast/cheap model across registry variations (dated, undated, dotted, or under a non-`anthropic` provider) instead of silently falling back to the parent model.
+- **The above-editor widget now hides foreground agents by default** (`widgetMode` defaults to `background`). Foreground runs still render inline as the `Agent` tool result (and in FleetView); set `/agents → Settings → Widget` to `all` to restore the previous show-everything view, or `off` to hide the widget. Existing `subagents.json` files load unchanged (absent → `background`).
+
+## [0.12.0] - 2026-06-24
+
+### Added
+- **FleetView — a Claude Code-style subagent navigator below the editor.** A persistent, navigable list of `main` + every active subagent renders beneath the editor whenever agents are running — **auto-shown, no keypress needed** — mirroring Claude Code's bottom fleet bar: `⏺`/`◯` selection markers, agent type + description, right-aligned `elapsed · ↓ tokens`, and a `↓ N more` overflow once past five rows. Press `↓` (or `←`) at an **empty prompt** to move focus into the list, `↑`/`↓` to select, `Enter` to open the selected agent's live, auto-updating conversation overlay, and `Esc` (or `↑` above `main`) to return to the prompt. Implemented as a `belowEditor` widget with all key handling routed through `onTerminalInput` (which fires before the editor); it only captures arrow keys at an empty prompt — and acts on key-**press** only (kitty-protocol release events are ignored, otherwise each tap moved twice) — so typing, history, and cursor movement are untouched. Rows are ordered **earliest-launched first**; only openable agents (those with a session) are shown, so pending/queued agents appear once they start and `Enter` never dead-ends; **finished agents linger ~4s** before dropping out (their elapsed freezes at completion); and a viewer **stays open through its agent's completion** so the final output remains readable. Selection follows the viewed agent by id, so closing a viewer returns you to the same agent even if the list reordered while it was open. Every rendered line is width-clamped — the narrow-terminal crash/flicker class previously fixed in v0.2.7 and [#7](https://github.com/tintinweb/pi-subagents/issues/7). Toggle via `/agents → Settings → Fleet view` (default on; pure-UI, so no LLM-context cost).
+
+## [0.11.0] - 2026-06-23
+
+### Added
+- **`persist_session` / `session_dir` agent frontmatter — persist a subagent as a real pi session** ([#111](https://github.com/tintinweb/pi-subagents/pull/111) — thanks [@codesoda](https://github.com/codesoda)). `persist_session: true` runs the subagent through `SessionManager.create(...)` instead of `SessionManager.inMemory(...)`, so its full transcript is written to pi's normal session location (`~/.pi/agent/sessions`) — inspectable and resumable after the fact, like a top-level session — rather than living in memory only. Useful for long-running, multi-round orchestrations (plan → review → implement → verify) where each subagent's conversation is worth keeping. `session_dir` optionally overrides where the persisted session is written (absolute, `~`, or agent-cwd-relative path); omitted, persistence follows pi's own precedence — `PI_CODING_AGENT_SESSION_DIR`, then the settings manager's `getSessionDir()`, then pi's default location. Both default off/unset, so existing agents are unchanged: the in-memory path is byte-identical to before, and the sidechain `.output` transcript is still written either way.
+
+## [0.10.4] - 2026-06-23
+
+### Fixed
+- **Background agent records lost before result is read** ([#108](https://github.com/tintinweb/pi-subagents/issues/108) — thanks [@philipmw](https://github.com/philipmw)). On session switch or `/new`/`/resume`, `clearCompleted()` removed completed agent records regardless of whether the LLM had retrieved the result, causing `get_subagent_result` to return "Agent not found" for agents that had finished but hadn't been checked yet. `clearCompleted()` now accepts a `skipUnconsumed` flag; session event handlers pass `true`, so records with `resultConsumed=false` are preserved across session transitions. The 10-minute cleanup timer handles eventual eviction. Note: a full session shutdown (`session_shutdown`) calls `dispose()` which clears all records unconditionally — that path is not affected by this fix.
+
+### Added
+- **Foreground agent lifecycle completion and conversation logging** ([#105](https://github.com/tintinweb/pi-subagents/pull/105) — thanks [@benrhodeland](https://github.com/benrhodeland)). Two gaps closed: (1) **`onComplete` now fires for foreground agents**, emitting `subagents:completed` / `subagents:failed` lifecycle events and writing a `subagents:record` entry to the parent JSONL — previously only background agents emitted these, leaving cross-extension observers with an orphaned `subagents:started` event and no matching completion. `resultConsumed` is pre-set so the callback skips notifications (the result is returned inline); no change to the tool's return value. (2) **Foreground agent conversations are now streamed to `.output` files** (same `.pi/output/agent-<id>.jsonl` path as background agents) — inline subagent transcripts were previously permanently lost after `spawnAndWait` returned.
+
+## [0.10.3] - 2026-06-12
+
+### Added
+- **`SpawnOptions.cwd` — spawn a subagent in a different working directory** ([#96](https://github.com/tintinweb/pi-subagents/issues/96) — thanks [@madeleineostoja](https://github.com/madeleineostoja)). For RPC/programmatic callers (not exposed on the `Agent` tool — the LLM-visible surface is unchanged). The agent's tools operate in the target directory and the prompt's environment block describes it, but **`.pi` config keeps loading from the parent session's project** (new `RunOptions.configCwd` split): the target's `.pi` extensions never execute, and its agents/skills/settings/memory are not picked up — spawning into an untrusted directory sends a worker there with the parent's toolbox, rather than "opening pi there." Composes with `isolation: "worktree"`: the worktree is created *from* the target directory's repo, the agent works at the equivalent subdirectory inside the copy (a monorepo-package cwd keeps its scoping instead of silently widening to the repo root — new `WorktreeInfo.workPath`), and the resulting `pi-agent-*` branch lands in that repo, with the completion message naming it so the orchestrator merges in the right place. Validation is strict, typed, and early — non-strings, relative paths, nonexistent paths, and files all throw curated errors at `spawn()` (before queueing) and are re-checked at queue drain, surfacing as RPC error envelopes (`null` is treated as unset). On dispose, worktree registrations are pruned in every repo that received one; only a hard crash can leave a stale entry (then: `git worktree prune` in the target repo).
+
+## [0.10.2] - 2026-06-10
+
+### Added
+- **`exclude_extensions:` agent frontmatter — extension denylist for subagents** ([#94](https://github.com/tintinweb/pi-subagents/issues/94) — thanks [@ramhaidar](https://github.com/ramhaidar)). Applied after the `extensions:` include set; exclude wins, including over `tools: ext:` selectors (an excluded extension never loads, so its `ext:` reference becomes the usual orphan warning). The key use case: `extensions: true` + `exclude_extensions: pi-notify` — all extensions except a noisy one, without hand-maintaining an allowlist. Plain canonical names only (case-insensitive); paths, `*`, and unmatched names fire `extension-error:…` warnings (warn-not-abort, as with `extensions:` mismatches); `extensions: false` + an exclude warns that the exclude has no effect. **Not a sandbox:** excluded extensions' factory code still executes once during loading — exclusion suppresses handler binding and tool registration, not load-time side effects. The negation syntax `extensions: ["*", "!name"]` was deliberately rejected: an unquoted `!name` is a YAML tag and silently mis-parses.
+- **`toolDescriptionMode` setting — opt-in compact Agent tool description** ([#91](https://github.com/tintinweb/pi-subagents/issues/91) — thanks [@tiberiuichim](https://github.com/tiberiuichim)). The full Claude Code-style description costs ~1,400 tokens with the default agents and grows with each custom agent (the type list embeds full agent descriptions) — significant for small/local models. `toolDescriptionMode: "compact"` (via `/agents → Settings → Tool description` or `subagents.json`) swaps in a ~75% smaller description: one-line type list (first sentence of each agent description), terse usage notes, per-option details left to the parameter descriptions. Default `"full"` is byte-identical to before — the rich description's guardrails are deliberately load-bearing and stay the default. A third mode, `"custom"`, registers a user-authored description from `<cwd>/.pi/agent-tool-description.md` (project) or `<agentDir>/agent-tool-description.md` (global; project wins), with `{{placeholder}}` substitution keeping the dynamic parts live — `{{typeList}}`, `{{compactTypeList}}`, `{{agentDir}}`, `{{scheduleGuideline}}` — so a hand-written description can't drift out of sync with the registered agents (the advertised-vs-spawnable staleness [#92](https://github.com/tintinweb/pi-subagents/issues/92) just fixed). Unknown placeholders are left verbatim with a stderr warning; a missing/empty file falls back to `"full"`. Only the prose is customizable — the parameter schema stays code-owned. A ready-made starting point ships at `examples/agent-tool-description.md`, reproducing the full description exactly (CI-enforced byte-identical, so the example can't go stale). Like `schedulingEnabled`, the mode is read at tool registration — changing it applies on the next pi session. The issue's original ask (move the description to a skill) isn't possible in pi: tools must register their description in the tool schema for the model to call them; skills are lazily-loaded instructions, not tool registrations.
+
+### Fixed
+- **Conversation viewer honors custom `tui.select.*` keybindings** ([#99](https://github.com/tintinweb/pi-subagents/issues/99) — thanks [@owenniles](https://github.com/owenniles)). The viewer hardcoded its scroll keys and discarded the `KeybindingsManager` pi injects into `ctx.ui.custom()`, so user bindings (e.g. emacs-style `ctrl+p`/`ctrl+n` on `tui.select.up`/`down`) worked in pi core selectors but not here. Scrolling now resolves through `tui.select.up`/`down`/`pageUp`/`pageDown`; the viewer-specific `k`/`j` and `shift+arrow` aliases still work alongside, and behavior without custom bindings is unchanged (the `tui.select.*` defaults are the previously hardcoded keys).
+
+## [0.10.1] - 2026-06-10
+
+### Added
+- **`disableDefaultAgents` setting** ([#92](https://github.com/tintinweb/pi-subagents/issues/92) — thanks [@TommyC81](https://github.com/TommyC81)). When on, the three built-in default agents (general-purpose, Explore, Plan) are skipped at registration — only user-defined `.pi/agents/*.md` agents are advertised and spawnable. User agents are unaffected, including ones overriding a default by name; with no user agents defined, spawning falls back to the hardcoded generic config. Off by default; toggle via `/agents → Settings → Disable defaults` or `disableDefaultAgents` in `subagents.json`. Like `schedulingEnabled`, the Agent tool's type list reflects the change on the next pi session (tool schema is registered at startup).
+
+### Fixed
+- **Agents with `enabled: false` are no longer advertised in the Agent tool description** ([#92](https://github.com/tintinweb/pi-subagents/issues/92)). `buildTypeListText` listed every registered agent, including disabled ones that `isValidType` then refused to spawn — the LLM was offered types it could never use. The type list now filters through `getAvailableTypes()`, matching the `subagent_type` parameter description.
+- **Agent tool type list no longer built from pre-settings state.** The description text was captured into a variable before persisted settings were applied; it's now built at tool-registration time, after `subagents:settings_loaded`.
+- **Committed work from `isolation: "worktree"` subagents is now preserved** ([#68](https://github.com/tintinweb/pi-subagents/pull/68) — thanks [@rylwin](https://github.com/rylwin)). If an isolated subagent creates its own commit, cleanup previously saw a clean `git status`, treated it as "no changes", and removed the detached worktree — silently discarding the commits. The worktree now records its base SHA at creation, and cleanup creates the expected `pi-agent-*` branch whenever HEAD moved past it, even with a clean tree.
+- **Automatic commits in isolated worktrees skip local Git hooks** ([#68](https://github.com/tintinweb/pi-subagents/pull/68)). The preservation commit at worktree cleanup now uses `--no-verify`, so a failing local pre-commit hook can't abort it (which previously surfaced as `hasChanges: false` — the agent's work lost).
+
+## [0.10.0] - 2026-06-01
+
+> **⚠️ Breaking: `extensions:` and `tools:` in agent frontmatter semantics changed.** The `extensions: [...]` array now selects which extensions *load*, not which tool names surface. Agents that previously used the array form will behave differently — see migration below. The `tools:` field also grew new `ext:` and `*` selector forms; existing `tools:` values without these selectors are unchanged.
+> - `extensions: [...]` is now an **extension allowlist applied at load time**, not a tool-name substring filter. Each entry is an extension *name*, a *path* (absolute, `~/`-prefixed, or relative-to-cwd), or `"*"`. **Migration:** `extensions: ["mcp"]` previously loaded *every* extension and then surfaced only tools whose names contained `mcp`. To keep all extensions, use `extensions: true` or `extensions: "*"`. To narrow, name the extensions or point at their files. `"*"` composes: `extensions: "*, /abs/path/extra-ext.ts"` is all defaults plus one path-loaded.
+> - `tools:` now accepts `ext:` selectors and `*`. **Gotcha:** a `tools:` value containing **only** `ext:` entries yields **zero built-in tools** — add `*` (e.g. `tools: "*, ext:foo"`) to keep the built-ins. And **any** `ext:` entry flips extension tools to an explicit allowlist (non-listed extensions stay loaded but expose no tools). A `tools:` with no `ext:` entries is unchanged.
+> - **`extensions:` is the sole loading authority.** `ext:foo` only narrows tool *exposure* within the already-loaded set; it cannot pull an extension in. `extensions: false` + `tools: "ext:foo"` loads nothing and warns that `ext:foo` is orphaned. To expose one extension's tool from an otherwise-narrow agent, name the extension explicitly: `extensions: [foo]` + `tools: "ext:foo/bar"`.
+
+> **⚠️ Heads-up — widget glyphs changed (visual only):** turn count now renders as `↻N` (was `⟳N`) and compaction count as `⇊N` (was `↻N`). Fix for [#84](https://github.com/tintinweb/pi-subagents/issues/84) — `⟳` overflowed its cell in common monospace fonts. **No API, behavior, or output-format changes — only the glyphs.** If you grep agent stats lines or pipe widget output through scripts, update your patterns: `⟳` → `↻` (turns), `↻` → `⇊` (compactions).
+
+### Added
+- **`tools:` accepts `ext:` extension-tool selectors and a `*` built-in wildcard.** Entries in the `tools:` CSV are now partitioned: plain names are the built-in allowlist (unchanged); `*` expands to all built-ins (symmetric with `extensions: "*"`); `ext:foo` / `ext:foo/bar` select extension tools. **Any `ext:` entry flips extension tools to an explicit allowlist** — only tools named by an `ext:` selector reach the LLM, and extensions not named stay loaded (their `session_start` etc. handlers still fire) but expose no tools. `ext:foo` exposes all of `foo`'s tools; `ext:foo/bar` narrows `foo` to just `bar` (multiple `ext:foo/x` entries union; a bare `ext:foo` alongside `ext:foo/bar` lets narrowing win). `ext:` is **narrowing-only** — it does not load extensions. `extensions:` remains the sole loading authority; an `ext:foo` against an extension that `extensions:` excluded (including `extensions: false`) is orphaned and warns via `onToolActivity` (`extension-error:ext:foo …`). With no `ext:` entry present, extension-tool behaviour is unchanged. `ext:` is name-only (matched by canonical name, so it composes with path-loaded extensions); paths still go in `extensions:`. `isolated: true` ignores `ext:` selectors.
+- **Stop a running agent from the conversation viewer.** In `/agents → Running agents`, select an agent and press `x` (then `x` again to confirm) to abort it. The two-press guard prevents an accidental kill; the footer shows `x stop` → `x again to STOP`. This works for **background** agents — which a global `Esc` can't unambiguously target — while `Esc` still stops a blocking foreground `Agent` call. Wires the existing `AgentManager.abort(id)` to the viewer (`onStop` callback); the affordance only appears while the agent is `running`/`queued`. Addresses the common "how do I stop a background subagent?" question ([#88](https://github.com/tintinweb/pi-subagents/issues/88)).
+
+### Changed
+- **BREAKING: `extensions: [...]` in agent frontmatter is now a loader-level extension allowlist, not a tool-name filter.** Previously a `string[]` value filtered exposed *tool names* by substring (`t.startsWith(e) || t.includes(e)`) while every discovered extension still loaded and ran its handlers. Now each entry selects an *extension*: a bare name keeps the matching default-discovered extension, a path (absolute, `~/`-prefixed, or relative-to-cwd) loads that extension fresh via `additionalExtensionPaths`, and `"*"` keeps all default-discovered extensions. Entries compose — `["*", "/abs/foo.ts"]` is all defaults plus foo, `["mcp", "/abs/foo.ts"]` is just those two. Excluded extensions no longer bind handlers or register tools (their factory still runs once during `reload()`). Directory extensions (`foo/index.ts`) match by the parent directory name. **Extension names match case-insensitively** (`extensions: [Mcp]` resolves the same as `[mcp]`); tool names within `ext:foo/bar` selectors remain case-sensitive (they're matched against pi-mono's registered identifiers). Unmatched names and failed paths warn via `onToolActivity` but do not abort the subagent (see the heads-up above for migration).
+- **Non-normal subagent outcomes are now stated explicitly in the text delivered to the parent**, so the orchestrator can't mistake a stopped/incomplete agent for a completed one. The foreground `Agent` result, `get_subagent_result`, and the `<task-notification>` summary all append a clear note for `stopped` (user abort) → `(STOPPED BY THE USER before completion — output is partial; the task was NOT finished)`, `aborted` (turn limit) → `(aborted — hit the turn limit before completion; output may be incomplete)`, and `steered` → `(wrapped up at the turn limit — output may be partial)`. `stopped` (human intervention) is kept distinct from `aborted` (turn-budget cutoff); a clean `completed` adds no note. Extracted as `getStatusNote` in `src/status-note.ts`.
+- **`BUILTIN_TOOL_NAMES` is derived from pi's tool factories** (`createCodingTools` + `createReadOnlyTools`) rather than a hardcoded list, so the built-in set tracks pi-mono automatically. Internal; no behavior change (the resolved set is the same seven names).
+
+### Fixed
+- **Turn-count glyph in the agent widget no longer overflows its monospace cell** ([#84](https://github.com/tintinweb/pi-subagents/issues/84) — thanks [@linozen](https://github.com/linozen)). `formatTurns` used `⟳` (U+27F3 CLOCKWISE GAPPED CIRCLE ARROW) from the Miscellaneous Mathematical Symbols-A block, where common monospace fonts (Iosevka Nerd Font Mono, Menlo, SF Mono, JetBrains Mono) draw the glyph visually wider than one cell despite its Neutral East Asian Width — making the next character (the digit) overlap the glyph. Replaced with `↻` (U+21BB CLOCKWISE OPEN CIRCLE ARROW) from the standard Arrows block, which renders cleanly at one cell in those fonts. To avoid colliding with the existing compaction indicator (which previously also used `↻`), the compaction glyph moves to `⇊` (U+21CA DOWNWARDS PAIRED ARROWS) — same Arrows block, also single-cell, visually distinct. Widget vocabulary now reads: `↻5≤30` for turns, `⇊2` for compactions. Pi UI consumers / scripts grepping for the glyph in stats lines must update.
+- **`tools: none` now actually yields zero built-in tools.** `getToolNamesForType` treated an explicit empty `builtinToolNames` (`[]`, produced by `tools: none`) as "unspecified" and fell back to all 7 built-ins. It now distinguishes an omitted field (`undefined` → all built-ins, for default agents) from an explicit empty list (`[]` → zero), consistent with `getConfig`. Same fix makes `tools:` values containing only `ext:` selectors yield zero built-ins as documented.
+- **`tools:` typos no longer silently break tool-calling** ([#75](https://github.com/tintinweb/pi-subagents/issues/75)). Two parts: (a) `all` was previously parsed as a literal tool name, producing a one-element allowlist of the non-existent tool `"all"` — the model then returned an empty response or emitted raw XML tool calls, all with `status: completed` and no error. `parseToolsField` now treats `all` (case-insensitive) as an alias for the `*` wildcard, both standalone and inside a CSV. (b) Plain entries in `tools:` are expected to be built-in names (extension tools route through `ext:`), so an unknown name there is unambiguously a typo. `runAgent` now emits a `tools-error:tool "X" requested by agent "Y" is not a known built-in` event via `onToolActivity` for each unrecognized plain entry — same surfacing channel as the existing `extension-error:` warnings.
+- **Subagents with `extensions: true` now actually expose extension-registered tools (MCP, etc.)** ([#47](https://github.com/tintinweb/pi-subagents/issues/47)). `runAgent` previously passed only the built-in tool names as the `tools:` allowlist to `createAgentSession`, so pi-mono's `allowedToolNames` gate rejected every extension-registered tool at registration — `extensions: true` agents silently got only the 7 built-ins. `runAgent` now enumerates extension tool names from the resource loader after `reload()` and builds the full master allowlist (built-ins + permitted extension tools), so pi-mono's gate admits them from the first instant of the session. `disallowedTools` and the internal `Agent`/`get_subagent_result`/`steer_subagent` exclusions are applied uniformly to built-in and extension tools at construction — no post-construction `setActiveToolsByName` narrowing.
+- **Append-mode subagents no longer defeat the LLM's KV cache** ([#73](https://github.com/tintinweb/pi-subagents/pull/73) — reported by [@jeffutter](https://github.com/jeffutter)). The assembled child prompt placed the per-spawn-varying `<active_agent>` tag and `# Environment` block *before* the ~8k-token inherited parent prompt, and wrapped the parent prompt in `<inherited_system_prompt>` tags. Because KV caches key on a byte-identical prefix, every subagent spawn reprocessed all ~8k shared tokens from scratch (~40s on slower hardware). The parent prompt is now emitted **verbatim at the start** of the prompt (wrapper dropped), so it forms an identical, cacheable prefix with the parent session and across every spawn; the static `<sub_agent_context>` bridge follows, then the varying `<active_agent>` tag and env block. `replace` mode is unchanged (it inherits no parent prefix). The `<active_agent>` tag stays present and is parsed position-independently, so downstream permission resolution is unaffected. Mirrors the fix in [gotgenes/pi-packages#180](https://github.com/gotgenes/pi-packages/issues/180).
+
+## [0.9.1] - 2026-05-30
+
+### Added
+- **`Agent`, `get_subagent_result`, and `steer_subagent` now surface in pi's default system prompt** ([#87](https://github.com/tintinweb/pi-subagents/pull/87) — thanks [@that-yolanda](https://github.com/that-yolanda)). Adds `promptSnippet` to all three (a line in the prompt's `Available tools:` section) and `promptGuidelines` to `Agent` (bullets in `Guidelines:`). The tools were always callable via the tool-call API; this only adds system-prompt reinforcement for prompt-following models. No schema or tool-call changes.
+
+## [0.9.0] - 2026-05-30
+
+> **Heads-up — orchestrator behavior may shift.** This release substantially rewrites the `Agent` tool description and the three default-agent descriptions (`general-purpose`, `Explore`, `Plan`) to mirror Claude Code's upstream wording. No API, schema, or tool-call shape changes — purely a prompt-engineering shift, but a load-bearing one:
+> - **Agent selection may drift.** The new agent descriptions carry richer positive ("Use it to …") and negative ("Do NOT use it for …") guidance plus search-breadth hints for `Explore` (`"quick"` / `"medium"` / `"very thorough"`). For ambiguous tasks where the orchestrator previously picked one default agent, it may now pick another — typically more correctly, but the choice may differ from prior releases.
+> - **Subagent briefings will skew longer and more contextual.** The restored upstream guardrails and the new `## Writing the prompt` section actively coach "smart colleague who just walked into the room"-style prompts. Expect more context, more constraint, more upfront framing in the `prompt:` field the orchestrator passes to subagents.
+> - **Parallel/background patterns more strongly enforced.** The merged bullet on parallel execution now explicitly says `run_in_background: true` is required on each tool call for actual concurrency, and that the orchestrator MUST send a single message with multiple tool uses when the user says "in parallel." Workflows relying on sequential-foreground default behavior are unaffected.
+> - If you have tests or workflows that depend on the prior agent-selection or briefing behavior, pin to a v0.7.x release.
+
+### Added
+- **`scopeModels` setting — opt-in subagent model-scope enforcement** (off by default). New setting toggleable via `/agents → Settings → Scope models`. When enabled, the *effective* model of each subagent spawn is validated against `enabledModels` from pi's settings (which pi manages via its own `/scoped-models` UI; pi-subagents only reads it). **Both pi settings files are honored**: global `<agentDir>/settings.json` plus project-local `<cwd>/.pi/settings.json`, with project overriding global — mirrors pi's `SettingsManager` deep-merge and our own `subagents.json` precedence. Out-of-scope handling depends on source: caller-supplied via `Agent({ model: "..." })` → hard error to the orchestrator with the allowed list; frontmatter-pinned or parent-inherited → warning toast + the agent runs anyway (preserves "frontmatter is authoritative" guarantee from v0.5.1; `scopeModels` is a guardrail against runtime LLM choices, not user-level config). Limitation: only exact `provider/modelId` entries in `enabledModels` are honored — globs (`*sonnet*`), bare model IDs, and `:thinking` suffixes that pi itself supports are silently dropped here. Matches pi's `/scoped-models` picker output, so the limitation is invisible to UI users.
+
+### Changed
+- **`Agent` tool prompt restructured to mirror Claude Code's upstream Agent tool description format.** Section headings now match upstream (`## When not to use`, `## Usage notes`, `## Writing the prompt`); the auto-generated agent list renders as a flat list (no `Default agents:` / `Custom agents:` sub-headers) with a per-agent `(Tools: …)` suffix derived from each agent's `builtinToolNames` (or `*` when the agent has the full built-in set). Restored upstream's load-bearing guardrails that were missing or compressed in the old prompt: "result is not visible to the user → summarize", "trust but verify", "fresh agent / self-contained prompt" on resume, "tell the agent whether to write code or do research", "use proactively when the description says so", "MUST send a single message for parallel", and the worktree auto-cleanup behavior detail. The three redundant "Use Explore / Plan / general-purpose for …" shorthand bullets were dropped — the agent descriptions themselves now carry the canonical (and richer) selection guidance. Upstream's two `<example>` blocks at the end of "Writing the prompt" are also intentionally omitted: the per-orchestrator-turn token cost is recurring, the abstract guidance + the now-rich agent descriptions cover the same pedagogical ground, and the examples embed Anthropic-specific `<thinking>` framing that doesn't generalize across pi-ai's provider surface (OpenAI, Bedrock, Gemini, Mistral, …). All pi-specific bullets (`resume`, `steer_subagent`, `model`, `thinking`, `inherit_context`, `isolation: "worktree"`, `${scheduleGuideline}`) preserved.
+- **Default agent descriptions (`general-purpose`, `Explore`, `Plan`) replaced with upstream Claude Code's verbatim wording.** Previously one-line labels (e.g. `"Fast codebase exploration agent (read-only)"`); now multi-sentence descriptions that include positive ("Use it to …") and negative ("Do NOT use it for …") guidance plus, for Explore, search-breadth hints (`"quick"` / `"medium"` / `"very thorough"`). The LLM-facing selection signal is now substantially stronger.
+- **`/agents → Eject` now emits YAML-safe `description:` frontmatter.** The new Explore description contains a `: ` colon-space pattern (the search-breadth hint) and embedded quote characters — emitting it raw would have produced malformed frontmatter that the `yaml` parser would mis-parse. `ejectAgent` now wraps the description with `JSON.stringify` (a valid YAML 1.2 double-quoted scalar), so any description string round-trips cleanly through eject → re-load. Latent bug: previously unreachable because old descriptions were YAML-plain-safe.
+- **`/agents → Settings` UI rewritten to inline-editable `SettingsList`.** Replaces the previous modal `ctx.ui.select` chain. All settings visible at once; `↑`/`↓` to navigate, `Space` to cycle preset values on numerics (`Max concurrency`, `Default max turns`, `Grace turns`), `Enter` to type a custom value, `Esc` to exit. Functionally equivalent — same fields, same valid ranges, same persistence behavior — but the interaction model is different. Users scripting against the old screen flow may notice.
+- **`.gitignore` additions.** Added `.pi/subagents.json` (project-local subagents settings — written by `/agents → Settings`, shouldn't be committed) plus pi-runtime working files (`progress.md`, `AGENTS.md`, `CLAUDE.md`). **Migration:** if you previously committed `.pi/subagents.json` to your repo, run `git rm --cached .pi/subagents.json` to untrack — gitignore only blocks new additions.
+
+## [0.8.0] - 2026-05-26
+
+> **⚠️ Breaking: peer dependencies moved from `@mariozechner/pi-*` to `@earendil-works/pi-*`.** The upstream Pi runtime relocated npm scopes on 2026-05-07; the `@mariozechner/pi-*` packages are deprecated. This release pins `@earendil-works/pi-{ai,coding-agent,tui}` at `>=0.74.0`. Hosts on the old scope must update their pi installation first (`pi update --self` handles the rename automatically) before installing this version.
+>
+> **Note on Node:** this release is tested against `@earendil-works/pi-coding-agent@latest` (currently `0.75.x`), which requires Node `>=22.19.0` because its bundled `undici` calls Node 22+ APIs. CI runs on Node 22. The peer range (`>=0.74.0`) technically also matches the upstream `legacy-node20` line (`0.74.x`, Node 20 compatible) and this extension contains no Node 22+ API calls of its own, but the legacy line is not exercised in CI — consumers pinning it do so at their own risk.
+
+### Changed
+- **Peer deps migrated from `@mariozechner/pi-*` to `@earendil-works/pi-*`** ([#76](https://github.com/tintinweb/pi-subagents/issues/76) — thanks [@SEHANTA](https://github.com/SEHANTA) for the report). On **2026-05-07** the upstream Pi runtime moved npm scopes — `@mariozechner/pi-coding-agent@0.73.1` was the final publish (now deprecated on npm), and `@earendil-works/pi-coding-agent@0.74.0` shipped 30 minutes later from the same monorepo (same author, same code). `peerDependencies` now target `@earendil-works/pi-{ai,coding-agent,tui}` at `>=0.74.0`, and all `src/**` and `test/**` imports are renamed to the new scope — pure rename, no API changes. Consumers pinning the new scope no longer hit the peer-dep conflict warnings reported in [#76](https://github.com/tintinweb/pi-subagents/issues/76).
+- **`ThinkingLevel` now imported from `@earendil-works/pi-ai` instead of `…/pi-agent-core`.** `src/types.ts` previously reached past the public API into `pi-agent-core` (an internal package), which only resolved because npm flat-hoisted it as a transitive of `pi-coding-agent` — under pnpm or strict-resolver setups the import failed (`TS2307: Cannot find module '@mariozechner/pi-agent-core'`). `pi-ai` re-exports `ThinkingLevel` from its public surface (`export * from "./types.ts"`), so the import goes through the documented entry point and no extra peer dep is needed.
+
+### Fixed
+- **`.pi/subagent-schedules/` is no longer created in every working directory.** `ScheduleStore`'s constructor previously ran `mkdirSync` unconditionally, so any session with scheduling enabled left an empty `.pi/subagent-schedules/` dir behind even when nothing was ever scheduled. Directory creation is now lazy — deferred to a new private `ensureDir()` invoked at the top of `withLock`, so the dir (and its `<sessionId>.json`) appear only when a job is actually persisted. Additionally, `update`/`remove` now short-circuit on an unknown id (in-memory `jobs.has(id)` check) before taking the lock, so no-op mutations never touch disk. Read-only use (`list`/`get`/`hasName`) and constructing the store never create the dir. Pre-existing leftover dirs are not cleaned up — remove them manually.
+
+## [0.7.3] - 2026-05-14
+
+### Added
+- **`<active_agent name="…"/>` tag prepended to every child system prompt** ([#73](https://github.com/tintinweb/pi-subagents/pull/73) — thanks [@chris-lasher](https://github.com/chris-lasher)). `buildAgentPrompt` now emits `<active_agent name="${config.name}"/>` as the first line of the assembled prompt in both `replace` and `append` modes, before the env block. Downstream extensions (e.g. permission/policy systems) can parse it from inside the child session to resolve per-agent policy. The tag uses the agent's `config.name` verbatim — no escaping or normalization — and does not couple this extension to any specific downstream consumer; ignoring it is harmless.
+
+### Changed
+- **Subagent sessions now get a stable, type-derived name with an id suffix for parallel spawns** ([#51](https://github.com/tintinweb/pi-subagents/pull/51) — thanks [@forcepushdev](https://github.com/forcepushdev)). `runAgent` calls `session.setSessionName(agentConfig?.name ?? type)`, and when the manager assigns an `agentId` (always, in production), the name is suffixed with an 8-char slice — e.g. `Explore#a1b2c3d4` — so concurrent spawns of the same agent type are distinguishable in the overlay instead of all collapsing onto the same bare name. Direct `runAgent` callers without an `agentId` (e.g. tests) get the bare name.
+
+### Fixed
+- **Cross-extension spawn RPC now accepts a string `options.model`** ([#59](https://github.com/tintinweb/pi-subagents/pull/59), fixes [#60](https://github.com/tintinweb/pi-subagents/issues/60)). Cross-extension callers (e.g. `@tintinweb/pi-tasks@>=0.4.3`'s `TaskExecute`) naturally forward `model` as a serializable `"provider/modelId"` string. Previously the spawn handler passed strings straight through to `runAgent()`, which expects a `Model` object — the spawned agent then crashed with `No API key found for undefined`. The handler now resolves strings via the same `resolveModel(ctx.modelRegistry)` path the scheduler uses; `Model` objects pass through unchanged. Unresolved strings surface the human-readable `Model not found: "…"` error instead of the auth-lookup crash. Thanks @any-victor.
+
+## [0.7.2] - 2026-05-12
+
+> **Heads-up — behavior changes in skill preloading:**
+> - **`.txt` and extensionless flat skill files are no longer loaded.** Only `<name>.md` flat files and `<name>/SKILL.md` directory skills resolve now. Rename any `<name>.txt` or extensionless skill files to `<name>.md`.
+
+### Added
+- **Pi-standard `<name>/SKILL.md` directory layout** is now discovered alongside flat `<name>.md` files. Top-level and nested matches both resolve via BFS — for skill `foo`, the loader checks `<root>/foo/SKILL.md`, then recursively descends looking for `*/.../foo/SKILL.md`. Recursion skips dotfile directories and `node_modules`; a directory that itself contains `SKILL.md` is treated as a single skill (Pi's "skills don't nest" rule).
+- **Five discovery roots**, checked in precedence order:
+  - `<cwd>/.pi/skills/` (project, Pi)
+  - `<cwd>/.agents/skills/` (project, [Agent Skills spec](https://agentskills.io/integrate-skills))
+  - `$PI_CODING_AGENT_DIR/skills/` — default `~/.pi/agent/skills/` (user, Pi)
+  - `~/.agents/skills/` (user, Agent Skills spec)
+  - `~/.pi/skills/` (legacy global, kept for backward compatibility)
+- **Symlink rejection broadened** to the new layouts: symlinked skill roots, nested skill directories, and `SKILL.md` files inside otherwise-real directories are all rejected (intentional deviation from Pi, which follows symlinks).
+- **Deterministic traversal order** — entries are sorted byte-order so collisions resolve identically across filesystems. Pi's iteration order is `readdirSync`-dependent.
+- **Resolved spawn args are now shown in the dedicated conversation viewer** ([#62](https://github.com/tintinweb/pi-subagents/issues/62)). Open `/subagent` → Running Agents → select an agent: a second header row displays the effective invocation — model override (when different from parent), `thinking: <level>`, `isolated`, `worktree`, `inherit context`, `background`, and `max turns: N`. Tags appear when the resolved value is notable (e.g. `isolated: true`), not just when the caller explicitly set it; `max turns` is the one exception and shows only when explicitly configured. Lets you verify the parent agent honored your spawn instructions without scrolling back through the chat. Snapshot stored on the new `AgentRecord.invocation` field. The same tag set is also surfaced on the `Agent` tool-call result render (which previously showed a narrower subset).
+- **`Shift+↑` / `Shift+↓` scroll a full page in the conversation viewer** — same behavior as `PgUp` / `PgDn`. Note: some terminal emulators intercept Shift+arrows for text selection or tab switching, in which case `PgUp`/`PgDn` remain available.
+
+### Changed
+- **`.txt` and extensionless flat skill files are no longer loaded.** Pi only supports `.md`; we now match. **Migration:** rename any `<name>.txt` / `<name>` skill files to `<name>.md`.
+- **Conversation viewer no longer fills the full screen.** The overlay is now capped at 70% of terminal height (90% width unchanged), and the viewer's internal viewport mirrors that cap so the footer/scroll indicator can't be clipped.
+
+## [0.7.1] - 2026-05-07
+
+> **Heads-up — behavior change:**
+> - `isolation: "worktree"` now fails loud (returns an error) instead of silently falling back to the main tree. Affects users running pi in a non-git directory or a fresh repo with no commits.
+
+### Changed
+- **`isolation: "worktree"` now fails loud instead of silently falling back.** Previously when `createWorktree` returned undefined (not a git repo, no commits yet, or `git worktree add` failed), the agent ran in the main `cwd` with a `[WARNING: ...]` block prepended to its prompt — visible only to the LLM, never surfaced to the caller. Now the failure throws a structured error that propagates back to the `Agent` tool response; no agent record is created. Failed scheduled fires are recorded as `lastStatus: "error"` with the reason in the `subagents:scheduled` error event. Queued background spawns whose worktree creation fails when they dequeue are marked terminal-error and don't block the rest of the queue.
+
+### Fixed
+
+- **Headless `pi --print` runs no longer hang or crash after background
+subagents complete.** Cleanup timers no longer keep the process alive, and
+stale completion notifications are treated as best-effort shutdown side
+effects.
+
+## [0.7.0] - 2026-05-04
+
+> **Heads-up — behavior changes:**
+> - `subagents:completed`/`failed` event `tokens.total` now excludes `cacheRead` (previously double-counted across turns) — see Fixed [#38].
+> - Cron `?` is now a wildcard (same as `*`), not "current time value" — affects Quartz-style expressions only.
+
+### Changed
+- **`@mariozechner/pi-{ai,coding-agent,tui}` moved to `peerDependencies` (`>=0.70.5`).** Avoids duplicate framework instances when the host loads this extension.
+- **`@sinclair/typebox` pinned from `latest` to `^0.34.49`** so installs are reproducible.
+- **`croner` bumped 8 → 10.** Heads-up: in cron strings, `?` now means wildcard (same as `*`) instead of "current time value" — affects Quartz-style expressions only.
+
+### Added
+- **Master switch for scheduling** — new `schedulingEnabled` setting (default `true`) under `/agents → Settings → Scheduling`. When set to `false`: the `schedule` parameter and its guideline are stripped from the `Agent` tool spec at registration (zero LLM-context cost), the scheduler does not bind to the session, the `/agents → Scheduled jobs` menu entry is hidden, and any in-flight scheduler is stopped immediately. The schema-level removal applies on next pi session; the runtime kill (menu, fire path) takes effect immediately. Persisted at `<cwd>/.pi/subagents.json`.
+- **Schedule subagent spawns** — the `Agent` tool now accepts an optional `schedule` parameter. When set, the spawn registers a job that fires later instead of running immediately. Three formats: 6-field cron (`"0 0 9 * * 1"` — 9am every Monday), interval (`"5m"`, `"1h"`), or one-shot (`"+10m"` or ISO timestamp). Returns the job ID. Schedules are session-scoped — they reset on `/new`, restore on `/resume` (mirrors the persistence model of pi-chonky-tasks). Storage at `<cwd>/.pi/subagent-schedules/<sessionId>.json`, with PID-based file locking + atomic temp+rename for concurrent-instance safety. **Result delivery is identical to today's background-spawn completions**: when the scheduled agent finishes, the existing `subagent-notification` followUp path emits the result to the conversation — no new delivery code, no new message types. **Concurrency**: scheduled fires bypass `maxConcurrent` so a 5-minute interval can't be deferred behind 4 long-running manual agents. **Management**: `/agents` → "Scheduled jobs" lists active jobs and lets you cancel any one of them. Creation is via the `Agent` tool only — no parallel manual-create wizard in this iteration. **Events**: `subagents:scheduled` ({ type: "added" | "removed" | "updated" | "fired" | "error", … }) and `subagents:scheduler_ready` for cross-extension consumers. **Restrictions**: `schedule` is incompatible with `inherit_context` (no parent at fire time) and `resume` (schedules create fresh agents); forces `run_in_background: true`. Scheduler engine mirrors `pi-cron-schedule` (`croner` for cron, `setInterval`/`setTimeout` for interval/once); past one-shot timestamps and invalid cron expressions are caught at create time.
+- **Context-window utilization indicator in the subagent overlay** — token count is now followed by a colored `(NN%)` showing how full the subagent's context is right now (`estimateContextTokens(messages) / model.contextWindow * 100`, sourced from upstream `contextUsage.percent`). Threshold colors: <70% dim, 70–85% warning, ≥85% error. Gracefully omitted when the model has no `contextWindow` declared, or right after compaction before the next assistant turn (`tokens` is `null` in that window). The same annotation slot also surfaces a compaction count `↻N` when the agent has compacted at least once — e.g. `12.3k token (84% · ↻3)` (percent + compactions joined with `·`), `12.3k token (↻1)` (compactions only, immediately post-compaction while percent is still null). The compaction glyph stays dim regardless; the percent's threshold color carries the urgency signal. Two live overlays get the annotations (running stats line; inspect-overlay header); post-completion notifications and result/event payloads only get the count (the indicator is no longer actionable once the agent is done).
+- **Token usage and context% exposed to the parent agent** at every interaction surface — `get_subagent_result` adds `Context: NN%` to its stats line; `steer_subagent` returns a `Current state: 12.3k token · 5 tool uses · context 72% full` line so the steering agent knows whether it has room before sending more context; `task-notification` XML adds `<context_percent>NN</context_percent>` (omitted when null). All plain-text, no ANSI codes — designed for LLM consumption, not human display.
+- **New `subagents:compacted` lifecycle event** fires when a subagent's session successfully compacts. Payload: `{ id, type, description, reason: "manual" | "threshold" | "overflow", tokensBefore, compactionCount }` — `tokensBefore` is upstream's pre-compaction context size estimate; `compactionCount` is the running total for this agent (also persisted on `AgentRecord.compactionCount` and surfaced in `get_subagent_result` / `steer_subagent` / `task-notification` when > 0). Aborted compactions don't fire. Routed through a new manager-level `onCompact` constructor callback, matching the existing `onStart` / `onComplete` pattern.
+
+### Fixed
+- **Subagent token count was inflated 5–15× and reset mid-run** ([#38](https://github.com/tintinweb/pi-subagents/issues/38)). Two distinct bugs in the same field. (1) Upstream `getSessionStats().tokens.total` sums per-turn `cacheRead` across every assistant message — but each turn's `cacheRead` is the *cumulative* cached prefix re-read on that one API call, so summing N turns counts the prefix N times (quadratic inflation, very visible on long sessions). (2) Even with that fixed, anything derived from `session.state.messages` resets at compaction because upstream replaces the array via `this.agent.state.messages = sessionContext.messages`. Fix replaces all six display readers with a lifetime accumulator (`AgentRecord.lifetimeUsage` and `AgentActivity.lifetimeUsage` — `{ input, output, cacheWrite }`) fed by a new `onAssistantUsage` callback dispatched from `message_end` events in both `runAgent` and `resumeAgent`. The accumulator is independent of `state.messages` mutation, so it survives compaction; total = input + output + cacheWrite by construction (cacheRead deliberately excluded — same prefix-double-counting reason). The `subagents:completed`/`failed` event payload's `tokens` field is now also lifetime-accumulated for `input`, `output`, and `total` together (was: `total` lifetime, `input`/`output` session-derived → inconsistent after compaction).
+- **ESC during a foreground `Agent` call now actually stops the subagent** ([#44](https://github.com/tintinweb/pi-subagents/pull/44) — thanks [@Zeng-Zer](https://github.com/Zeng-Zer)). Pi's interrupt path is `esc → agent.abort()` on the parent → `AbortSignal` delivered to every tool's `execute(toolCallId, params, signal, …)`, but the `Agent` tool dropped that signal on the floor: subagents ran on their own independent `AbortController` inside `AgentManager`, so the parent abort was invisible and the subagent kept running until natural completion or `max_turns`. Fix threads `signal` through `Agent.execute` → `manager.spawnAndWait()` → `SpawnOptions.signal`, and `AgentManager.startAgent()` now attaches an `{ once: true }` `"abort"` listener that calls `this.abort(id)` (which sets `status: "stopped"` and aborts the child controller). The listener is detached in both `.then` and `.catch` to avoid leaking on natural settle. **Scope:** foreground only — background agents intentionally outlive the parent tool call, so their spawn deliberately does not forward `signal`. Resume path (`AgentManager.resume()`) has the same blind spot and is tracked as a follow-up.
+
+## [0.6.3] - 2026-04-28
+
+### Fixed
+- **`run_in_background: true` (and `inherit_context`, `isolated`) silently ignored on default agents** ([#37](https://github.com/tintinweb/pi-subagents/issues/37) — thanks [@kylesnowschwartz](https://github.com/kylesnowschwartz) for the diagnosis). The three built-in defaults (`general-purpose`, `Explore`, `Plan`) baked `runInBackground: false`, `inheritContext: false`, and `isolated: false` into their configs. `resolveAgentInvocationConfig` uses `agentConfig?.field ?? params.field ?? false`, and `??` only falls through on `null`/`undefined` — so an explicit `false` from the agent config silently won over the caller's `true`. Calling `Agent({ subagent_type: "general-purpose", run_in_background: true })` returned the result inline instead of backgrounding, blocking the parent UI for the agent's full runtime. Fix drops the three lines from each default (and from the unreachable defensive fallback in `agent-runner.ts`) — the type already declared each as `field?: boolean` with JSDoc *"undefined = caller decides"*, so the runtime now matches the documented contract. **Behavior:** custom agents that explicitly set these fields in frontmatter still lock as before (the v0.5.1 "frontmatter is authoritative" guarantee is preserved); the fix only stops *defaults* from spuriously claiming an opinion on callsite-strategy fields they don't actually have. The unreachable fallback now spreads `DEFAULT_AGENTS.get("general-purpose")` instead of duplicating the config inline, so future drift is impossible.
+
+## [0.6.2] - 2026-04-28
+
+### Fixed
+- **`Agent` tool fails on Windows with `ENOENT` creating output directory** ([#27](https://github.com/tintinweb/pi-subagents/issues/27) — thanks [@sixnathan](https://github.com/sixnathan) for the diagnosis). The cwd-encoding regex in `output-file.ts` only handled POSIX `/` separators, so on Windows `cwd = "C:\\Users\\foo\\project"` survived unchanged and `path.join(tmpRoot, encoded, …)` produced an invalid nested-absolute path. Now extracts a small `encodeCwd()` helper that handles both `/` and `\\` separators, strips the Windows drive-letter prefix, and preserves UNC server/share segments. The `chmodSync(root, 0o700)` call is also wrapped in a try/catch that swallows errors only on Windows (where chmod is a no-op and can throw on some filesystems); on Unix the error still propagates so umask-defeating `0o700` enforcement is preserved.
+
+## [0.6.1] - 2026-04-25
+
+### Added
+- **Persistent `/agents` → Settings** ([#24](https://github.com/tintinweb/pi-subagents/issues/24)) — the four runtime tuning values (`maxConcurrent`, `defaultMaxTurns`, `graceTurns`, `defaultJoinMode`) now survive pi restarts via a two-file dual-scope model mirroring pi's own `SettingsManager`. Global `~/.pi/agent/subagents.json` provides machine-wide defaults (edit by hand; the menu never writes here); project `<cwd>/.pi/subagents.json` holds per-project overrides (written by `/agents` → Settings). Load merges both with project winning on conflicts. Invalid fields are silently dropped per field; malformed JSON emits a warning to stderr and falls back to defaults so startup always proceeds; write failures downgrade the settings toast to a warning with `(session only; failed to persist)` so changes aren't silently reverted on next restart.
+- **New lifecycle events** — `subagents:settings_loaded` (emitted once at extension init with the merged settings) and `subagents:settings_changed` (emitted on each `/agents` → Settings mutation with the new snapshot and a `persisted: boolean` flag so listeners can react to write failures).
+
+### Fixed
+- **`AGENTS.md` / `CLAUDE.md` / `APPEND_SYSTEM.md` no longer leak into sub-agent prompts** ([#26](https://github.com/tintinweb/pi-subagents/pull/26) — thanks [@mikeyobrien](https://github.com/mikeyobrien) for the diagnosis). Upstream `buildSystemPrompt()` re-appends `contextFiles` and `appendSystemPrompt` *after* our `systemPromptOverride` runs, which silently defeated `prompt_mode: replace` and `isolated: true` — parent project context (e.g. autoresearch-mode blocks) was bleeding into fresh `Explore` / custom sub-agents regardless of frontmatter. Fix uses upstream's `noContextFiles: true` flag (skips the load entirely, introduced in pi 0.68) plus `appendSystemPromptOverride: () => []` (no flag equivalent for append sources). **Behavior change:** subagents no longer implicitly inherit parent `AGENTS.md`/`CLAUDE.md`/`APPEND_SYSTEM.md`. To get parent project context into a subagent, use `prompt_mode: append` (parent's already-built system prompt flows in via `systemPromptOverride`), or `inherit_context: true` (parent conversation), or inline the content into the agent's own frontmatter.
+- **Custom agent discovery respects `PI_CODING_AGENT_DIR`** ([#35](https://github.com/tintinweb/pi-subagents/pull/35), closes [#23](https://github.com/tintinweb/pi-subagents/issues/23) — thanks [@Amolith](https://github.com/Amolith) for the diagnosis). Two remaining hardcoded `~/.pi/agent/agents/` paths in `custom-agents.ts` and `index.ts` bypassed the env var, so users who relocated their agent directory (e.g. via `PI_CODING_AGENT_DIR`) still had global agents loaded from the default location and help text referencing the wrong path. Both now use upstream `getAgentDir()`, consistent with `agent-runner.ts` and `settings.ts`; tilde expansion is handled by upstream.
+
+## [0.6.0] - 2026-04-24
+
+> **⚠️ Breaking: drops support for `pi` < 0.68.** The upstream `pi-coding-agent` package shipped breaking API changes in v0.68 (and further ones in v0.70). This release migrates to `^0.70.2` and is **not** backward-compatible with hosts on `pi` 0.62–0.67. Users on those versions must upgrade their `pi` installation (`npm install -g @mariozechner/pi-coding-agent@latest`) before updating this extension.
+
+### Changed
+- **Bumped peer `@mariozechner/pi-coding-agent` to `^0.70.2`** ([#28](https://github.com/tintinweb/pi-subagents/pull/28)) — crosses the v0.68 breaking-change line upstream. Specifically: tools are now passed as `string[]` (was `Tool[]`); `cwd`/`agentDir` are mandatory on `SettingsManager.create()` and `DefaultResourceLoader`; `session_switch` event renamed to `session_before_switch`; `ToolDefinition.params` widens to `unknown` under contextual typing, requiring `defineTool(...)`.
+- **Tool registrations wrapped with `defineTool(...)`** — preserves `TParams` inference so `execute` handlers get properly-typed `params` instead of `unknown`. Applies to the `Agent`, `get_subagent_result`, and `steer_subagent` tools.
+
+### Removed
+- **Cwd-bound tool factory registry** — the internal `TOOL_FACTORIES` closure table and `create{Bash,Edit,Read,Write,Grep,Find,Ls}Tool` imports are gone. Exported helpers renamed: `getToolsForType(type, cwd)` → `getToolNamesForType(type)`, `getMemoryTools(cwd, set)` → `getMemoryToolNames(set)`, `getReadOnlyMemoryTools(cwd, set)` → `getReadOnlyMemoryToolNames(set)` — all returning `string[]` instead of `Tool[]`. The host binds cwd when resolving tool names, so the extension no longer instantiates tools directly.
+
+### Fixed
+- **Subagent `SettingsManager` read wrong project settings in worktree mode** ([#30](https://github.com/tintinweb/pi-subagents/pull/30)) — `SettingsManager.create()` was called without arguments, defaulting `cwd` to `process.cwd()`. When the subagent's effective cwd differed (worktree isolation or explicit `cwd` override), its settings manager read `.pi/settings.json` from the parent's cwd rather than its own, diverging from the loader and session manager. Now passes `effectiveCwd` and `agentDir` explicitly, keeping all three managers consistent.
+
+## [0.5.2] - 2026-03-26
+
+### Fixed
+- **Extension `session_start` handlers now fire in subagent sessions** ([#20](https://github.com/tintinweb/pi-subagents/issues/20)) — `bindExtensions()` was never called on subagent sessions, so extensions that initialize state in `session_start` (e.g. loading credentials, setting up connections) silently failed at runtime. Tools appeared registered but were non-functional. Now calls `session.bindExtensions()` after tool filtering and before prompting, matching the lifecycle used by pi's interactive, print, and RPC modes. Also triggers `extendResourcesFromExtensions("startup")` so extension-provided skills and prompts are discovered.
+
+## [0.5.1] - 2026-03-24
+
+### Changed
+- **Agent config is authoritative** — frontmatter values for `model`, `thinking`, `max_turns`, `inherit_context`, `run_in_background`, `isolated`, and `isolation` now take precedence over `Agent` tool-call parameters. Tool-call params only fill fields the agent config leaves unspecified.
+- **`join_mode` is now a global setting only** — removed the per-call `join_mode` parameter from the `Agent` tool. Join behavior is configured via `/agents` → Settings → Join mode.
+- **`max_turns: 0` means unlimited** — agent files can now explicitly set `max_turns: 0` to lock unlimited turns. Previously `0` was silently clamped to `1`.
+
+### Fixed
+- **Final subagent text preserved from non-streaming providers** — agents using providers that return the final message without streaming `text_delta` events no longer return empty results. Falls back to extracting text from the completed session history.
+- **`effectiveMaxTurns` passed to spawn calls** — previously `params.max_turns` was passed raw to both foreground and background spawn, bypassing the agent config entirely.
+
+## [0.5.0] - 2026-03-22
+
+### Added
+- **RPC stop handler** — new `subagents:rpc:stop` event bus RPC allows other extensions to stop running subagents by agent ID. Returns structured error ("Agent not found") on failure.
+- **`abort` in `SpawnCapable` interface** — cross-extension RPC consumers can now stop agents, not just spawn them.
+- **Live turn counter** — all agents now show a live turn count in the widget, inline result, and completion notification. With a turn limit: `⟳5≤30` (5 of 30 turns). Without: `⟳5`. Updates in real time as turns progress via `onTurnEnd` callback.
+- **Biome linting** — added [Biome](https://biomejs.dev/) for correctness linting (unused imports, suspicious patterns). Style rules disabled. Run `npm run lint` to check, `npm run lint:fix` to auto-fix.
+- **CI workflow** — GitHub Actions runs lint, typecheck, and tests on push to master and PRs.
+- **Auto-trigger parent turn on background completion** — background agent completion notifications now use `triggerTurn: true`, automatically prompting the parent agent to process results instead of waiting for user input.
+
+### Changed
+- **Standardized RPC envelope** — cross-extension RPC handlers (`ping`, `spawn`, `stop`) now use a `handleRpc` wrapper that emits structured envelopes (`{ success: true, data }` / `{ success: false, error }`), matching pi-mono's `RpcResponse` convention.
+- **Protocol versioning via ping** — ping reply now includes `{ version: PROTOCOL_VERSION }` (currently v2). Callers can detect version mismatches and warn users to update.
+- **Default max turns is now unlimited** — subagents no longer have a 50-turn default cap. The default is unlimited (no turn limit), matching Claude Code's main loop behavior. Users can still set explicit limits per-agent via `max_turns` frontmatter or the Agent tool parameter, or globally via `/agents` → Settings (`0` = unlimited).
+- **Stale dist in published package** — added `prepublishOnly` hook to build fresh `dist/` on every `npm publish`.
+
+### Fixed
+- **Tool name display** — `getAgentConversation` now reads `ToolCall.name` (the correct property) instead of `toolName`, resolving `[Tool: unknown]` in conversation viewer and verbose output.
+- **Env test CI failure** — `detectEnv` test assumed a branch name exists, but CI checks out detached HEAD. Split into separate tests for repo detection and branch detection with a controlled temp repo.
+
+## [0.4.9] - 2026-03-18
+
+### Fixed
+- **Conversation viewer crash in narrow terminals** ([#7](https://github.com/tintinweb/pi-subagents/issues/7)) — `buildContentLines()` in the live conversation viewer could return lines wider than the terminal when `wrapTextWithAnsi()` misjudged visible width on ANSI-heavy input (e.g. tool output with embedded escape codes, long URLs, wide tables). All content lines are now clamped with `truncateToWidth()` before returning. Same class of bug as the widget fix in v0.2.7, different component.
+
+### Added
+- **Conversation viewer width-safety tests** — 17 tests covering `render()` and `buildContentLines()` across varied content (plain text, ANSI codes, unicode, tables, long URLs, narrow terminals). Includes mock-based regression tests that simulate upstream `wrapTextWithAnsi` returning overwidth lines, ensuring the safety net catches them.
+
+## [0.4.8] - 2026-03-18
+
+### Added
+- **Cross-extension RPC** — other pi extensions can spawn subagents via `pi.events` event bus (`subagents:rpc:ping`, `subagents:rpc:spawn`). Emits `subagents:ready` on load.
+- **Session persistence for agent records** — completed agent records are persisted via `pi.appendEntry("subagents:record", ...)` for cross-extension history reconstruction.
+
+### Fixed
+- **Background agent notification race condition** — `pi.sendMessage()` is fire-and-forget, so completion notifications sent eagerly from `onComplete` could not be retracted when `get_subagent_result` was called in the same turn. Notifications are now held behind a 200ms cancellable timer; `get_subagent_result` cancels the pending timer before it fires, eliminating duplicate notifications. Group notifications also re-check `resultConsumed` at send time so consumed agents are filtered out.
+
+## [0.4.7] - 2026-03-17
+
+### Added
+- **Custom notification renderer** — background agent completion notifications now render as styled, themed boxes instead of raw XML. Uses `pi.registerMessageRenderer()` with the `"subagent-notification"` custom message type. The LLM continues to receive `<task-notification>` XML via `content`; only the user-facing display changes.
+- **Group notification rendering** — group completions render each agent as its own styled block (icon, description, stats, result preview) instead of showing only the first agent.
+- **Output file streaming for background agents** — background agents now get the same output file transcript as foreground agents, with `onSessionCreated` wiring and proper cleanup on completion/error.
+- `NotificationDetails` type in `types.ts` — structured details for the notification renderer, with optional `others` array for group notifications.
+- `buildNotificationDetails()` helper — extracts renderer-facing details from an `AgentRecord`.
+
+### Changed
+- **Notification delivery** — `sendIndividualNudge` and group notification now use `pi.sendMessage()` (custom message) instead of `pi.sendUserMessage()` (plain text), enabling renderer-controlled display.
+- **Steered status rendering** — steered agents show "completed (steered)" in the notification box instead of plain "completed".
+
+### Fixed
+- **Output file cleanup on completion** — `agent-manager.ts` now calls `record.outputCleanup()` in both the success and error paths of agent completion, ensuring the streaming subscription is flushed and released.
+
+## [0.4.6] - 2026-03-16
+
+### Fixed
+- **Graceful shutdown aborts agents instead of blocking** — `session_shutdown` now calls `abortAll()` instead of `waitForAll()`, so the process exits immediately instead of hanging until all background agents complete. Agent results are undeliverable after shutdown anyway.
+
+### Added
+- `abortAll()` method on `AgentManager` — stops all queued and running agents at once, returning the count of affected agents.
+
+## [0.4.5] - 2026-03-16
+
+### Changed
+- **Widget render-once pattern** — the widget callback is now registered once via `setWidget()` and subsequent updates use `requestRender()` instead of re-registering the entire widget on every `update()` call. Eliminates layout thrashing from repeated widget teardown/setup cycles.
+- **Status bar dedup** — `setStatus()` is now only called when the status text actually changes, avoiding redundant TUI updates.
+- **UICtx change detection** — `setUICtx()` detects context changes and forces widget re-registration, correctly handling session switches.
+
+### Refactored
+- Extracted `renderWidget()` private method — moves all widget content rendering out of the `update()` closure into a standalone method that reads live state on each call.
+- `update()` is now a lightweight coordinator: counts agents, manages registration lifecycle, and triggers re-renders.
+
+## [0.4.4] - 2026-03-16
+
+### Fixed
+- **Race condition in `get_subagent_result` with `wait: true`** — `resultConsumed` is now set before `await record.promise`, preventing a redundant follow-up notification. Previously the `onComplete` callback (attached at spawn time via `.then()`) always fired before the await resumed, seeing `resultConsumed` as false.
+- **Stale agent records across sessions** — new `clearCompleted()` method removes all completed/stopped/errored agent records on `session_start` and `session_switch` events, so tasks from a prior session don't persist into a new one.
+- **`steer_subagent` race on freshly launched agents** — steering an agent before its session initialized silently dropped the message. Now steers are queued on the record and flushed once `onSessionCreated` fires.
+
+### Changed
+- Extracted `removeRecord()` private helper in `AgentManager` — deduplicates dispose+delete logic between `cleanup()` and `clearCompleted()`.
+
+### Added
+- 8 new tests covering `resultConsumed` race condition and `clearCompleted` behavior (185 total).
+
+## [0.4.3] - 2026-03-13
+
+### Added
+- **Persistent agent memory** — new `memory` frontmatter field with three scopes: `"user"` (global `~/.pi/`), `"project"` (per-project `.pi/`), `"local"` (gitignored `.pi/`). Agents with write/edit tools get full read-write memory; read-only agents get a read-only fallback that injects existing MEMORY.md content without granting write access or creating directories.
+- **Git worktree isolation** — new `isolation: "worktree"` frontmatter field and Agent tool parameter. Creates a temporary `git worktree` so agents work on an isolated copy of the repo. On completion, changes are auto-committed to a `pi-agent-<id>` branch; clean worktrees are removed. Includes crash recovery via `pruneWorktrees()`.
+- **Skill preloading** — `skills` frontmatter now accepts a comma-separated list of skill names (e.g. `skills: planning, review`). Reads from `.pi/skills/` (project) then `~/.pi/skills/` (global), tries `.md`/`.txt`/bare extensions. Content injected into the system prompt as `# Preloaded Skill: {name}`.
+- **Tool denylist** — new `disallowed_tools` frontmatter field (e.g. `disallowed_tools: bash, write`). Blocks specified tools even if `builtinToolNames` or extensions would provide them. Enforced for both extension-enabled and extension-disabled agents.
+- **Prompt extras system** — new `PromptExtras` interface in `prompts.ts`; `buildAgentPrompt()` accepts optional memory and skill blocks appended in both `replace` and `append` modes.
+- `getMemoryTools()`, `getReadOnlyMemoryTools()` in `agent-types.ts`.
+- `buildMemoryBlock()`, `buildReadOnlyMemoryBlock()`, `isSymlink()`, `safeReadFile()` in `memory.ts`.
+- `preloadSkills()` in `skill-loader.ts`.
+- `createWorktree()`, `cleanupWorktree()`, `pruneWorktrees()` in `worktree.ts`.
+- `MemoryScope`, `IsolationMode` types; `memory`, `isolation`, `disallowedTools` fields on `AgentConfig`; `worktree`, `worktreeResult` fields on `AgentRecord`.
+- 177 total tests across 8 test files (41 new tests).
+
+### Fixed
+- **Read-only agents no longer escalated to read-write** — enabling `memory` on a read-only agent (e.g. Explore) previously auto-added `write`/`edit` tools. Now the runner detects write capability and branches: read-write agents get full memory tools, read-only agents get read-only memory prompt with only the `read` tool added.
+- **Denylist-aware memory detection** — write capability check now accounts for `disallowedTools`. An agent with `tools: write` + `disallowed_tools: write` correctly gets read-only memory instead of broken read-write instructions.
+- **Worktree requires commits** — repos with no commits (empty HEAD) are now rejected early with a warning instead of failing silently at `git worktree add`.
+- **Worktree failure warning** — when worktree creation fails, a warning is prepended to the agent's prompt instead of silently falling through to the main cwd.
+- **No force-branch overwrite** — worktree cleanup appends a timestamp suffix on branch name conflict instead of using `git branch -f`.
+
+### Security
+- **Whitelist name validation** — agent/skill names must match `^[a-zA-Z0-9][a-zA-Z0-9._-]*$`, max 128 chars. Rejects path traversal, leading dots, spaces, and special characters.
+- **Symlink protection** — `safeReadFile()` and `isSymlink()` reject symlinks in memory directories, MEMORY.md files, and skill files, preventing arbitrary file reads.
+- **Symlink-safe directory creation** — `ensureMemoryDir()` throws on symlinked directories.
+
+### Changed
+- `agent-runner.ts`: tool/extension/skill resolution moved before memory detection; `ctx.cwd` → `effectiveCwd` throughout.
+- `custom-agents.ts`: extracted `parseCsvField()` helper; added `csvListOptional()` and `parseMemory()`.
+- `skill-loader.ts`: uses `safeReadFile()` from `memory.ts` instead of raw `readFileSync`.
+- Agent tool schema updated with `isolation` parameter and help text for `memory`, `isolation`, `disallowed_tools`, and skill list.
+
+## [0.4.2] - 2026-03-12
+
+### Added
+- **Event bus** — agent lifecycle events emitted via `pi.events.emit()`, enabling other extensions to react to sub-agent activity:
+  - `subagents:created` — background agent registered (includes `id`, `type`, `description`, `isBackground`)
+  - `subagents:started` — agent transitions to running (includes queued→running)
+  - `subagents:completed` — agent finished successfully (includes `durationMs`, `tokens`, `toolUses`, `result`)
+  - `subagents:failed` — agent errored, stopped, or aborted (same payload as completed)
+  - `subagents:steered` — steering message sent to a running agent
+- `OnAgentStart` callback and `onStart` constructor parameter on `AgentManager`.
+- **Cross-package manager** now also exposes `spawn()` and `getRecord()` via the `Symbol.for("pi-subagents:manager")` global.
+
+## [0.4.1] - 2026-03-11
+
+### Fixed
+- **Graceful shutdown in headless mode** — the CLI now waits for all running and queued background agents to complete before exiting (`waitForAll` on `session_shutdown`). Previously, background agents could be silently killed mid-execution when the session ended. Only affects headless/non-interactive mode; interactive sessions already kept the process alive.
+
+### Added
+- `hasRunning()` / `waitForAll()` methods on `AgentManager`.
+- **Cross-package manager access** — agent manager exposed via `Symbol.for("pi-subagents:manager")` on `globalThis` for other extensions to check status or await completion.
+
+## [0.4.0] - 2026-03-11
+
+### Added
+- **XML-delimited prompt sections** — append-mode agents now wrap inherited content in `<inherited_system_prompt>`, `<sub_agent_context>`, and `<agent_instructions>` XML tags, giving the model explicit structure to distinguish inherited rules from sub-agent-specific instructions. Replace mode is unchanged.
+- **Token count in agent results** — foreground agent results, background completion notifications, and `get_subagent_result` now include the token count alongside tool uses and duration (e.g. `Agent completed in 4.2s (12 tool uses, 33.8k token)`).
+- **Widget overflow cap** — the running agents widget now caps at 12 lines. When exceeded, running agents are prioritized over finished ones and an overflow summary line shows hidden counts (e.g. `+3 more (1 running, 2 finished)`).
+
+### Changed - **changing behavior**
+- **General-purpose agent inherits parent prompt** — the default `general-purpose` agent now uses `promptMode: "append"` with an empty system prompt, making it a "parent twin" that inherits the full parent system prompt (including CLAUDE.md rules, project conventions, and safety guardrails). Previously it used a standalone prompt that duplicated a subset of the parent's rules. Explore and Plan are unchanged (standalone prompts). To customize: eject via `/agents` → select `general-purpose` → Eject, then edit the resulting `.md` file. Set `prompt_mode: replace` to go back to a standalone prompt, or keep `prompt_mode: append` and add extra instructions in the body.
+- **Append-mode agents receive parent system prompt** — `buildAgentPrompt` now accepts the parent's system prompt and threads it into append-mode agents (env header + parent prompt + sub-agent context bridge + optional custom instructions). Replace-mode agents are unchanged.
+- **Prompt pipeline simplified** — removed `systemPromptOverride`/`systemPromptAppend` from `SpawnOptions` and `RunOptions`. These were a separate code path where `index.ts` pre-resolved the prompt mode and passed raw strings into the runner, bypassing `buildAgentPrompt`. Now all prompt assembly flows through `buildAgentPrompt` using the agent's `promptMode` config — one code path, no special cases.
+
+### Removed
+- Deprecated backwards-compat aliases: `registerCustomAgents`, `getCustomAgentConfig`, `getCustomAgentNames` (use `registerAgents`, `getAgentConfig`, `getUserAgentNames`).
+- `resolveCustomPrompt()` helper in index.ts — no longer needed now that prompt routing is config-driven.
+
+## [0.3.1] - 2026-03-09
+
+### Added
+- **Live conversation viewer** — selecting a running (or completed) agent in `/agents` → "Running agents" now opens a scrollable overlay showing the agent's full conversation in real time. Auto-scrolls to follow new content; scroll up to pause, End to resume. Press Esc to close.
+
+## [0.3.0] - 2026-03-08
+
+### Added
+- **Case-insensitive agent type lookup** — `"explore"`, `"EXPLORE"`, and `"Explore"` all resolve to the same agent. LLMs frequently lowercase type names; this prevents validation failures.
+- **Unknown type fallback** — unrecognized agent types fall back to `general-purpose` with a note, instead of hard-rejecting. Matches Claude Code behavior.
+- **Dynamic tool list for general-purpose** — `builtinToolNames` is now optional in `AgentConfig`. When omitted, the agent gets all tools from `TOOL_FACTORIES` at lookup time, so new tools added upstream are automatically available.
+- **Agent source indicators in `/agents` menu** — `•` (project), `◦` (global), `✕` (disabled) with legend. Defaults are unmarked.
+- **Disabled agents visible in UI** — disabled agents now show in the "Agent types" list (marked `✕`) with an Enable action, instead of being invisible.
+- **Enable action** — re-enable a disabled agent from the `/agents` menu. Stub files are auto-cleaned.
+- **Disable action for all agent types** — custom and ejected default agents can now be disabled from the UI, not just built-in defaults.
+- `resolveType()` export — case-insensitive type name resolution for external use.
+- `getAllTypes()` export — returns all agent names including disabled (for UI listing).
+- `source` field on `AgentConfig` — tracks where an agent was loaded from (`"default"`, `"project"`, `"global"`).
+
+### Fixed
+- **Model resolver checks auth for exact matches** — `resolveModel("anthropic/claude-haiku-4-5-20251001")` now fails gracefully when no Anthropic API key is configured, instead of returning a model that errors at the API call. Explore silently falls back to the parent model on non-Anthropic setups.
+
+### Changed
+- **Unified agent registry** — built-in and custom agents now use the same `AgentConfig` type and a single registry. No more separate code paths for built-in vs custom agents.
+- **Default agents are overridable** — creating a `.md` file with the same name as a default agent (e.g. `.pi/agents/Explore.md`) overrides it.
+- **`/agents` menu** — "Agent types" list shows defaults and custom agents together with source indicators. Default agents get Eject/Disable actions; overridden defaults get Reset to default.
+- **Eject action** — export a default agent's embedded config as a `.md` file to project or personal location for customization.
+- **Model labels** — provider-agnostic: strips `provider/` prefix and `-YYYYMMDD` date suffix (e.g. `anthropic/claude-haiku-4-5-20251001` → `claude-haiku-4-5`). Works for any provider.
+- **New frontmatter fields** — `display_name` (UI display name) and `enabled` (default: true; set to false to disable).
+- **Menu navigation** — Esc in agent detail returns to agent list (not main menu).
+
+### Removed
+- **`statusline-setup` and `claude-code-guide` agents** — removed as built-in types (never spawned programmatically). Users can recreate them as custom agents if needed.
+- `BuiltinSubagentType` union type, `SUBAGENT_TYPES` array, `DISPLAY_NAMES` map, `SubagentTypeConfig` interface — replaced by unified `AgentConfig`.
+- `buildSystemPrompt()` switch statement — replaced by config-driven `buildAgentPrompt()`.
+- `HAIKU_MODEL_IDS` fallback array — Explore's haiku default is now just the `model` field in its config.
+- `BUILTIN_MODEL_LABELS` — model labels now derived from config.
+- `ALL_TOOLS` hardcoded constant — general-purpose now derives tools dynamically.
+
+### Added
+- `src/default-agents.ts` — embedded default configs for general-purpose, Explore, and Plan.
+
+## [0.2.7] - 2026-03-08
+
+### Fixed
+- **Widget crash in narrow terminals** — agent widget lines were not truncated to terminal width, causing `doRender` to throw when the tmux pane was narrower than the rendered content. All widget lines are now truncated using `truncateToWidth()` with the actual terminal column count.
+
+## [0.2.6] - 2026-03-07
+
+### Added
+- **Background task join strategies** — smart grouping of background agent completion notifications
+  - `smart` (default): 2+ background agents spawned in the same turn are auto-grouped into a single consolidated notification instead of individual nudges
+  - `async`: each agent notifies individually on completion (previous behavior)
+  - `group`: force grouping even for solo agents
+  - 30s timeout after first completion delivers partial results; 15s straggler re-batch window for remaining agents
+- **`join_mode` parameter** on the `Agent` tool — override join strategy per agent (`"async"` or `"group"`)
+- **Join mode setting** in `/agents` → Settings — configure the default join mode at runtime
+- New `src/group-join.ts` — `GroupJoinManager` class for batched completion notifications
+
+### Changed
+- `AgentRecord` now includes optional `groupId`, `joinMode`, and `resultConsumed` fields
+- Background agent completion routing refactored: individual nudge logic extracted to `sendIndividualNudge()`, group delivery via `GroupJoinManager`
+
+### Fixed
+- **Debounce window race** — agents that complete during the 100ms batch debounce window are now deferred and retroactively fed into the group once it's registered, preventing split notifications (one individual + one partial group) and zombie groups
+- **Solo agent swallowed notification** — if only one agent was spawned (no group formed) but it completed during the debounce window, its deferred notification is now sent when the batch finalizes
+- **Duplicate notifications after polling** — calling `get_subagent_result` on a completed agent now marks its result as consumed, suppressing the subsequent completion notification (both individual and group)
+
+## [0.2.5] - 2026-03-06
+
+### Added
+- **Interactive `/agents` menu** — single command replaces `/agent` and `/agents` with a full management wizard
+  - Browse and manage running agents
+  - Custom agents submenu — edit or delete existing agents
+  - Create new custom agents via manual wizard or AI-generated (with comprehensive frontmatter documentation for the generator)
+  - Settings: configure max concurrency, default max turns, and grace turns at runtime
+  - Built-in agent types shown with model info (e.g. `Explore · haiku`)
+  - Aligned formatting for agent lists
+- **Configurable turn limits** — `defaultMaxTurns` and `graceTurns` are now runtime-adjustable via `/agents` → Settings
+- Sub-menus return to main menu instead of exiting
+
+### Removed
+- `/agent <type> <prompt>` command (use `Agent` tool directly, or create custom agents via `/agents`)
+
+## [0.2.4] - 2026-03-06
+
+### Added
+- **Global custom agents** — agents in `~/.pi/agent/agents/*.md` are now discovered automatically and available across all projects
+- Two-tier discovery hierarchy: project-level (`.pi/agents/`) overrides global (`~/.pi/agent/agents/`)
+
+## [0.2.3] - 2026-03-05
+
+### Added
+- Screenshot in README
+
+## [0.2.2] - 2026-03-05
+
+### Changed
+- Renamed package to `@tintinweb/pi-subagents`
+- Fuzzy model resolver now only matches models with auth configured (prevents selecting unconfigured providers)
+- Custom agents hot-reload on each `Agent` tool call (no restart needed for new `.pi/agents/*.md` files)
+- Updated pi dependencies to 0.56.1
+
+### Refactored
+- Extracted `createActivityTracker()` — eliminates duplicated tool activity wiring between foreground and background paths
+- Extracted `safeFormatTokens()` — replaces 4 repeated try-catch blocks
+- Extracted `buildDetails()` — consolidates AgentDetails construction
+- Extracted `getStatusLabel()` / `getStatusNote()` — consolidates 3 duplicated status formatting chains
+- Shared `extractText()` — consolidated duplicate from context.ts and agent-runner.ts
+- Added `ERROR_STATUSES` constant in widget for consistent status checks
+- `getDisplayName()` now delegates to `getConfig()` instead of separate lookups
+- Removed unused `Tool` type export from agent-types
+
+## [0.2.1] - 2026-03-05
+
+### Added
+- **Persistent above-editor widget** — tree view of all running/queued/finished agents with animated spinners and live stats
+- **Concurrency queue** — configurable max concurrent background agents (default: 4), auto-drain
+- **Queued agents** collapsed to single summary line in widget
+- **Turn-based widget linger** — completed agents clear after 1 turn, errors/aborted linger for 2 extra turns
+- **Colored status icons** — themed rendering via `setWidget` callback form (`✓` green, `✓` yellow, `✗` red, `■` dim)
+- **Live response streaming** — `onTextDelta` shows truncated agent response text instead of static "thinking..."
+
+### Changed
+- Tool names match Claude Code: `Agent`, `get_subagent_result`, `steer_subagent`
+- Labels use "Agent" / "Agents" (not "Subagent")
+- Widget heading: `●` when active, `○` when only lingering finished agents
+- Extracted all UI code to `src/ui/agent-widget.ts`
+
+## [0.2.0] - 2026-03-05
+
+### Added
+- **Claude Code-style UI rendering** — `renderCall`/`renderResult`/`onUpdate` for live streaming progress
+  - Live activity descriptions: "searching, reading 3 files…"
+  - Token count display: "33.8k token"
+  - Per-agent tool use counter
+  - Expandable completed results (ctrl+o)
+  - Distinct states: running, background, completed, error, aborted
+- **Async environment detection** — replaced `execSync` with `pi.exec()` for non-blocking git/platform detection
+- **Status bar integration** — running background agent count shown in pi's status bar
+- **Fuzzy model selection** — `"haiku"`, `"sonnet"` resolve to best matching available model
+
+### Changed
+- Tool label changed from "Spawn Agent" to "Agent" (matches Claude Code style)
+- `onToolUse` callback replaced with richer `onToolActivity` (includes tool name + start/end)
+- `onSessionCreated` callback for accessing session stats (token counts)
+- `env.ts` now requires `ExtensionAPI` parameter (async `pi.exec()` instead of `execSync`)
+
+## [0.1.0] - 2026-03-05
+
+Initial release.
+
+### Added
+- **Autonomous sub-agents** — spawn specialized agents via tool call, each running in an isolated pi session
+- **Built-in agent types** — general-purpose, Explore (defaults to haiku), Plan, statusline-setup, claude-code-guide
+- **Custom user-defined agents** — define agents in `.pi/agents/<name>.md` with YAML frontmatter + system prompt body
+- **Frontmatter configuration** — tools, extensions, skills, model, thinking, max_turns, prompt_mode, inherit_context, run_in_background, isolated
+- **Graceful max_turns** — steer message at limit, 5 grace turns, then hard abort
+- **Background execution** — `run_in_background` with completion notifications
+- **`get_subagent_result` tool** — check status, wait for completion, verbose conversation output
+- **`steer_subagent` tool** — inject steering messages into running agents mid-execution
+- **Agent resume** — continue a previous agent's session with a new prompt
+- **Context inheritance** — fork the parent conversation into the sub-agent
+- **Model override** — per-agent model selection
+- **Thinking level** — per-agent extended thinking control
+- **`/agent` and `/agents` commands**
+
+[0.6.3]: https://github.com/tintinweb/pi-subagents/compare/v0.6.2...v0.6.3
+[0.6.2]: https://github.com/tintinweb/pi-subagents/compare/v0.6.1...v0.6.2
+[0.6.1]: https://github.com/tintinweb/pi-subagents/compare/v0.6.0...v0.6.1
+[0.6.0]: https://github.com/tintinweb/pi-subagents/compare/v0.5.2...v0.6.0
+[0.5.2]: https://github.com/tintinweb/pi-subagents/compare/v0.5.1...v0.5.2
+[0.5.1]: https://github.com/tintinweb/pi-subagents/compare/v0.5.0...v0.5.1
+[0.5.0]: https://github.com/tintinweb/pi-subagents/compare/v0.4.9...v0.5.0
+[0.4.9]: https://github.com/tintinweb/pi-subagents/compare/v0.4.8...v0.4.9
+[0.4.8]: https://github.com/tintinweb/pi-subagents/compare/v0.4.7...v0.4.8
+[0.4.7]: https://github.com/tintinweb/pi-subagents/compare/v0.4.6...v0.4.7
+[0.4.6]: https://github.com/tintinweb/pi-subagents/compare/v0.4.5...v0.4.6
+[0.4.5]: https://github.com/tintinweb/pi-subagents/compare/v0.4.4...v0.4.5
+[0.4.4]: https://github.com/tintinweb/pi-subagents/compare/v0.4.3...v0.4.4
+[0.4.3]: https://github.com/tintinweb/pi-subagents/compare/v0.4.2...v0.4.3
+[0.4.2]: https://github.com/tintinweb/pi-subagents/compare/v0.4.1...v0.4.2
+[0.4.1]: https://github.com/tintinweb/pi-subagents/compare/v0.4.0...v0.4.1
+[0.4.0]: https://github.com/tintinweb/pi-subagents/compare/v0.3.1...v0.4.0
+[0.3.1]: https://github.com/tintinweb/pi-subagents/compare/v0.3.0...v0.3.1
+[0.3.0]: https://github.com/tintinweb/pi-subagents/compare/v0.2.7...v0.3.0
+[0.2.7]: https://github.com/tintinweb/pi-subagents/compare/v0.2.6...v0.2.7
+[0.2.6]: https://github.com/tintinweb/pi-subagents/compare/v0.2.5...v0.2.6
+[0.2.5]: https://github.com/tintinweb/pi-subagents/compare/v0.2.4...v0.2.5
+[0.2.4]: https://github.com/tintinweb/pi-subagents/compare/v0.2.3...v0.2.4
+[0.2.3]: https://github.com/tintinweb/pi-subagents/compare/v0.2.2...v0.2.3
+[0.2.2]: https://github.com/tintinweb/pi-subagents/compare/v0.2.1...v0.2.2
+[0.2.1]: https://github.com/tintinweb/pi-subagents/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/tintinweb/pi-subagents/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/tintinweb/pi-subagents/releases/tag/v0.1.0

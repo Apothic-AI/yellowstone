@@ -1,0 +1,17 @@
+node_modules/
+bun.lockb
+*.log
+.DS_Store
+coverage/
+dist/
+.release/
+*.tgz
+.ralph/
+.pi/worktrees/
+
+# Local working notes. These are drafted against a specific checkout and
+# development setup, which the published repository does not describe; anything
+# from them that belongs in the repository is restated as a package property
+# under docs/ instead.
+/OPTIMIZATION-SPEC.md
+/*.local.md
