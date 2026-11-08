@@ -1,0 +1,12 @@
+; DO NOT EDIT (unless you know what you are doing)
+;
+; This subdirectory is a git "subrepo", and this file is maintained by the
+; git-subrepo command. See https://github.com/ingydotnet/git-subrepo#readme
+;
+[subrepo]
+	remote = https://github.com/Apothic-AI/bizzy
+	branch = apothic-main
+	commit = 3e458faed7df6c2b234f93927f9ffa6bb51828d7
+	parent = 48748b6decd9632fb12760048901aca64079d659
+	method = merge
+	cmdver = 0.4.9

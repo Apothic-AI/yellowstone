@@ -1,0 +1,54 @@
+{
+    "name": "pi-bizzy-bg-tasks",
+    "version": "2.3.0",
+    "description": "Apothic fork of pi-patty-bg-tasks (MIT, (c) patty.io). Background tasks extension for pi. Claude Code parity \u2014 auto-background after 120s, run_in_background flag, Ctrl+Shift+B manual background with live hint, mid-turn <task-notification> completion messages, streaming jobs attach, file-fd output capture, cooperative steering, agent_bg with progress streaming, and a monitor tool for per-event streaming (stdout lines / WebSocket frames).",
+    "type": "module",
+    "keywords": [
+        "pi-package",
+        "pi-extension",
+        "background-tasks",
+        "bash-bg",
+        "agent-bg",
+        "monitor"
+    ],
+    "author": "Patrick Rho",
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/Apothic-AI/bizzy.git"
+    },
+    "files": [
+        "src/",
+        "!src/__tests__/**",
+        "index.ts",
+        "README.md",
+        "README.ko.md",
+        "README.zh.md"
+    ],
+    "pi": {
+        "extensions": [
+            "./index.ts"
+        ]
+    },
+    "publishConfig": {
+        "access": "public"
+    },
+    "scripts": {
+        "test": "node --experimental-strip-types --test --test-timeout=30000 --test-force-exit 'src/__tests__/*.test.ts'",
+        "check": "tsc --noEmit"
+    },
+    "peerDependencies": {
+        "@earendil-works/pi-agent-core": ">=1.1.0",
+        "@earendil-works/pi-ai": ">=1.1.0",
+        "@earendil-works/pi-coding-agent": ">=1.1.0"
+    },
+    "devDependencies": {
+        "@earendil-works/pi-agent-core": "^1.1.0",
+        "@earendil-works/pi-ai": "^1.1.0",
+        "@earendil-works/pi-coding-agent": "^1.1.0",
+        "@types/node": "25.6.2",
+        "typebox": "^1.1.24",
+        "typescript": "6.0.3"
+    },
+    "packageManager": "pnpm@10.33.1"
+}
