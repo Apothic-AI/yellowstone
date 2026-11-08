@@ -117,11 +117,16 @@ outline.
 
 ## Drift found while measuring
 
-1. **The running pi disagrees with the committed manifest.** `pi/settings.json` declares
-   `git:github.com/Apothic-AI/pi-pretty-tui@apothic`; `pi list` reports the live install at
-   `@test/composer-selection-on-apothic`. The `~/Code/pi-pretty-tui` checkout is on that same
-   test branch (last commit 2026-11-01) and the `tooling/pi-pretty-tui` checkout is on `apothic`
-   (last commit 2026-10-27). Nothing in the repo says which of the two is canonical.
+1. **The running pi disagrees with the committed manifest, and runs unreleased code.**
+   `pi/settings.json` declares `git:github.com/Apothic-AI/pi-pretty-tui@apothic`; `pi list`
+   reports the live install at `@test/composer-selection-on-apothic`. Measured: the
+   `tooling/pi-pretty-tui` checkout is exactly `origin/apothic` (0 ahead, 0 behind), while
+   `~/Code/pi-pretty-tui` is **7 commits ahead** of it. Those 7 are a merge rehearsal — three
+   `Test merge: … on apothic` commits folding in composer-selection, selection-fix and
+   repeat-paste, plus `Add a tmux-based live harness for composer selection`. So the shape is
+   not "two candidates, pick one": the test line is *ahead* of the published branch and the
+   fleet runs it. Either that work lands on `apothic`, or the install is rolled back to it.
+   Both are decisions; neither is a copy.
 2. **Three remotes have two checkouts each.**
    `Apothic-AI/pi-pretty-tui` → `~/Code/pi-pretty-tui` and `tooling/pi-pretty-tui`;
    `Apothic-AI/pi-persist` → `~/Code/pi-persist` and `~/Code/pi-persist-toggle`;
@@ -157,11 +162,14 @@ outline.
    at all — it is the `pil` launcher every lane is started by, which is why no install record
    names it. And pi-modes lives in `Apothic-AI/pi-extensions-1`, a **different repository** from
    `Apothic-AI/pi-extensions`, with a different root commit — two lineages, both canonical.
-7. **One local-only commit exists.** `herdr-voice-linux` has an unpushed commit on `linux-port`
-   (`2715621 feat: draw the floating orb on x11 with cairo`). Every other fork's checked-out
-   branch is in sync with its remote. `pi-rooms` looks worse than it is: 12 commits are
-   "unpushed" but all of them sit on `task/*` sibling worktree branches belonging to live
-   pi-rooms lanes; `master` itself is level with `origin/master`.
+7. **One commit is stranded, but not where it first appeared to be.** `herdr-voice-linux`'s
+   tracked branch `linux-port` is exactly `origin/linux-port` (0 ahead, 0 behind). The commit
+   `2715621 feat: draw the floating orb on x11 with cairo` lives **only** on the local branch
+   `linux-orb`, and on no remote branch at all (`git branch -r --contains 2715621` is empty). So
+   a `-b linux-port` subrepo is correct and loses nothing; the stray commit is a separate loose
+   end for that fork's owner. `pi-rooms` likewise only looks bad: 12 commits are "unpushed" but
+   all sit on `task/*` sibling worktrees belonging to live pi-rooms lanes, and `master` is level
+   with `origin/master` (`efe5896`).
 
 ## Decisions this inventory does not make
 
