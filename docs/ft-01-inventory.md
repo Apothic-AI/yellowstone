@@ -41,15 +41,18 @@ Each is a real delta we maintain, installed from its own repository.
 | herdr-voice-linux | `Apothic-AI/herdr-voice-linux` | **none** | `linux-port` | no | 0 | `/home/bitnom/Code/herdr-voice-linux` |
 | pi-cache-optimizer | `bitnom/pi-cache-optimizer` | **none** | `feat/opencode-cache-stats` | no | 2 | `/home/bitnom/Code/pi-cache-optimizer` |
 | pi-fleet-hooks | `Apothic-AI/pi-fleet-hooks` | **none** | `master` | no | 0 | `/home/bitnom/Code/pi-fleet-hooks` |
-| pi-modes (in `packages/`) | `Apothic-AI/pi-extensions-1` | **none** | `feat/same-key-append-composition` | no | 54 | `/home/bitnom/Code/apothic-pi-extensions` |
+| pi-modes (in `packages/`) | `Apothic-AI/pi-extensions-1` | `origin/apothic-main` (no local) | `feat/same-key-append-composition` | no | 54 | `/home/bitnom/Code/apothic-pi-extensions` |
+| pi-profile-switch (`pil`) | `Apothic-AI/pi-profile-switch` | **none** | `main` | no | 4 | `/home/bitnom/Code/pi-profile-switch` |
 
-Eleven repositories. Only four carry a branch named the way FT-01 expects
-(`apothic-master` / `apothic-main` / `apothic`); the other seven are on `master`, `main`,
-`linux-port`, `feat/opencode-cache-stats` and `feat/same-key-append-composition`, and have
-**no** `apothic*` branch at all.
+Twelve repositories. Five carry an `apothic*` branch (`pi-pretty-tui`, `pi-extensions`,
+`bizzy`, `unblock`, and `pi-extensions-1` — the last only as `origin/apothic-main`, with no
+local branch); the other seven are on `master`, `main`, `linux-port`,
+`feat/opencode-cache-stats` and `feat/same-key-append-composition`.
 
-The last two rows are **installed but not declared** — see drift 6. They were found by reading
-`pi list`, not `pi/settings.json`, which is why the first pass of this page missed them.
+The last three rows are **installed but not declared**, so a sweep of `pi/settings.json` alone
+misses them: `pi-fleet-hooks` (absolute path), `pi-modes` (local path into
+`pi-extensions-1/packages/`), and `pi-profile-switch` (not a pi package at all — it is the
+`pil` launcher every lane is started by, which is why no install record names it).
 
 ### Which of these is a fork, and which is an original
 
@@ -59,13 +62,18 @@ needs two signals, because neither is sufficient alone:
 | Signal | Reads from | Fails when |
 |---|---|---|
 | A configured `upstream` remote | `git remote get-url upstream` | `pi-pretty-tui` and `bizzy` are forks with **no** `upstream` remote |
-| `docs/forks.md` says it is a fork | the doc | it says nothing about `pi-fleet-hooks`, `mycord`, `herdr-voice-linux` |
+| `docs/forks.md` says it is a fork | the doc | it says nothing about `pi-fleet-hooks`, `mycord`, `herdr-voice-linux`, `pi-profile-switch` |
 
 Present `upstream` remotes: `pi-extensions-apothic` (signalridge), `pi-extensions` (arhen),
 `unblock` (aneym), `pi-cache-optimizer` (jiangge), `apothic-pi-extensions` (tryingET).
 Documented forks with no `upstream` remote: `pi-pretty-tui`, `bizzy`, `pi-rooms`, `apothic-todo`,
 `pi-persist`. So **`pi-rooms`, `apothic-todo` and `pi-persist` are forks** whose merge branch was
-simply never named `apothic*` — they are not originals that need no merge branch.
+simply never named `apothic*` — they are not originals that need no merge branch. Recorded forks
+have a delta to rebase onto an upstream release even while their branch is called `master`.
+
+One repo is unclassified: `pi-profile-switch` has no `upstream` remote and no entry in
+`docs/forks.md`, so whether it is a fork of an upstream launcher or our own original cannot be
+read off the machine. Its branch outcome is `main` either way; the label stays open.
 
 ## Not forks — they stay declared refs, not subrepos
 
@@ -85,6 +93,28 @@ simply never named `apothic*` — they are not originals that need no merge bran
   `fleet/AGENTS.md`, and the config files (`config.toml`, `plugins.toml`, `models.json`,
   `settings.json`, `pi/*.json`).
 
+## Explicitly out of scope
+
+- **`pi-ghost-text-x`** (`Apothic-AI/pi-ghost-text-x`, branch `apothic-main`) is an org fork
+  that appears in neither `pi/settings.json` nor `herdr/plugins.toml` — `grep -r` over both
+  finds nothing. Unused; not a subrepo.
+- **Generated and secret-bearing state** never goes in: `~/.pi/agent/secrets/`, and the
+  profile-switch instance tree `~/.pi-profile-switch/instances/<id>/` (auth, sessions, npm
+  cache, modes). `$HOME/.pi/agent` is a real directory, not a symlink to it, and the two
+  `settings.json` files already differ (md5 `25d27c7d…` vs `b83f31e4…`), so `home/.pi/agent/`
+  must be documented as *the path pi uses when no profile is selected*.
+
+## `src/apps` and `src/libs`
+
+Candidates that exist, are clean, and could be members of `src/apps`:
+`mycord` (`Apothic-AI/mycord`, jj-colocated, detached), `apothic-website-v2`
+(`Apothic-AI/apothic-website-v2`, jj-colocated, detached), `cargo-remote-3000`
+(`Apothic-AI/cargo-remote-3000`, git, `master`).
+
+For `src/libs` this sweep found **nothing**: no library is installed from, or forked into, this
+fleet's dependency set. The directory should be recorded as empty rather than filled to match the
+outline.
+
 ## Drift found while measuring
 
 1. **The running pi disagrees with the committed manifest.** `pi/settings.json` declares
@@ -98,22 +128,35 @@ simply never named `apothic*` — they are not originals that need no merge bran
    pi-extensions exists as `~/Code/pi-extensions` (**`bitnom/pi-extensions.git`**) and
    `~/Code/pi-extensions-apothic` (**`Apothic-AI/pi-extensions`**, the one
    `pi/settings.json` resolves `@PI_EXTENSIONS_APOTHIC@` to).
-3. **Uncommitted work sits in five of the eleven.** `unblock` (6 files, including a new
+3. **Uncommitted work sits in six of the twelve.** `unblock` (6 files, including a new
    `test/weekly-keep.test.js`), `apothic-pi-extensions` (54 files — and it is a live lane's
    workspace), `pi-rooms` (2: `.pi/`, `AGENTS.md`), `pi-extensions-apothic` (untracked `.pi/`),
-   `pi-cache-optimizer` (2). `git subrepo` will not take a dirty tree.
-4. **Three of the eleven are jj-managed** (`tooling/pi-pretty-tui`, `tooling/bizzy`,
-   `tooling/unblock`), and all three sit at a detached `HEAD` in jj's working copy — so there is
-   no branch name to read out of them. `mycord` is jj-managed too, and detached. Cloning them into a git-only superproject is fine — subrepo records
+   `pi-cache-optimizer` (2), `pi-profile-switch` (4: `AGENTS.md`, `.pi/launch.env`, `.pi/modes/`,
+   one openspec change dir). `git subrepo` will not take a dirty tree.
+4. **Four of the twelve are jj-managed** (`tooling/pi-pretty-tui`, `tooling/bizzy`,
+   `tooling/unblock`, `tooling/mycord`), and each sits at a detached `HEAD` in jj's working copy
+   — so there is no branch name to read out of them. Cloning them into a git-only superproject is fine — subrepo records
    plain git refs — but any push from yellowstone lands on the same `apothic*` branch jj is
    working in, so those two worktrees must not be edited concurrently.
 5. `yellowstone` itself is clean except `.pi/launch.env` (`PI_PROFILE=fleet` → `leader`). No
    stashes, no extra worktrees, nothing a restructure could destroy.
-6. **The manifest is two packages short of the install.** `pi list` runs
-   `/home/bitnom/Code/pi-fleet-hooks` and `/home/bitnom/Code/apothic-pi-extensions/packages/pi-modes`;
-   neither appears in `pi/settings.json`. A machine built from this repo would have neither fleet
-   hooks nor pi-modes. Note that pi-modes lives in `Apothic-AI/pi-extensions-1`, a **different
-   repository** from `Apothic-AI/pi-extensions` — two pi-extensions repos, both canonical.
+6. **The manifest does not reproduce the machine.** `pi/settings.json` declares 17 packages; the
+   live install has 25. Diffed with `pi list` (sources only, `(filtered)` stripped):
+
+   | | Count | Which |
+   |---|---|---|
+   | Live, **not** declared | 10 | `pi-hermes-memory`, `agents-cron`, `pi-beads-extension`, `pi-paster`, `@henryqw/pi-undo`, `pi-double-paste`, `@xynogen/pix-voice`, plus the three local paths `~/Code/pi-fleet-hooks`, `~/Code/pi-extensions-apothic/packages/pi-goal`, `~/Code/apothic-pi-extensions/packages/pi-modes` |
+   | Declared, **not** live | 1 | `npm:@howaboua/pi-subdir-agents` |
+   | Declared and live, **different ref** | 2 | `bizzy` (declared bare, live `@apothic-main`), `pi-pretty-tui` (declared `@apothic`, live `@test/composer-selection-on-apothic`) |
+
+   The undeclared npm set is not incidental: memory (`pi-hermes-memory`), scheduling
+   (`agents-cron`) and beads (`pi-beads-extension`) are the fleet's own operating surface. A
+   machine built from this repo would boot without them and lose exactly the machinery that
+   tracks work. So FT-01 is not only a re-arrangement: **the manifest has to be made honest
+   before it can claim to reproduce anything.** `pi-profile-switch` appears nowhere in the repo
+   at all — it is the `pil` launcher every lane is started by, which is why no install record
+   names it. And pi-modes lives in `Apothic-AI/pi-extensions-1`, a **different repository** from
+   `Apothic-AI/pi-extensions`, with a different root commit — two lineages, both canonical.
 7. **One local-only commit exists.** `herdr-voice-linux` has an unpushed commit on `linux-port`
    (`2715621 feat: draw the floating orb on x11 with cairo`). Every other fork's checked-out
    branch is in sync with its remote. `pi-rooms` looks worse than it is: 12 commits are
@@ -126,9 +169,9 @@ simply never named `apothic*` — they are not originals that need no merge bran
    deleted or left alone.
 2. What to do about the seven repos with no `apothic*` branch. For the four that are forks
    (`pi-rooms`, `apothic-todo`, `pi-persist`, `pi-cache-optimizer`) the choice is create the
-   merge branch, or track `master`/`main`/`feat/…` as-is. For `pi-fleet-hooks`, `mycord` and
-   `herdr-voice-linux` there is no upstream to merge from, so their default branch is the only
-   sensible ref.
+   merge branch, or track `master`/`main`/`feat/…` as-is. For `pi-fleet-hooks`,
+   `pi-profile-switch`, `mycord` and `herdr-voice-linux` there is no upstream to merge from, so
+   their default branch is the only sensible ref.
 3. Whether pinned upstream herdr plugins get subrepos too, or stay pinned refs. They are not
    forks, and a subrepo of an unmodified upstream is a clone with no delta to review.
 4. What `home/` mirrors: only yellowstone-owned configs, or also the generated state under
