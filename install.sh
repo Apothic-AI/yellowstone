@@ -53,6 +53,13 @@ fi
 # package inside a Bun workspace with no Pi manifest at its root, so `pi` cannot
 # load it as a git package. Overridable for a different checkout location.
 PI_EXTENSIONS_APOTHIC="${PI_EXTENSIONS_APOTHIC:-$HOME/Code/pi-extensions-apothic}"
+# The other checkouts pi loads a package from. Exported because json-edit.js
+# resolves the @PI_EXTENSIONS_1@ and @PI_FLEET_HOOKS@ placeholders from the
+# environment rather than from an argument, so one variable per checkout is
+# enough and a moved checkout needs no code change.
+PI_EXTENSIONS_1="${PI_EXTENSIONS_1:-$HOME/Code/apothic-pi-extensions}"
+PI_FLEET_HOOKS="${PI_FLEET_HOOKS:-$HOME/Code/pi-fleet-hooks}"
+export PI_EXTENSIONS_1 PI_FLEET_HOOKS
 
 want() {
   local s

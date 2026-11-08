@@ -29,6 +29,14 @@ const PLACEHOLDER = '@YELLOWSTONE_REPO@';
 // missing fork than a package entry pointing at a directory that does not exist.
 const EXTERNAL_PLACEHOLDER = '@PI_EXTENSIONS_APOTHIC@';
 
+// The same idea for every other external checkout the fleet installs from. Each
+// placeholder names an environment variable holding its root, so a machine that
+// keeps a checkout somewhere else only has to say so once, in the environment.
+const EXTERNAL_OTHERS = [
+  ['@PI_EXTENSIONS_1@', 'PI_EXTENSIONS_1'],
+  ['@PI_FLEET_HOOKS@', 'PI_FLEET_HOOKS'],
+];
+
 function timestamp() {
   const d = new Date();
   const p = (n) => String(n).padStart(2, '0');
@@ -113,6 +121,12 @@ function packageNameOf(entry) {
 
 function renderSource(source, repoRoot, externalRoot) {
   if (typeof source !== 'string') return source;
+  for (const [placeholder, envVar] of EXTERNAL_OTHERS) {
+    if (!source.startsWith(placeholder)) continue;
+    const root = process.env[envVar];
+    if (!root) return undefined;
+    return path.join(root, source.slice(placeholder.length).replace(/^\/+/, ''));
+  }
   if (source.startsWith(EXTERNAL_PLACEHOLDER)) {
     if (!externalRoot) return undefined;  // caller reports the missing fork
     const suffix = source.slice(EXTERNAL_PLACEHOLDER.length).replace(/^\/+/, '');
@@ -138,7 +152,7 @@ function mergePackages(settingsPath, templatePath, repoRoot, externalRoot) {
       ? renderSource(entry, repoRoot, externalRoot)
       : { ...entry, source: renderSource(entry.source, repoRoot, externalRoot) };
     if (rendered === undefined || (typeof rendered === 'object' && rendered.source === undefined)) {
-      process.stdout.write(`packages: skipped ${sourceOf(entry)} (no checkout given for ${EXTERNAL_PLACEHOLDER})\n`);
+      process.stdout.write(`packages: skipped ${sourceOf(entry)} (its checkout is not configured)\n`);
       continue;
     }
     const source = sourceOf(rendered);

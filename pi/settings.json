@@ -18,8 +18,7 @@
     "+codemode"
   ],
   "packages": [
-    "npm:@howaboua/pi-subdir-agents",
-    "git:github.com/Apothic-AI/bizzy",
+    "git:github.com/Apothic-AI/bizzy@apothic-main",
     {
       "source": "npm:@99percentpeople/pi-thinking-fold",
       "extensions": [
@@ -31,15 +30,24 @@
     "npm:@spences10/pi-themes",
     "npm:pi-nested-skills",
     "npm:@narumitw/pi-btw",
-    "git:github.com/bitnom/pi-cache-optimizer@feat/opencode-cache-stats",
-    "git:github.com/Apothic-AI/pi-pretty-tui@apothic",
     "npm:pi-copy-message",
     "npm:@timmyjl12/pi-model-picker",
     "npm:@arhen/pi-core-tps-stats",
-    "@PI_EXTENSIONS_APOTHIC@/packages/pi-goal",
+    "npm:pi-hermes-memory",
+    "npm:agents-cron",
+    "npm:pi-beads-extension",
+    "npm:pi-paster",
+    "npm:pi-double-paste",
+    "npm:@henryqw/pi-undo",
+    "npm:@xynogen/pix-voice",
+    "git:github.com/bitnom/pi-cache-optimizer@feat/opencode-cache-stats",
+    "git:github.com/Apothic-AI/pi-pretty-tui@test/composer-selection-on-apothic",
     "git:github.com/Apothic-AI/pi-rooms@master",
     "git:github.com/Apothic-AI/apothic-todo@main",
-    "git:github.com/Apothic-AI/pi-persist@main"
+    "git:github.com/Apothic-AI/pi-persist@main",
+    "@PI_EXTENSIONS_APOTHIC@/packages/pi-goal",
+    "@PI_EXTENSIONS_1@/packages/pi-modes",
+    "@PI_FLEET_HOOKS@"
   ],
   "enabledModels": [
     "openrouter/xiaomi/mimo-v2.6-flash:nitro",
