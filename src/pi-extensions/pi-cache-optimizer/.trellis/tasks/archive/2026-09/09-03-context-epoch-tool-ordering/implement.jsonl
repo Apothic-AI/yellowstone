@@ -1,0 +1,13 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Spec index for the single-file extension and privacy contract"}
+{"file":".trellis/spec/frontend/cache-adapter-footer-stats.md","reason":"Binding request mutation, cache-control, routing, and diagnostics contract"}
+{"file":".trellis/spec/frontend/hook-guidelines.md","reason":"Provider-request hook gates and transport safety rules"}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Stateless deterministic ordering and persistence boundaries"}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"External Pi boundary validation and test-internal export conventions"}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Required permanent tests, package checks, and documentation synchronization"}
+{"file":".trellis/tasks/09-03-context-epoch-tool-ordering/research/oc-prompt-cache-review.md","reason":"Review third-party design and reject Context Epoch while selecting tool ordering"}
+{"file":"index.ts","reason":"Implement conservative immutable deterministic tool ordering only"}
+{"file":"tests/tool-ordering.test.ts","reason":"Permanent payload, identity, gate, bypass, and composition regression tests"}
+{"file":".trellis/tasks/09-03-context-epoch-tool-ordering/verify.ts","reason":"Privacy-safe deterministic tool-order verification"}
+{"file":"README.md","reason":"Document opt-in tool ordering, safety limits, rollback, and verification"}
+{"file":"README.zh-CN.md","reason":"Synchronize Chinese tool-ordering documentation"}
+{"file":".trellis/spec/frontend/privacy-guidelines.md","reason":"Bind payload and deterministic ordering privacy contracts"}

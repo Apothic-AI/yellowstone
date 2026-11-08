@@ -1,0 +1,8 @@
+{"file":".trellis/tasks/09-04-upgrade-project-pi-0-85/prd.md","reason":"Review every dependency-upgrade acceptance criterion and verification record"}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Confirm typecheck, tests, diff check, package dry-run, and no-release compliance"}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Confirm official local Pi declarations and runtime modules are used without broad shims"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Review manifest-lockfile-CI-runtime consistency and clean-install behavior"}
+{"file":"package.json","reason":"Check Pi 0.85.0 dev dependency and unchanged >=0.82.0 peer range"}
+{"file":"package-lock.json","reason":"Check exact resolved versions, integrity, and reproducible dependency graph"}
+{"file":"tests/runtime-contracts.test.ts","reason":"Run and review Pi runtime compatibility coverage"}
+{"file":".github/workflows/ci.yml","reason":"Confirm npm ci remains sufficient on a clean runner"}

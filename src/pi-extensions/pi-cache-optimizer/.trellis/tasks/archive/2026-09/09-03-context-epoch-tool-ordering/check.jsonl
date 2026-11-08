@@ -1,0 +1,11 @@
+{"file":".trellis/spec/frontend/cache-adapter-footer-stats.md","reason":"Review request/cache behavior against binding contract"}
+{"file":".trellis/spec/frontend/hook-guidelines.md","reason":"Review request-hook gates, payload mutation, and composition"}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Verify tool ordering remains stateless and non-persistent"}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Run required checks and permanent regression review"}
+{"file":".trellis/tasks/09-03-context-epoch-tool-ordering/research/oc-prompt-cache-review.md","reason":"Verify Context Epoch rejection and selected safe subset"}
+{"file":"index.ts","reason":"Verify deterministic sorting, runtime gates, Responses bypass, and transport preservation"}
+{"file":"tests/tool-ordering.test.ts","reason":"Verify permanent regression coverage"}
+{"file":".trellis/tasks/09-03-context-epoch-tool-ordering/verify.ts","reason":"Run deterministic privacy-safe ordering verification"}
+{"file":"README.md","reason":"Verify English tool-order documentation"}
+{"file":"README.zh-CN.md","reason":"Verify Chinese tool-order documentation"}
+{"file":".trellis/spec/frontend/privacy-guidelines.md","reason":"Verify payload privacy and no-Context-Epoch contract"}

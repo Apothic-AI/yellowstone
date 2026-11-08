@@ -1,0 +1,14 @@
+{"file":".trellis/spec/frontend/cache-adapter-footer-stats.md","reason":"Review protocol-first compat, fix receipts, rollback, and atomic file contracts"}
+{"file":".trellis/spec/frontend/hook-guidelines.md","reason":"Review request correlation, reasoning-error detection, and non-mutating hook boundaries"}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Verify process-local evidence and privacy-safe receipt state"}
+{"file":".trellis/spec/frontend/privacy-guidelines.md","reason":"Verify no raw errors, credentials, prompts, payloads, or headers cross the receipt boundary"}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Review permanent coverage, synchronized docs, and no-release checks"}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Review external input guards, JSONC validation, and atomic transaction errors"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Verify rollback reuses the existing transaction and JSONC helpers"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Trace protocol evidence through hooks, commands, receipts, rollback, and docs"}
+{"file":".trellis/tasks/09-03-deepseek-protocol-rollback/prd.md","reason":"Validate Issue #10 acceptance criteria and recorded verification"}
+{"file":".trellis/tasks/09-03-deepseek-protocol-rollback/verify.ts","reason":"Run deterministic protocol, receipt privacy, and surgical rollback fixture checks"}
+{"file":"index.ts","reason":"Review protocol applicability, reasoning evidence correlation, JSONC surgery, receipts, and atomic rollback"}
+{"file":"tests/review-findings.test.ts","reason":"Verify permanent Issue #10 protocol, command, receipt, duplicate-key, symlink, and rollback regressions"}
+{"file":"README.md","reason":"Verify English command, protocol safety, receipt privacy, and rollback guidance"}
+{"file":"README.zh-CN.md","reason":"Verify Chinese command, protocol safety, receipt privacy, and rollback guidance"}

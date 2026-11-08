@@ -1,0 +1,9 @@
+{"file":".trellis/tasks/09-04-upgrade-project-pi-0-85/prd.md","reason":"Implement the approved dependency-upgrade scope and acceptance criteria"}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Follow local dependency, full-check, package dry-run, and no-release requirements"}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Validate against repository-local official Pi declarations rather than global tooling or ambient shims"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Search all dependency/version references before changing the Pi baseline"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Trace manifest, lockfile, CI, runtime imports, tests, and package-install boundaries"}
+{"file":"package.json","reason":"Upgrade the Pi development baseline while preserving the peer compatibility range"}
+{"file":"package-lock.json","reason":"Lock the reproducible Pi 0.85.0 dependency graph"}
+{"file":"tests/runtime-contracts.test.ts","reason":"Verify direct Pi runtime-module imports remain compatible with the upgraded dependency graph"}
+{"file":".github/workflows/ci.yml","reason":"Confirm clean npm ci and repository-local checks remain the CI contract"}

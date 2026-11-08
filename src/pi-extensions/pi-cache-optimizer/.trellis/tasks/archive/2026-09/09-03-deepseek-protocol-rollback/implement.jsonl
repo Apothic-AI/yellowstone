@@ -1,0 +1,11 @@
+{"file": ".trellis/spec/frontend/cache-adapter-footer-stats.md", "reason": "Bind adapter, compat, fix, persistence, and command behavior"}
+{"file": ".trellis/spec/frontend/hook-guidelines.md", "reason": "Bind hook boundaries and conservative error handling"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Bind receipt and process-local state privacy"}
+{"file": ".trellis/spec/frontend/privacy-guidelines.md", "reason": "Bind sensitive-data and rollback privacy rules"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Bind testing, docs, and no-release requirements"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Bind external input validation and TypeScript patterns"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Avoid duplicating existing JSONC transaction helpers"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Trace command, receipt, hook, and docs boundaries"}
+{"file": ".trellis/tasks/09-03-context-epoch-tool-ordering/prd.md", "reason": "Preserve prior task's deterministic ordering and no-release context"}
+{"file": ".trellis/tasks/09-03-context-epoch-tool-ordering/research/oc-prompt-cache-review.md", "reason": "Retain rejected epoch/stability rationale"}
+{"file": ".trellis/tasks/09-03-deepseek-protocol-rollback/prd.md", "reason": "Bind Issue #10 protocol-first scope, rollback safety, and no-release boundary"}

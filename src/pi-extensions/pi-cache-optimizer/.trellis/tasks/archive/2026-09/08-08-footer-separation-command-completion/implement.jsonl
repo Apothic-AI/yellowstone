@@ -1,0 +1,7 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Frontend layer entry point and project checklist for the extension change."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Persistence, atomic ownership shards, reset epochs, cleanup, and cross-process state rules."}
+{"file":".trellis/spec/frontend/hook-guidelines.md","reason":"Lifecycle hooks, TUI refresh, shutdown flush, and conservative cross-session behavior."}
+{"file":".trellis/spec/frontend/cache-adapter-footer-stats.md","reason":"Binding footer status and cache-stat display contract being modified by this task."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Required tests, documentation synchronization, and command-output quality rules."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"Rules for extending the Pi API shim and validating external command arguments."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Guidance for extending existing formatting and command parsing patterns without duplication."}

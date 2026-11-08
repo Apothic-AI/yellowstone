@@ -1,0 +1,5 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/frontend/cache-adapter-footer-stats.md", "reason": "Config persistence, request hook, fix/rollback and privacy contracts"}
+{"file": ".trellis/spec/frontend/hook-guidelines.md", "reason": "Hook routing and final payload mutation rules"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Persisted schema parsing and external input guards"}
+{"file": ".trellis/spec/frontend/privacy-guidelines.md", "reason": "Sensitive data and receipt restrictions"}

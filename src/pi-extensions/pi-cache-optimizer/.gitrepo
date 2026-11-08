@@ -1,0 +1,12 @@
+; DO NOT EDIT (unless you know what you are doing)
+;
+; This subdirectory is a git "subrepo", and this file is maintained by the
+; git-subrepo command. See https://github.com/ingydotnet/git-subrepo#readme
+;
+[subrepo]
+	remote = https://github.com/bitnom/pi-cache-optimizer
+	branch = feat/opencode-cache-stats
+	commit = ec7886dd81e16be9b52731fad41bd45b373d845b
+	parent = b8d55a2bd4ecf06e3be321a7ad34e028fe494705
+	method = merge
+	cmdver = 0.4.9

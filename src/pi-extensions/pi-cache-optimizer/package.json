@@ -1,0 +1,52 @@
+{
+  "name": "pi-cache-optimizer",
+  "version": "2.10.4",
+  "description": "Improve Pi prompt/KV cache hit rates with stable prompts, OpenAI-compatible cache keys, proxy compat warnings, and footer cache stats.",
+  "keywords": [
+    "pi-package",
+    "deepseek",
+    "openai",
+    "claude",
+    "gemini",
+    "cache",
+    "kv-cache",
+    "prompt-cache",
+    "optimizer"
+  ],
+  "author": "freescheme",
+  "license": "MIT",
+  "files": [
+    "index.ts",
+    "src"
+  ],
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ],
+    "image": "https://img.shields.io/badge/Pi-Cache%20Optimizer-4A90D9"
+  },
+  "imports": {
+    "#extension": "./index.ts"
+  },
+  "scripts": {
+    "test": "node --import ./tests/scrub-retention-env.mjs --import jiti/register --test tests/*.test.ts",
+    "typecheck": "tsc --noEmit --pretty false",
+    "check:diff": "git diff --check",
+    "check:pack": "node scripts/check-pack.mjs",
+    "check": "npm run typecheck && npm test && npm run check:diff && npm run check:modules && npm run check:pack",
+    "check:modules": "node scripts/check-module-graph.mjs"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^1.4.0",
+    "@types/node": "^22.0.0",
+    "jiti": "^2.7.0",
+    "typescript": "^5.8.3"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": ">=0.82.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jiangge/pi-cache-optimizer.git"
+  }
+}

@@ -1,0 +1,896 @@
+# Journal - jiang (Part 1)
+
+> AI development session journal
+> Started: 2026-05-13
+
+---
+
+
+
+## Session 1: Rename to pi-cache-optimizer and auto-config DeepSeek
+
+**Date**: 2026-05-16
+**Task**: Rename to pi-cache-optimizer and auto-config DeepSeek
+**Branch**: `master`
+
+### Summary
+
+Renamed npm package from pi-deepseek-cache-optimizer to pi-cache-optimizer (v2.0.0, then 2.0.1 to refresh badges on npm). Auto-seeds a DeepSeek block into ~/.pi/agent/models.json on first run with full recommended compat (supportsLongCacheRetention, sendSessionAffinityHeaders) when no DeepSeek-like model exists; atomic write with timestamped backup; opt-out via PI_CACHE_OPTIMIZER_NO_AUTO_CONFIG=1; once-per-session API-key hint that never reads the key value. Stats file migrated to pi-cache-optimizer-stats.json with one-shot read-fallback. Updated both READMEs and added cache-adapter-footer-stats.md spec. Published 2.0.0 + 2.0.1 to npm and deprecated the old package name with a migration message. Pushed master to origin.
+
+### Main Changes
+
+- Prevented ambiguous and nested stable prompt candidates from deleting dynamic content.
+- Added effective compat resolution for `modelOverrides > models[] > provider`.
+- Made both `/cache-optimizer fix` paths repair or create comment-preserving model overrides with three-layer self-checks.
+- Added permanent regression tests, repository-local npm checks, package import aliases, bilingual docs, and updated code specs.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b5584a5` | (see git log) |
+| `32f33d3` | (see git log) |
+| `b94fcad` | (see git log) |
+
+### Testing
+
+- [OK] `npm run check` (typecheck, 12/12 tests, diff check, package dry run)
+- [OK] Archived fix self-check verifier (17/17)
+- [OK] Archived prompt pollution verifier
+- [OK] Archived Anthropic TTL verifier (17/17)
+- [OK] Trellis task context validation
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+---
+
+## Session 2: Fix prompt-pollution bugs degrading DeepSeek cache hit rate
+
+**Date**: 2026-05-17
+**Task**: `.trellis/tasks/05-17-fix-prompt-pollution-bugs-degrading-deepseek-cache-hit-rate`
+**Branch**: `master`
+
+### Trigger
+
+User reported their DeepSeek bills via pi were ~2× higher than via Claude Code
+at similar total token volumes, both clients on the DeepSeek 1M-context
+endpoint. Same model id, same prompts — only the harness differed. The signal
+pointed at cache hit rate, not pricing tier.
+
+### Investigation
+
+Inspected the live system prompt pi was sending this turn (visible to me as
+the assistant) and found three concrete bugs in pi's prompt assembly:
+
+1. **Trellis tool-registration regression** —
+   `.pi/extensions/trellis/index.ts:1077` registers the `subagent` tool with
+   `promptGuidelines: SUBAGENT_DISPATCH_PROTOCOL` (bare string). Pi's
+   `_normalizePromptGuidelines` does `for (const g of guidelines) { ... }`,
+   which iterates a string char-by-char. Result: ~57 unique chars become 57
+   single-character "guidelines" (`- S`, `- u`, `- b`, ...). Bug confirmed
+   present in `@mindfoldhq/trellis` 0.5.13, 0.5.16 (latest stable), and
+   0.6.0-beta.17 — not fixed upstream yet.
+
+2. **`[object Object]` bloat** — ~32 literal `[object Object]` lines appear
+   in the dynamic remainder of the system prompt. Source not pinpointed in
+   this session. Filed as follow-up; the Bug 3 hardening below contains the
+   blast radius even without the root cause.
+
+3. **Cache-optimizer fragility** — `optimizeSystemPrompt` does
+   `rest = rest.replace(part, "")` for each stable candidate. Bug 1 feeds it
+   single-character candidates; each `replace()` matches the FIRST
+   occurrence anywhere in `rest`, ripping arbitrary bytes out of unrelated
+   text and yielding a non-deterministic dynamic remainder. That alone
+   destabilizes the prompt prefix between requests, killing the prefix
+   cache.
+
+### Decisions (from PRD)
+
+- D1: Apply both fixes (option 3): cache-optimizer hardening + local trellis
+  patch. Mark trellis edit with `LOCAL PATCH` comment for the next
+  `trellis update`.
+- D2: Latest `@mindfoldhq/trellis` 0.5.16 still has the bug; beta
+  0.6.0-beta.17 too. Repo `mindfold-ai/Trellis` is public, AGPL-3.0,
+  CONTRIBUTING.md welcomes bug fixes, no AI-specific restrictions.
+- D3: Bug 2 (`[object Object]`) deferred to follow-up.
+
+### Main Changes
+
+- **`extension.ts`** — added `MIN_STABLE_CANDIDATE_LENGTH = 8` constant and
+  applied it inside `optimizeSystemPrompt` so any stable candidate with
+  trimmed length `< 8` is silently skipped (no `replace` call). This neutralizes
+  the cascade even if pi feeds us garbage candidates again. Also exported
+  `__internals_for_tests` ({buildStableCandidates, optimizeSystemPrompt,
+  MIN_STABLE_CANDIDATE_LENGTH}) so the task verification script can exercise
+  the hardening directly. Pi only invokes the default export, so the named
+  export is harmless to runtime behavior.
+- **`.pi/extensions/trellis/index.ts:1077`** — changed
+  `promptGuidelines: SUBAGENT_DISPATCH_PROTOCOL` to
+  `promptGuidelines: [SUBAGENT_DISPATCH_PROTOCOL]`. Added a `LOCAL PATCH`
+  comment block above naming the upstream file path and the rationale.
+- **`.trellis/spec/frontend/cache-adapter-footer-stats.md`** — added a
+  "System prompt reordering invariants" section: hard contracts
+  (threshold, idempotence, where the filter lives) plus a Common Mistake
+  entry describing the upstream string-vs-array regression class with
+  Wrong/Correct snippets, so future investigations recognize the
+  failure mode quickly.
+- **`.trellis/tasks/.../verify.ts`** — standalone bun-runnable
+  verification harness: 4 assertion groups, runs in ~80ms.
+  - Threshold value matches spec (8).
+  - Healthy run lifts guidelines, dynamic remainder doesn't carry them.
+  - Polluted run (single-char junk added) does NOT corrupt rest:
+    after stripping `- X` bullets from polluted, dynamic remainder is
+    byte-equal to the control run. This is the regression test for Bug 3.
+  - `buildStableCandidates` keeps healthy bullets (sanity check).
+  Negative-mutation test (threshold = 0) verified the harness catches the
+  regression: 3 assertions fail.
+
+### Testing
+
+No project lint/test runner exists; substituted with three checks:
+
+- [OK] `bun build --no-bundle` parses both `extension.ts` and
+  `.pi/extensions/trellis/index.ts` without errors.
+- [OK] `jiti` loads `extension.ts` (default export is a function,
+  `__internals_for_tests` carries the threshold constant 8).
+- [OK] `bun verify.ts` — all assertions pass with threshold 8; mutating
+  threshold to 0 fails 3 assertions; restoring 8 passes again.
+- [OK] No new `console.log/warn/error` introduced.
+- [OK] Spec spot-checks (`cache-adapter-footer-stats.md`): adapter
+  selection by id/name only — unchanged; atomic-write/backup paths
+  preserved; API-key value never logged; persisted stats schema
+  untouched.
+
+### Before / After (qualitative — awaiting controlled measurement)
+
+The footer counter (`DS cache X/Y · …M/…M tok (Z%)`) and DeepSeek billing
+dashboard's "cached input tokens" are the two verification surfaces. The
+changes here only take effect after `/reload` (or pi restart) so pi picks up
+the patched extension and the patched trellis vendored file. To capture the
+numeric delta:
+
+1. Note the current `DS cache X/Y · …M/…M tok (Z%)` value before reload.
+2. `/reload` to load the patched extension.
+3. Run a fixed 5-prompt sequence (e.g. "Answer in one sentence: cache
+   ping N" for N=1..5) in a single session.
+4. Compare footer; expect post-fix hit rate ≥ 70% and visibly higher than
+   pre-fix on the same flow within the same local day.
+5. Optionally cross-check on `platform.deepseek.com` billing page:
+   "cached input tokens" / "input tokens" should rise toward ~85%.
+
+(Numbers will be filled in when the user runs the verification flow.)
+
+### Upstream PR template (for `mindfold-ai/Trellis`)
+
+When ready to upstream, use this against the Trellis repo. Path is
+`src/templates/pi/extensions/trellis/index.ts` (the source the npm package
+builds from). Branch and PR per `CONTRIBUTING.md`.
+
+```text
+Title: fix(pi): subagent promptGuidelines must be string[] not string
+
+Body:
+## Problem
+
+`src/templates/pi/extensions/trellis/index.ts` registers the `subagent` tool
+with `promptGuidelines: SUBAGENT_DISPATCH_PROTOCOL` (a bare string).
+
+Pi's `_normalizePromptGuidelines` (in `@earendil-works/pi-coding-agent`,
+`dist/core/agent-session.js`, around line 634) does
+`for (const g of guidelines) { ... }`. JavaScript's `for...of` iterates a
+string character-by-character, so each unique char of
+`SUBAGENT_DISPATCH_PROTOCOL` becomes its own "guideline". The emitted system
+prompt then contains ~57 single-character bullets (`- S`, `- u`, `- b`, ...)
+every turn.
+
+Visible side effects:
+- ~80 lines of garbage in the system prompt every request.
+- The cache-optimizer extension (and similar tools that try to reorder pi's
+  prompt) treats those single-char bullets as legitimate stable candidates,
+  which can mangle unrelated text via short-pattern `replace()`s.
+- Provider prefix caches (notably DeepSeek's automatic KV cache) suffer.
+
+Pi's documented type for the tool registration is
+`promptGuidelines?: string[]` (see
+`@earendil-works/pi-coding-agent/dist/core/system-prompt.d.ts`).
+
+## Fix
+
+Wrap the protocol string in an array:
+
+```ts
+promptGuidelines: [SUBAGENT_DISPATCH_PROTOCOL],
+```
+
+No behavior change for any other code path; pi's normalize function then sees
+a 1-element array containing the full guideline string and emits a single
+properly-formatted bullet.
+
+## Reproduction
+
+1. `pi install <a project that uses Trellis>`.
+2. Send any message to pi.
+3. Inspect the outgoing system prompt (e.g. via
+   `@earendil-works/pi-coding-agent`'s diagnostic dump). The `Guidelines:`
+   section contains a long run of single-character bullets.
+
+## Affected versions
+
+Observed present in 0.5.13, 0.5.16, and 0.6.0-beta.17. Likely older.
+
+## Tests
+
+No new test runner needed; pi's existing system-prompt tests would catch the
+regression by checking that a tool registering a string-typed
+`promptGuidelines` either errors or is correctly normalized to a single bullet
+(suggested follow-up).
+```
+
+### Status
+
+[OK] **Completed code + spec changes.** Awaiting in-pi verification
+(footer counter on a controlled flow) and — separately, when the user
+is ready — the upstream PR.
+
+### Next Steps
+
+- User runs the 5-prompt verification flow after `/reload` and records
+  pre-fix vs post-fix `DS cache` numbers in the PRD's Acceptance Criteria.
+- Optional: open the upstream PR using the template above.
+- Follow-up task to root-cause the `[object Object]` source if it persists
+  after this fix is reloaded.
+
+---
+
+## 2026-05-17 — Kiro Claude 0% cache: root cause + spec caveat
+
+Task: `.trellis/tasks/05-17-investigate-kiro-claude-0-cache-hit-rate`
+
+### What I learned (one-liner)
+
+The user's Claude traffic flows through `pi-provider-kiro@0.6.1` (npm
+extension), which speaks the AWS CodeWhisperer / Q Developer streaming
+protocol. That transport has no slot for `cache_control` markers and
+never surfaces `cache_read_input_tokens` in responses. The 0% Claude
+hit rate is truthful and unfixable from this extension's side.
+
+### Why this is worth a permanent spec note
+
+I almost spent an evening writing a mitmproxy harness to capture
+outgoing requests when I could have answered the question by reading
+`pi-provider-kiro/dist/{stream.js,usage.js}`. Future contributors
+who land on a `kiro-api` Claude footer at 0% will go down the same
+rabbit hole unless the `cache-adapter-footer-stats.md` spec tells
+them up front: this is a transport-level limitation, do not
+special-case-bump the counter.
+
+### Decision recorded in spec
+
+R4 = option 1 (Claude `warningText` stays silent on `kiro-api`).
+Reasoning: the existing compat warning's purpose is to nudge the user
+toward flipping `cacheControlFormat: "anthropic"`. On Kiro there is
+no flag to flip — pi-provider-kiro owns the transport. An
+information-only warning would be startup noise and train users to
+ignore the notification surface.
+
+### Follow-up worth filing somewhere (not this task)
+
+`pi-provider-kiro` is owned externally; the right long-term fix is
+upstream — surface `cacheRead` / `cacheWrite` from whatever AWS Q
+metadata events expose (if anything). Out of scope here. If/when
+that ships, the spec caveat should be revisited.
+
+### Cost framing correction
+
+Original PRD framed this as "biggest cost lever" (22.3M tokens at
+full input rate). Per `pi-provider-kiro/README.md`, all listed Kiro
+models are advertised as free; the real pressure point is the
+`MONTHLY_REQUEST_COUNT` quota the provider's retry path watches.
+Whether Kiro counts cache hits differently against that quota is on
+the AWS side and not observable from pi.
+
+---
+
+## 2026-05-17 — Skills compression: cut system prompt 55%
+
+Task: `.trellis/tasks/05-17-reduce-pi-system-prompt-token-volume`
+
+### Measurement first
+
+Read pi's `formatSkillsForPrompt` source, `AGENTS.md`, every SKILL.md
+on disk, and mirrored the same builder logic to measure actual byte
+sizes. Finding: skills XML at 13.3 KB is **61.5%** of the ~22 KB
+system prompt. Everything else (preamble 1.6K, trellis preamble 2.5K,
+session-overview 2K, workflow-state 1K) is noise by comparison.
+
+### What changed (index.ts / package.json / spec)
+
+- `formatSkillsForPromptCompressed(skills)` — deterministic, grouped
+  by skills-root directory, names sorted, compressed form ~0.9 KB
+  vs 13.3 KB verbose.
+- `compressSkillsInSystemPrompt(prompt, opts)` — finds the pi-emitted
+  verbose block via `formatSkillsForPrompt` match and `String.replace`s
+  it with the compressed form. No-op when opted out, below threshold
+  (4 skills), or verbose form not found (format change resisted).
+- `buildStableCandidates` pushes BOTH forms; `optimizeSystemPrompt`'s
+  `rest.includes(part)` short-circuit picks the one in the prompt.
+- `before_agent_start` compresses BEFORE optimize, so cache-key
+  reflects the actual sent prefix.
+- Opt-out: `PI_CACHE_OPTIMIZER_NO_SKILL_COMPRESSION=1`.
+- Version: `2.0.2 → 2.1.0`.
+- Spec: `.trellis/spec/frontend/cache-adapter-footer-stats.md`
+  "System prompt budget" contract.
+
+### Verification harness
+
+`/tmp/cache-optimizer-smoke.cjs` — 8 invariants (deterministic,
+idempotent, opt-out respects, below-threshold no-op,
+optimizeSystemPrompt integration, no <available_skills> survives):
+all pass.
+
+### What the user still needs to do
+
+1. `/reload` pi with the new code.
+2. Run a 5-prompt repeat flow (same prompts as the previous cache-hit
+   test) and record before/after total input tokens + cache hit rate.
+3. Confirm "conversational" prompts still get 1–3 turn answers.
+4. Commit + `task.py done` or `/trellis:finish-work`.
+
+Expected: ~55% cut in system prompt bytes → input tokens per turn
+down from ~6K to ~2.5K. At 92% cache hit, uncached token delta is
+smaller; the big win is the cached-token charge per turn of a 13 KB
+block that was never load-bearing.
+
+
+## Session 2: Finish Otokapi GPT cache optimization
+
+**Date**: 2026-06-07
+**Task**: Finish Otokapi GPT cache optimization
+**Branch**: `master`
+
+### Summary
+
+Completed and archived the Otokapi GPT-5.5 cache optimization task; work commit adds broader OpenAI-compatible cache-key/session-affinity handling and related adapter/API support.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `12b30a8` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 3: Pi 0.82 compatibility update
+
+**Date**: 2026-07-25
+**Task**: Pi 0.82 compatibility update
+**Branch**: `master`
+
+### Summary
+
+Checked pi-cache-optimizer against Pi 0.82.0, synced local validation SDK, added custom agent-dir path handling, excluded local llama.cpp from proxy cache/compat diagnostics, updated docs/spec/task research, and validated the full TypeScript/verify/package suite.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3777927` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 4: 修复 prompt 完整性与 modelOverrides 优先级
+
+**Date**: 2026-07-27
+**Task**: 修复 prompt 完整性与 modelOverrides 优先级
+**Branch**: `master`
+
+### Summary
+
+修复重复/嵌套稳定候选误删；按 modelOverrides > models[] > provider 解析 long retention；增强 /cache-optimizer fix 的 override JSONC 写入与三层自检；新增 12 项永久测试、本地 npm 检查、归档 verifier 别名、双语文档与规范；npm run check 及代表性旧 verifier 通过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3ed6214` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 5: 同步 Pi 0.83 开发基线并验证兼容性
+
+**Date**: 2026-08-03
+**Task**: 同步 Pi 0.83 开发基线并验证兼容性
+**Branch**: `master`
+
+### Summary
+
+核对 Pi 0.82 到 0.83 的扩展 API 与 changelog，确认现有 hooks、agent-dir、prompt options 和 adaptive detection 兼容；将开发 lockfile/本地依赖同步到 Pi 0.83.0，补 Opus 5 adaptive compat 回归测试，更新双语 README 与 cache-adapter spec，并通过 npm ci、npm run check、Trellis validation、diff/pack 审计。
+
+### Main Changes
+
+- 对比 Pi 0.82/0.83 的 changelog、扩展类型、system-prompt 类型和 agent-dir API，确认现有 runtime hooks 与 Pi 0.82+ 兼容。
+- 将 tracked `package-lock.json` 和本地 peer 依赖同步到 `@earendil-works/pi-coding-agent@0.83.0`，保留 peer dependency `*` 和 package version `2.6.25`。
+- 增加 Claude Opus 5 adaptive-thinking 缺失/已配置及旧 Claude negative case 回归测试；同步双语 README、cache-adapter spec 和任务研究记录。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `093d74d` | (see git log) |
+
+### Testing
+
+- [OK] `npm ci --ignore-scripts`
+- [OK] `npm run check` (typecheck, 15 tests, diff check, pack dry-run)
+- [OK] `python3 ./.trellis/scripts/task.py validate .trellis/tasks/08-03-pi-0-83`
+- [OK] Lockfile registry resolved/integrity audit and README parity audit
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 6: Merge PR 5 and add configurable footer scopes
+
+**Date**: 2026-08-03
+**Task**: Merge PR 5 and add configurable footer scopes
+**Branch**: `master`
+
+### Summary
+
+Merged GitHub PR #5 with contributor attribution, restored total as the default footer mode, added persistent config-over-env precedence, unified direct/router session-vs-total selection, added 23-test regression coverage, and synchronized English/Chinese docs plus the binding footer spec.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b418154` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 7: Remove footer mode env command
+
+**Date**: 2026-08-03
+**Task**: Remove footer mode env command
+**Branch**: `master`
+
+### Summary
+
+Removed the footer-mode env command option while retaining PI_CACHE_OPTIMIZER_FOOTER_MODE fallback, kept persistent session/total settings, documented manual config-file removal, updated permanent tests and bilingual docs/spec, and posted the maintainer decision on merged PR #5.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9fbe540` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 8: Publish pi-cache-optimizer v2.7.0
+
+**Date**: 2026-08-03
+**Task**: Publish pi-cache-optimizer v2.7.0
+**Branch**: `master`
+
+### Summary
+
+Bumped package and lockfile to 2.7.0, documented the configurable footer scopes in both READMEs, passed 23 tests and package checks, pushed master, published pi-cache-optimizer@2.7.0 with latest tag, verified registry integrity, and kept the npm token out of tracked files.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8722116` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 9: Fix footer mode interactive menu
+
+**Date**: 2026-08-03
+**Task**: Fix footer mode interactive menu
+**Branch**: `master`
+
+### Summary
+
+Diagnosed that the direct config subcommand worked but the /cache-optimizer interactive menu omitted it. Added a Footer mode menu item with total/session choices, reused persistent config and immediate footer republish behavior, added a real menu regression test, synchronized bilingual docs/spec, passed 24 tests, and published pi-cache-optimizer@2.7.1.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f766ea8` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 10: Add total session process footer modes
+
+**Date**: 2026-08-03
+**Task**: Add total session process footer modes
+**Branch**: `master`
+
+### Summary
+
+Preserved PR contributor session semantics, added process-local footer mode that resets on Pi restart or extension reload, updated direct/menu commands, bilingual README and footer spec, added process regression coverage, passed 24 tests and package checks, and pushed the implementation.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e32bdc4` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 11: Deep review prompt cache key safety
+
+**Date**: 2026-09-20
+**Task**: Deep review prompt cache key safety
+**Branch**: `master`
+
+### Summary
+
+Completed and merged the 2.8.9 prompt-cache-key security review: fixed five P1/P2 transaction, evidence-correlation, and concurrency issues with permanent regression coverage; verified quality gates and archived the completed related tasks.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a0ce9ae` | (see git log) |
+| `dc9be50` | (see git log) |
+| `89ed5b7` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 12: 升级 Pi 开发基线到 0.86.1
+
+**Date**: 2026-09-20
+**Task**: 升级 Pi 开发基线到 0.86.1
+**Branch**: `master`
+
+### Summary
+
+将项目本地 Pi 开发基线升级到 0.86.1，完成干净安装、类型检查、102 项测试、diff 与打包验证；评估确认无需调整运行时逻辑、测试或 peer 最低版本，仅同步兼容性文档与规范。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4752791` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 13: 发布 pi-cache-optimizer 2.8.17
+
+**Date**: 2026-10-03
+**Task**: 发布 pi-cache-optimizer 2.8.17
+**Branch**: `release/2.8.17`
+
+### Summary
+
+仅将根 package 版本更新为 2.8.17；完整 npm run check 与独立复核通过，171 测试全部通过，31 个打包文件符合预期。先推送 release/2.8.17，再推送注解 v2.8.17 标签；GitHub OIDC publish 工作流 37087625824 成功，npm latest 经 registry 传播后确认是 2.8.17，并附 SLSA provenance。发布 intent int_7ef62d57 已 sealed/published。归档当前发布任务并补齐验收/交付证据；两个旧升级任务默认保留，待用户确认额外归档。未推送 master，未强推或改认证；本次收尾提交只保留本地。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `52c91c4` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 14: 补归档两项已完成的 Pi 升级任务
+
+**Date**: 2026-10-03
+**Task**: 补归档两项已完成的 Pi 升级任务
+**Branch**: `release/2.8.17`
+
+### Summary
+
+用户回复 y 确认清理两项已完成历史任务。0.87.0 活动副本与原 archive/2026-10 完成记录的 PRD 完全相同，元数据仅 status/completedAt 不同；保留原归档、移除重复活动入口并清除 session 指针。0.99.2/native virtual 升级代码已在 HEAD，npm 查询确认 2.8.12 已发布，补齐最后验收并归档该任务。归档 helper 使用限定任务路径，包含源路径移除；日志提交仅更新已跟踪文件，不 force-add、不修改忽略规则/脚本/运行时代码。此轮只本地收尾，不推送、不改已发布标签。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1acb73b` | (see git log) |
+| `e8abd6e` | (see git log) |
+| `d70e963` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 15: Upgrade project Pi baseline to 1.0.3 and review
+
+**Date**: 2026-10-05
+**Task**: Upgrade project Pi baseline to 1.0.3 and review
+**Branch**: `chore/upgrade-project-pi-1.0.1`
+
+### Summary
+
+Upgraded the project Pi dev baseline from 1.0.2 to npm latest 1.0.3 (pi-coding-agent ^1.0.3, pi-server 1.0.3; peer range unchanged at >=0.82.0, package version 2.8.19 untouched). Diffed installed 1.0.2 against the 1.0.3 tarball: root index.d.ts, the five contract-bound internals, and the extension event declarations/types/runner/loader are byte-identical; bundle compat key union unchanged (supportsPromptCacheKey still absent); Azure provider rename keeps its azure-openai-responses transport id and Pi still owns prompt_cache_key for Responses transports, so no source change was required. Synced README/README.zh-CN/spec version references and appended evidence to the task cross-day-review. Ran clean npm ci (0 vulnerabilities) plus the full quality gate: typecheck, 178/178 tests, check:diff, check:modules (26 modules, no cycles), check:pack (31 files), and a real-host load smoke via Pi 1.0.3 discoverAndLoadExtensions (0 errors, 10 handlers + cache-optimizer command). Post-commit review corrected two unverified claims in the task record (event shapes now directly verified; runtime-Foundry inference removed) and recorded the clean-install evidence. Also interpreted Pi issue #10318: maintainer davidbrai suggests passing the physical model via an existing event after virtual-model resolution instead of a new hook; no extension action needed now. Archived task 10-03-upgrade-project-pi-1-0-1.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b28674d` | (see git log) |
+| `966a866` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 16: 修复中文 provider 拒绝错误识别
+
+**Date**: 2026-10-07
+**Task**: 修复中文 provider 拒绝错误识别
+**Branch**: `chore/upgrade-project-pi-1.0.1`
+
+### Summary
+
+补齐 prompt_cache_key 与 thinking→reasoning_effort 中文拒绝识别并加回归测试；通过确认式流程为 GLM-5.3-Flash 精确配置 omit，验证新进程移除两种 key。npm run check 179/179 通过。提交 b9c3ee8；旧 Pi 会话仍需 /reload 或重启。
+
+### Main Changes
+
+- Added grammar-bound Chinese rejection evidence for `prompt_cache_key` and the DeepSeek-like `thinking` → `reasoning_effort` protocol change.
+- Kept evidence process-local and exact-model scoped; ordinary `/cache-optimizer fix` remains user-invoked, previewed, and confirmation-gated.
+- Updated both READMEs, the executable contract spec, and permanent regression tests. The confirmed GLM-specific opt-out removes both cache-key spellings without changing unrelated payload fields.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b9c3ee8` | `fix: recognize Chinese provider rejection errors` |
+
+### Testing
+
+- [OK] `npm run check`: 179 tests, typecheck, diff, 26-module cycle check, and 31-file package check passed.
+- [OK] Fresh-module verification confirmed the exact-model omit removes both `prompt_cache_key` spellings; receipt/backup hashes matched.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 17: 收紧中文拒绝证据边界并准备 2.8.20 发布
+
+**Date**: 2026-10-07
+**Task**: 收紧中文拒绝证据边界并准备 2.8.20 发布
+**Branch**: `chore/upgrade-project-pi-1.0.1`
+
+### Summary
+
+按用户授权替换旧 Mainline 提议并完成中文拒绝边界修复；普通 fix 证据门控回归通过，npm run check 179/179 全通过。准备发布 pi-cache-optimizer 2.8.20，PR 合并及 OIDC npm 发布验证仍待完成。
+
+### Main Changes
+
+- Tightened Chinese rejection evidence boundaries for values, conditions, negated recommendations, and diagnostic clause suffixes while preserving the exact UNKNOWN_FIELD positive and confirmation gates.
+- Added integration coverage for ordinary `/cache-optimizer fix` before evidence, after evidence on another model, cancellation, and confirmation; no user configuration was changed.
+- Retired superseded Mainline intent `int_fc7474c5`; preserved its original implementation commit and recorded this corrective follow-up under `int_c2a24061`.
+- Prepared npm release 2.8.20 through the repository's existing tag-triggered OIDC workflow; final publication must be verified against the workflow run and npm registry.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `692e3f5` | `fix: tighten Chinese provider rejection evidence` |
+| `45280b0` | `chore: release pi-cache-optimizer 2.8.20` |
+| `7e359aa` | `chore(task): archive 10-07-tighten-chinese-rejection-evidence-boundaries` |
+| `8c2afaa` | `chore(task): remove duplicate active Chinese rejection record` |
+
+### Testing
+
+- [OK] `npm run check` after version bump: 179/179 tests, typecheck, diff, module graph, and pack checks passed.
+- [OK] `task.py validate` passed; Mainline preflight is unblocked with no overlaps.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
