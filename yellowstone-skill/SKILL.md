@@ -748,6 +748,51 @@ distinguishes the two states — `restart_needed` (a new binary is installed) an
 `server_binary_stale` (the server predates it) — and neither requires a stop
 while you are working.
 
+## Updating subrepos
+
+This repo carries its components as **git subrepos** under `src/`: each directory has a
+`.gitrepo` file recording the remote, the tracked branch and the commit it is synced to. That
+file is the record — never hand-edit `commit =` or `parent =`, because the next `pull` will
+disagree with you and the failure looks like a corrupted checkout.
+
+**Check what is current** (safe, read-only, network):
+
+```sh
+git subrepo status                      # every subrepo
+git subrepo status src/pi-extensions/bizzy   # one
+```
+
+**Pull one upstream change** — one subrepo at a time, never a sweep, so each change is a commit
+you can read and revert on its own:
+
+```sh
+git subrepo pull src/herdr-plugins/unblock
+```
+
+When the subrepo is already at its tracked commit, `pull` prints `is up to date` and creates no
+commit; that is the expected result, not a failure. After **any** pull, run the round-trip gate:
+
+```sh
+./test/verify-subrepo-roundtrip.sh
+```
+
+It clones the branch into a throwaway tree and asserts that every subrepo resolves, that the
+pulled commit matches `.gitrepo`, that the directory has content, and that a `pull` is a no-op —
+plus a **count** (`EXPECTED` in the script). If you add or remove a subrepo, that number moves in
+the same commit, or the gate fails on purpose.
+
+**Two rules that come from how this fleet works, not from git:**
+
+- **Never `git subrepo push` into a branch a jj working copy is sitting on.** `tooling/` repos are
+  jj-colocated and shared with live lanes; cloning is safe, pushing can race a lane mid-edit.
+- **Cloning needs a clean tree.** `git subrepo clone` refuses to run while anything is unstaged,
+  including someone else's in-progress edit. That refusal is correct: work in your own worktree
+  rather than stashing another lane's files.
+
+Adding a subrepo is `git subrepo clone <url> -b <branch> <path>` from the remote — never from a
+local checkout, or the `.gitrepo` records a filesystem path and the repo stops being reproducible
+on another machine. Then raise `EXPECTED` and run the gate.
+
 ## Troubleshooting
 
 | Symptom | First check | Fix |
