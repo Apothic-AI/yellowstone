@@ -115,6 +115,23 @@ For `src/libs` this sweep found **nothing**: no library is installed from, or fo
 fleet's dependency set. The directory should be recorded as empty rather than filled to match the
 outline.
 
+## Decisions adopted from the lead's record
+
+`~/Documents/Fleet/pi-fleet-model/FT-01-LEAD-DECISIONS.md` is the decision record; this page is
+the measurement. Four of its decisions shaped the entries above:
+
+- **D7** — a conversion is not done until a fresh clone plus `git subrepo status` / `pull`
+  reproduces the tree. That is the gate this repo will be judged by, so every claim here is
+  written to be re-derivable from a clone.
+- **D9** — the manifest names the branch the install *resolves to*, and that branch must be
+  published. Hence `pi-pretty-tui@test/composer-selection-on-apothic` in `30648ef` rather than
+  `@apothic`; the seven commits the test line carries beyond `apothic` are follow-up, not part
+  of FT-01.
+- **D10** — `home/` is a literal `$HOME` mirror over the five destinations `install.sh` already
+  declares, with the instance tree and secrets excluded (see *Explicitly out of scope* above).
+- **D11** — `git subrepo push` never targets a branch a jj worktree is sitting on. Cloning is
+  safe; pushing races a live lane.
+
 ## Drift found while measuring
 
 1. **The running pi disagrees with the committed manifest, and runs unreleased code.**
@@ -145,23 +162,30 @@ outline.
    working in, so those two worktrees must not be edited concurrently.
 5. `yellowstone` itself is clean except `.pi/launch.env` (`PI_PROFILE=fleet` → `leader`). No
    stashes, no extra worktrees, nothing a restructure could destroy.
-6. **The manifest does not reproduce the machine.** `pi/settings.json` declares 17 packages; the
-   live install has 25. Diffed with `pi list` (sources only, `(filtered)` stripped):
+6. **The manifest did not reproduce the machine — fixed in `30648ef`.** It declared 17 packages;
+   the live install has 25. Diffed with `pi list` (sources only, `(filtered)` stripped):
 
    | | Count | Which |
    |---|---|---|
-   | Live, **not** declared | 10 | `pi-hermes-memory`, `agents-cron`, `pi-beads-extension`, `pi-paster`, `@henryqw/pi-undo`, `pi-double-paste`, `@xynogen/pix-voice`, plus the three local paths `~/Code/pi-fleet-hooks`, `~/Code/pi-extensions-apothic/packages/pi-goal`, `~/Code/apothic-pi-extensions/packages/pi-modes` |
+   | Live, **not** declared | 9 | `pi-hermes-memory`, `agents-cron`, `pi-beads-extension`, `pi-paster`, `@henryqw/pi-undo`, `pi-double-paste`, `@xynogen/pix-voice`, and the two local checkouts `~/Code/pi-fleet-hooks`, `~/Code/apothic-pi-extensions/packages/pi-modes` |
    | Declared, **not** live | 1 | `npm:@howaboua/pi-subdir-agents` |
    | Declared and live, **different ref** | 2 | `bizzy` (declared bare, live `@apothic-main`), `pi-pretty-tui` (declared `@apothic`, live `@test/composer-selection-on-apothic`) |
+   | Apparent only | 1 | `…/packages/pi-goal` — declared correctly as a placeholder, so it reads as undeclared only when the template is compared against rendered paths |
 
    The undeclared npm set is not incidental: memory (`pi-hermes-memory`), scheduling
    (`agents-cron`) and beads (`pi-beads-extension`) are the fleet's own operating surface. A
    machine built from this repo would boot without them and lose exactly the machinery that
-   tracks work. So FT-01 is not only a re-arrangement: **the manifest has to be made honest
-   before it can claim to reproduce anything.** `pi-profile-switch` appears nowhere in the repo
-   at all — it is the `pil` launcher every lane is started by, which is why no install record
-   names it. And pi-modes lives in `Apothic-AI/pi-extensions-1`, a **different repository** from
-   `Apothic-AI/pi-extensions`, with a different root commit — two lineages, both canonical.
+   tracks work. `30648ef` adds the nine, drops the stale one, and points both ref mismatches at
+   the branch the install resolves to; the two new checkouts resolve through placeholders, so a
+   moved checkout is an environment variable rather than an edit. Verified both directions:
+   merging the template into a copy of the live settings adds nothing and keeps every existing
+   source, and merging it into an empty settings resolves all 25.
+
+   `pi-profile-switch` is a separate gap and cannot be fixed here: it is not a pi package, so no
+   package list can carry it. It is the `pil` launcher every lane is started by, and it appears
+   nowhere in this repo. And pi-modes lives in `Apothic-AI/pi-extensions-1`, a **different
+   repository** from `Apothic-AI/pi-extensions`, with a different root commit — two lineages,
+   both canonical.
 7. **One commit is stranded, but not where it first appeared to be.** `herdr-voice-linux`'s
    tracked branch `linux-port` is exactly `origin/linux-port` (0 ahead, 0 behind). The commit
    `2715621 feat: draw the floating orb on x11 with cairo` lives **only** on the local branch
@@ -170,6 +194,17 @@ outline.
    end for that fork's owner. `pi-rooms` likewise only looks bad: 12 commits are "unpushed" but
    all sit on `task/*` sibling worktrees belonging to live pi-rooms lanes, and `master` is level
    with `origin/master` (`efe5896`).
+8. **The herdr plugin manifest is short one plugin, and it is the one that runs unpublished
+   code.** `herdr/plugins.toml` declares 14 plugins; `~/.config/herdr/plugins.json` has 15. The
+   missing one is `pi-rooms`, which is the rooms popup, and it is *link*-installed from
+   `/home/bitnom/Code/pi-rooms/.worktrees/c2/plugin` — the `task/c2` worktree, head `856a8fb`,
+   which is on no remote. Two consequences: a machine built from this repo has no rooms popup
+   at all, and the one that runs here is the only plugin in the fleet executing a branch that
+   was never published. Note the two pi-rooms *surfaces* have different sources — the pi
+   extension runs from the package cache at `master`/`efe5896` (published), the herdr plugin
+   from `task/c2` (not). This is the same class of defect as drift 6, on the herdr side, and it
+   needs a decision rather than a copy: declare the popup at whatever ref we intend, and land
+   `task/c2` on `master` before declaring it.
 
 ## Decisions this inventory does not make
 
