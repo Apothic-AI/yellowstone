@@ -59,14 +59,30 @@ dagr_plugin_root() {
 
 # Find an existing checkout of a GitHub repo, so a repo-owned skill can be
 # linked (and therefore update with `git pull`) instead of re-fetched.
+#
+# The monorepo is asked first. Every `src/**/.gitrepo` records the remote it
+# tracks, so a match there is the same commit the extension itself is pinned to —
+# a skill and the code it documents cannot drift apart. That matters because the
+# loose checkouts below are what FT-01 retires: without this branch, deleting
+# `~/Code/apothic-monorepo-workspace/tooling/unblock` would silently send every
+# unblock skill to a fresh duplicate clone under `~/Code`, which is the scatter
+# the monorepo exists to end.
 find_checkout() {
-  local repo="$1" name="${1#*/}" dir
+  local repo="$1" name="${1#*/}" dir gitrepo remote want
+  want="$(printf '%s' "$repo" | tr '[:upper:]' '[:lower:]')"
+  for gitrepo in "$REPO_ROOT"/src/*/*/.gitrepo; do
+    [ -f "$gitrepo" ] || continue
+    remote="$(git config -f "$gitrepo" subrepo.remote 2>/dev/null || true)"
+    [ -n "$remote" ] || continue
+    case "$(printf '%s' "$remote" | tr '[:upper:]' '[:lower:]')" in
+      *"$want"*) printf '%s\n' "$(dirname "$gitrepo")"; return 0 ;;
+    esac
+  done
   local roots=("$HOME/Code" "$HOME/src" "$HOME/projects" "$HOME/dev" "$HOME/git" "$HOME/Code/apothic-monorepo-workspace/tooling")
   for dir in "${roots[@]}"; do
     [ -d "$dir" ] || continue
     for candidate in "$dir/$name" "$dir"/*/"$name"; do
       [ -d "$candidate/.git" ] || [ -d "$candidate/.jj" ] || continue
-      local remote
       remote="$(git -C "$candidate" remote get-url origin 2>/dev/null || true)"
       case "$remote" in
         *"$repo"*) printf '%s\n' "$candidate"; return 0 ;;
