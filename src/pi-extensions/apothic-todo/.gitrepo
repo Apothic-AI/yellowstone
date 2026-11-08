@@ -1,0 +1,12 @@
+; DO NOT EDIT (unless you know what you are doing)
+;
+; This subdirectory is a git "subrepo", and this file is maintained by the
+; git-subrepo command. See https://github.com/ingydotnet/git-subrepo#readme
+;
+[subrepo]
+	remote = https://github.com/Apothic-AI/apothic-todo
+	branch = main
+	commit = ef2dc6352c2f972c87daebd9ee9889c85ad2ebcb
+	parent = eeab68475662fc507a6bd331dce326c762b61824
+	method = merge
+	cmdver = 0.4.9
