@@ -1,0 +1,51 @@
+# herdr-voice as a Herdr plugin: https://herdr.dev/docs/plugins/
+id = "brogrammermw.herdr-voice"
+name = "herdr-voice"
+version = "1.4.1"
+min_herdr_version = "0.9.0"
+description = "Talk to your Herdr agents: realtime voice (Grok, OpenAI or Gemini) that drives Claude Code and Codex panes, with a floating orb"
+platforms = ["macos", "linux"]
+
+# Needs Swift 5.10+ (Xcode or the Command Line Tools on macOS). The first build takes a minute or two.
+# On Linux the orb, the audio engine and the global hotkeys talk to X11, Cairo and PortAudio directly, so those
+# development packages must be installed first:
+#   Debian/Ubuntu: sudo apt install libx11-dev libxrender-dev libcairo2-dev portaudio19-dev
+#   Fedora:        sudo dnf install libX11-devel libXrender-devel cairo-devel portaudio-devel
+#   Arch:          sudo pacman -S libx11 libxrender cairo portaudio
+[[build]]
+command = ["swift", "build", "-c", "release"]
+
+# Puts the `herdr-voice` command on your PATH (a small launcher script in ~/.local/bin), so typing herdr-voice in any pane starts the voice.
+# Undo with: herdr-voice uninstall-command
+[[build]]
+command = [".build/release/herdr-voice", "install-command"]
+
+# The voice itself: a split pane showing the live transcript. Closing the pane stops it.
+[[panes]]
+id = "voice"
+title = "herdr-voice"
+placement = "split"
+command = [".build/release/herdr-voice", "--here"]
+
+# Store an API key in the platform secret store (Keychain on macOS, Secret Service on Linux).
+[[panes]]
+id = "setup"
+title = "herdr-voice setup"
+placement = "popup"
+width = "70%"
+height = 16
+command = [".build/release/herdr-voice", "setup"]
+
+# Same as typing herdr-voice: opens the voice pane below the focused pane, hidden behind it unless
+# HERDR_VOICE_START_HIDDEN=0. Bind it to a key (see the README).
+[[actions]]
+id = "start"
+title = "Start voice"
+contexts = ["workspace"]
+command = [".build/release/herdr-voice"]
+
+[[actions]]
+id = "setup"
+title = "Set up an API key"
+contexts = ["workspace"]
+command = ["sh", "-c", "exec \"$HERDR_BIN_PATH\" plugin pane open --plugin brogrammermw.herdr-voice --entrypoint setup"]

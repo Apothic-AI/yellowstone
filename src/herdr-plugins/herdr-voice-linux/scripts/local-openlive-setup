@@ -1,0 +1,12 @@
+#!/bin/sh
+set -eu
+
+repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+"${repo_root}/scripts/local-openlive-source"
+"${repo_root}/scripts/local-openlive-preflight"
+cd "${repo_root}/local-openlive"
+ollama show qwen3.5:4b >/dev/null 2>&1 || ollama pull qwen3.5:4b
+pnpm install --frozen-lockfile
+pnpm build
+node scripts/setup-models.mjs
+node scripts/check-runtime.mjs

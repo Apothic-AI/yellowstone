@@ -1,0 +1,298 @@
+import Foundation
+import HerdrVoiceCore
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+
+/// One owned Electron inference host. Its session token and optional brain key travel over stdin, never argv.
+final class LocalRuntime {
+    struct Ready {
+        let request: URLRequest
+        let label: String
+        let probe: [String: Any]
+    }
+
+    enum RuntimeError: LocalizedError {
+        case missing(String), failed(String), timeout
+        var errorDescription: String? {
+            switch self {
+            case .missing(let detail), .failed(let detail): detail
+            case .timeout: "Local OpenLive WebGPU startup timed out"
+            }
+        }
+    }
+
+    private var process: Process?
+    private var input: Pipe?
+    private let lifecycle = NSLock()
+    private var generation = 0
+
+    func prepare(environment: [String: String] = ProcessInfo.processInfo.environment,
+                 setup: Bool = false) throws -> Ready {
+        let operation = beginPreparation()
+        let root = try Self.runtimeRoot(environment: environment)
+        let electron = root.appendingPathComponent("node_modules/.bin/electron").path
+        let main = root.appendingPathComponent("dist/main.mjs").path
+        guard FileManager.default.isExecutableFile(atPath: electron), FileManager.default.fileExists(atPath: main) else {
+            throw RuntimeError.missing("Local OpenLive is not built. Run scripts/local-openlive-setup first.")
+        }
+        let token = try randomToken()
+        let state = LocalState.directory()
+        var boot: [String: Any] = ["token": token, "stateDir": state.path, "setup": setup, "brain": try brain(environment)]
+        if !setup { boot.removeValue(forKey: "setup") }
+        let bootData = try JSONSerialization.data(withJSONObject: boot)
+
+        let child = Process()
+        child.executableURL = URL(fileURLWithPath: electron)
+        child.arguments = [main]
+        var childEnvironment: [String: String] = [:]
+        // Electron is a GUI process. On macOS it needs nothing from the environment to come up; on Linux it
+        // needs the display, the X authority and the session bus, or it exits with "Missing X server or $DISPLAY".
+        // The list stays narrow on purpose: this child is a sandboxed inference host, not a shell.
+        #if os(Linux)
+        let platformKeys = ["DISPLAY", "XAUTHORITY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS"]
+        #else
+        let platformKeys: [String] = []
+        #endif
+        for key in ["HOME", "TMPDIR", "PATH", "LANG", "LC_ALL", "USER", "LOGNAME", "XDG_CACHE_HOME"] + platformKeys {
+            if let value = environment[key] { childEnvironment[key] = value }
+        }
+        childEnvironment["OLLAMA_NO_CLOUD"] = "1"
+        // A check may ask the helper to drop keepalives, to prove a dropped socket never relaunches the host. Only
+        // ever set by scripts/local-keepalive-check; absent in normal use.
+        if let stall = environment["LOCAL_OPENLIVE_FAULT_STALL_HEARTBEATS"] {
+            childEnvironment["LOCAL_OPENLIVE_FAULT_STALL_HEARTBEATS"] = stall
+        }
+        child.environment = childEnvironment
+        let stdin = Pipe(), stdout = Pipe()
+        child.standardInput = stdin
+        child.standardOutput = stdout
+        child.standardError = FileHandle.standardError
+
+        let lock = NSLock()
+        var bytes = Data()
+        var result: Result<[String: Any], Error>?
+        let ready = DispatchSemaphore(value: 0)
+        stdout.fileHandleForReading.readabilityHandler = { handle in
+            let chunk = handle.availableData
+            guard !chunk.isEmpty else { return }
+            lock.lock()
+            defer { lock.unlock() }
+            bytes.append(chunk)
+            if bytes.count > 64 * 1024 {
+                result = .failure(RuntimeError.failed("Local OpenLive readiness output was too large"))
+                ready.signal()
+                return
+            }
+            while result == nil, let newline = bytes.firstIndex(of: 10) {
+                let line = Data(bytes[..<newline])
+                bytes.removeSubrange(...newline)
+                guard let object = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
+                      object["type"] as? String == "ready" else { continue }
+                result = .success(object)
+                ready.signal()
+            }
+        }
+        child.terminationHandler = { process in
+            lock.lock()
+            defer { lock.unlock() }
+            if result == nil {
+                result = .failure(RuntimeError.failed("Local OpenLive exited during startup (status \(process.terminationStatus))"))
+                ready.signal()
+            }
+        }
+        do { try child.run() } catch { throw RuntimeError.failed("Could not start Local OpenLive: \(error.localizedDescription)") }
+        lifecycle.lock()
+        guard generation == operation else {
+            lifecycle.unlock()
+            if child.isRunning { child.terminate() }
+            throw RuntimeError.failed("Local OpenLive startup was superseded by a newer provider choice")
+        }
+        process = child
+        input = stdin
+        lifecycle.unlock()
+        stdin.fileHandleForWriting.write(bootData)
+        stdin.fileHandleForWriting.write(Data([10]))
+
+        guard ready.wait(timeout: .now() + 245) == .success else {
+            stop(operation: operation, child: child)
+            throw RuntimeError.timeout
+        }
+        guard lifecycle.withLock({ generation == operation }) else {
+            throw RuntimeError.failed("Local OpenLive startup was superseded by a newer provider choice")
+        }
+        stdout.fileHandleForReading.readabilityHandler = nil
+        let object: [String: Any]
+        do { object = try lock.withLock { try result!.get() } } catch {
+            stop(operation: operation, child: child) // an invalid readiness record must not leave the child running
+            throw error
+        }
+        if !setup {
+            do { try verifyInventory(object, state: state) }
+            catch {
+                stop(operation: operation, child: child)
+                throw error
+            }
+        }
+        guard let port = object["port"] as? Int, (1...65535).contains(port),
+              let label = object["brain"] as? String,
+              let url = URL(string: "ws://127.0.0.1:\(port)") else {
+            if setup { return Ready(request: URLRequest(url: URL(string: "ws://127.0.0.1:1")!),
+                                    label: object["brain"] as? String ?? "Local OpenLive",
+                                    probe: object["probe"] as? [String: Any] ?? [:]) }
+            stop(operation: operation, child: child)
+            throw RuntimeError.failed("Local OpenLive readiness omitted its loopback port")
+        }
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        // The helper is a Node server: it only sees an upgrade if the handshake asks for one. Same fix the cloud
+        // providers get — without it the request arrives as a plain GET and the helper answers 404.
+        request = Provider.websocketHandshakeFix(request)
+        return Ready(request: request, label: label, probe: object["probe"] as? [String: Any] ?? [:])
+    }
+
+    /// Whether setup has run: Electron, the built main and the model inventory exist. Only stats files.
+    static func isBuilt(environment: [String: String] = ProcessInfo.processInfo.environment) -> Bool {
+        guard let root = try? runtimeRoot(environment: environment) else { return false }
+        let files = FileManager.default
+        return files.isExecutableFile(atPath: root.appendingPathComponent("node_modules/.bin/electron").path)
+            && files.fileExists(atPath: root.appendingPathComponent("dist/main.mjs").path)
+            && files.fileExists(atPath: LocalState.inventory(in: LocalState.directory()).path)
+    }
+
+    private func verifyInventory(_ readiness: [String: Any], state: URL) throws {
+        let file = LocalState.inventory(in: state)
+        guard let data = try? Data(contentsOf: file),
+              let expected = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let probe = readiness["probe"] as? [String: Any],
+              let actual = probe["inventory"] as? [String: Any],
+              expected["count"] as? Int == actual["count"] as? Int,
+              expected["bytes"] as? Int == actual["bytes"] as? Int,
+              expected["digest"] as? String == actual["digest"] as? String
+        else {
+            throw RuntimeError.failed("Local OpenLive model cache in \(state.path) does not match its setup inventory. "
+                + "Run scripts/local-openlive-setup.")
+        }
+    }
+
+    /// Whether the helper this runtime started is still alive. A dropped socket is not a dead host: the app redials
+    /// the same port while this is true, and only relaunches (with its ~9 s warm-up) when it is false.
+    var isRunning: Bool {
+        lifecycle.lock()
+        defer { lifecycle.unlock() }
+        return process?.isRunning ?? false
+    }
+
+    func stop() {
+        lifecycle.lock()
+        generation += 1
+        let pipe = input
+        let child = process
+        input = nil
+        process = nil
+        lifecycle.unlock()
+        try? pipe?.fileHandleForWriting.close()
+        guard let child else { return }
+        terminateAndReap(child)
+    }
+
+    /// Stops a helper for good. SIGTERM lets Electron take its GPU and renderer children down with it; SIGKILL follows
+    /// if it ignores that, so no orphaned host is ever left holding the GPU. Waiting matters as much as killing:
+    /// without it the next host races a dying one for the GPU, and two Electron trees end up on one machine.
+    private func terminateAndReap(_ child: Process, grace: TimeInterval = 2) {
+        if child.isRunning { child.terminate() }
+        let deadline = Date().addingTimeInterval(grace)
+        while child.isRunning && Date() < deadline { usleep(50_000) }
+        if child.isRunning { kill(child.processIdentifier, SIGKILL) }
+        child.waitUntilExit()
+    }
+
+    private func beginPreparation() -> Int {
+        lifecycle.lock()
+        generation += 1
+        let operation = generation
+        let pipe = input
+        let child = process
+        input = nil
+        process = nil
+        lifecycle.unlock()
+        try? pipe?.fileHandleForWriting.close()
+        if let child { terminateAndReap(child) }
+        return operation
+    }
+
+    private func stop(operation: Int, child: Process) {
+        lifecycle.lock()
+        guard generation == operation, process === child else { lifecycle.unlock(); return }
+        generation += 1
+        let pipe = input
+        input = nil
+        process = nil
+        lifecycle.unlock()
+        try? pipe?.fileHandleForWriting.close()
+        terminateAndReap(child)
+    }
+
+    private static func runtimeRoot(environment: [String: String]) throws -> URL {
+        if let configured = environment["HERDR_VOICE_LOCAL_OPENLIVE_DIR"] ?? environment["HERDR_LOCAL_OPENLIVE_DIR"],
+           !configured.isEmpty {
+            return URL(fileURLWithPath: configured, isDirectory: true)
+        }
+        let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+        let candidate = cwd.appendingPathComponent("local-openlive", isDirectory: true)
+        if FileManager.default.fileExists(atPath: candidate.appendingPathComponent("package.json").path) { return candidate }
+        var executable = URL(fileURLWithPath: CommandLine.arguments[0]).standardizedFileURL
+        if !executable.path.hasPrefix("/") { executable = cwd.appendingPathComponent(executable.path) }
+        var directory = executable.deletingLastPathComponent().resolvingSymlinksInPath()
+        for _ in 0..<8 {
+            let bundled = directory.appendingPathComponent("local-openlive", isDirectory: true)
+            if FileManager.default.fileExists(atPath: bundled.appendingPathComponent("package.json").path) { return bundled }
+            let parent = directory.deletingLastPathComponent()
+            if parent == directory { break }
+            directory = parent
+        }
+        throw RuntimeError.missing("Set HERDR_VOICE_LOCAL_OPENLIVE_DIR or run herdr-voice from its source checkout after setup.")
+    }
+
+    private func brain(_ environment: [String: String]) throws -> [String: Any] {
+        func setting(_ name: String) -> String? {
+            environment["HERDR_VOICE_LOCAL_BRAIN_\(name)"] ?? environment["HERDR_LOCAL_BRAIN_\(name)"]
+        }
+        let kind = setting("KIND") ?? "local"
+        let model = setting("MODEL") ?? "qwen3.5:4b"
+        let baseURL = setting("URL") ?? "http://127.0.0.1:11434/v1"
+        let protocolName = setting("PROTOCOL") ?? "openai-chat"
+        guard ["openai-chat", "openai", "anthropic"].contains(protocolName) else {
+            throw RuntimeError.failed("HERDR_LOCAL_BRAIN_PROTOCOL must be openai-chat, openai, or anthropic")
+        }
+        var value: [String: Any] = ["kind": kind, "model": model, "baseURL": baseURL, "protocol": protocolName]
+        if let reasoning = setting("REASONING"), !reasoning.isEmpty { value["reasoningEffort"] = reasoning }
+        if kind != "local" {
+            guard let label = setting("LABEL"), !label.isEmpty else {
+                throw RuntimeError.failed("A remote local-voice brain needs HERDR_LOCAL_BRAIN_LABEL so the orb can show Hybrid")
+            }
+            value["label"] = label
+            let service = kind == "keyed" ? (setting("KEYCHAIN") ?? "HERDR_LOCAL_BRAIN_API_KEY") : setting("KEYCHAIN")
+            if let service, !service.isEmpty {
+                guard let key = Keychain.password(service: service) else {
+                    throw RuntimeError.failed("No key found in \(Keychain.storeDescription) service \(service)")
+                }
+                value["apiKey"] = key
+            }
+        }
+        return value
+    }
+
+    private func randomToken() throws -> String {
+        let bytes: [UInt8]
+        do {
+            bytes = try Random.bytes(32)
+        } catch {
+            throw RuntimeError.failed("Could not create Local OpenLive session token: \(error)")
+        }
+        return Data(bytes).base64EncodedString().replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
+    }
+
+    deinit { stop() }
+}

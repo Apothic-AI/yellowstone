@@ -1,0 +1,12 @@
+; DO NOT EDIT (unless you know what you are doing)
+;
+; This subdirectory is a git "subrepo", and this file is maintained by the
+; git-subrepo command. See https://github.com/ingydotnet/git-subrepo#readme
+;
+[subrepo]
+	remote = https://github.com/Apothic-AI/herdr-voice-linux
+	branch = linux-port
+	commit = 5c3cf3f77b3e9aee97f8fa67c787026553467c9b
+	parent = 3334698c06491fd2f238b5fd7070a1992938e508
+	method = merge
+	cmdver = 0.4.9

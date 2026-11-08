@@ -1,0 +1,21 @@
+.build/
+.swiftpm/
+.DS_Store
+.env
+local-openlive/node_modules/
+local-openlive/dist/
+local-openlive/vendor/
+local-openlive/.local-model-inventory.json
+bench-results/
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/
+.dagr/
+graft/
+.claude/
+.gemini/
+.grok/
+.ignore
+.mcp.json
+AGENTS.md
+GEMINI.md
