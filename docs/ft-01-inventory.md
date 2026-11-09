@@ -6,7 +6,13 @@ git-subrepo monorepo. This page records **measurements**, not the plan. Every ro
 
 Read on 2026-11-08, after `git-subrepo` 0.4.9 was confirmed installed
 (`~/.local/opt/git-subrepo`, `git subrepo version`). There is **no git-subrepo skill on this
-machine** — `~/.agents/skills` has none, and neither does `~/.pi/agent/skills`.
+machine** — `~/.agents/skills` has none, and neither does `~/.pi/agent/skills`; the procedure
+lives in `yellowstone-skill/SKILL.md` under *Updating subrepos*.
+
+**The completion criterion is a command, not a claim here:** `./test/verify-subrepo-roundtrip.sh`
+must pass — a fresh clone of this repo, every `src/**/.gitrepo` resolving, every pin equal to its
+remote head, every `git subrepo pull` a no-op. Anything on this page that disagrees with the gate
+is stale; the gate is the thing that is re-derived every run.
 
 ## Reproduce
 
@@ -142,16 +148,15 @@ the measurement. Four of its decisions shaped the entries above:
 
 ## Drift found while measuring
 
-1. **The running pi disagrees with the committed manifest, and runs unreleased code.**
-   `pi/settings.json` declares `git:github.com/Apothic-AI/pi-pretty-tui@apothic`; `pi list`
-   reports the live install at `@test/composer-selection-on-apothic`. Measured: the
-   `tooling/pi-pretty-tui` checkout is exactly `origin/apothic` (0 ahead, 0 behind), while
-   `~/Code/pi-pretty-tui` is **7 commits ahead** of it. Those 7 are a merge rehearsal — three
-   `Test merge: … on apothic` commits folding in composer-selection, selection-fix and
-   repeat-paste, plus `Add a tmux-based live harness for composer selection`. So the shape is
-   not "two candidates, pick one": the test line is *ahead* of the published branch and the
-   fleet runs it. Either that work lands on `apothic`, or the install is rolled back to it.
-   Both are decisions; neither is a copy.
+1. **Was: the running pi disagreed with the committed manifest — fixed in `30648ef`.** The mirror
+   declared `git:github.com/Apothic-AI/pi-pretty-tui@apothic` while `pi list` reported the live
+   install at `@test/composer-selection-on-apothic`. That is a **stale pin, not drift**: nothing
+   had changed underneath the repo, the pin simply named the merge branch while the fleet ran a
+   published test branch. Measured for the record: `tooling/pi-pretty-tui` is exactly
+   `origin/apothic` (0 ahead, 0 behind), while `~/Code/pi-pretty-tui` is **7 commits ahead** of
+   it — three `Test merge: … on apothic` commits folding in composer-selection, selection-fix and
+   repeat-paste, plus a tmux live harness — and only the harness (`64e9ddd`) is unpublished. The
+   mirror now names the test branch (D9), so what runs and what is declared agree.
 2. **Two remotes have two checkouts each**, and a third `pi-extensions` that is not one of them.
    `Apothic-AI/pi-pretty-tui` → `~/Code/pi-pretty-tui` and `tooling/pi-pretty-tui`;
    `Apothic-AI/pi-persist` → `~/Code/pi-persist` and `~/Code/pi-persist-toggle`.
