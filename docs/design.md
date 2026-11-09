@@ -222,15 +222,20 @@ after it — including the ones that will one day police this page.
 
 Every gate in this repository tests the tree against the tree. Round-trip compares the mirror to a
 fresh clone of itself; the install suite compares the installer to the mirror; the mirror suite
-compares the mirror to its own lists. All of them can be green while the machine the mirror was
-copied from and the mirror disagree, because nothing in the set observes both.
+compares the mirror to its own lists. That is the right shape for reproducibility, and it has one
+blind spot nothing in `test/` can close: **a change that reverts the tree and the mirror together is
+internally consistent, and every gate stays green.**
 
-The concrete hazard: a merge resolved in favour of a stale `home/.overlord/tools/*` copy restores a
-retired script into the mirror. Every gate stays green. The published snapshot is wrong, the tests
-say it is right, and the only witness is the file on disk, compared from outside the repository.
+The case that makes it concrete: `home/.overlord/tools/` is a copy of the fleet's living tooling.
+Suppose a merge resolves a conflict in favour of the mirror's older side. The mirror and the freshly
+installed tree then agree perfectly — byte-identical, gates green, round-trip passing — and the fleet
+is running the retired wake contract, because the installed copy was overwritten by a tree that
+certified itself.
 
-This is the same defect as five count disputes, four `plugins.toml` flips, and a guard that passed
-while the bug sat behind it: **the measurement and the thing measured shared a source.**
+This is the same failure as *a name is not a property*, one level up: there a string stood in for a
+resolved path, and here a self-referential test stands in for an external fact. Both are truthful
+answers to the wrong question. The general form is worth stating once, because every incident in this
+file is an instance of it: **the measurement and the thing measured shared a source.**
 
 The rule: when a check's two inputs both come from the artefact under test, it can tell you the
 artefact is consistent, never that it is correct. Correctness needs one input from outside — the

@@ -447,27 +447,54 @@ while IFS='|' read -r root dest; do
     fi
     case "$policy" in
       copy|copy-exec)
-        if ! cmp -s -- "$HOME_SRC/$rel" "$target"; then
+        # On a pi-profile-switch lane, $PI_DIR is that lane's instance directory,
+        # not ~/.pi/agent. Its .pi/agent files are a snapshot taken at launch, and
+        # the live agent dir moves on afterwards (the extensions write there), so
+        # comparing the mirror against the snapshot reports drift that does not
+        # exist. Compare against the real agent dir instead, and say which one was
+        # used — a false fail here trains the operator to stop reading this section,
+        # which costs the whole check.
+        compare_target="$target"
+        case "$rel" in
+          .pi/agent/*)
+            if [ "$PI_DIR" != "$HOME/.pi/agent" ]; then
+              compare_target="$HOME/.pi/agent/${rel#.pi/agent/}"
+            fi
+            ;;
+        esac
+        if [ ! -e "$compare_target" ]; then
+          # The instance lane has no counterpart; the snapshot is all there is.
+          continue
+        fi
+        if ! cmp -s -- "$HOME_SRC/$rel" "$compare_target"; then
+          # Two ways to differ, and they are not the same finding.
+          #
           # The fleet edits its own tooling IN PLACE and commits the mirror
-          # afterwards, so a difference here is usually work in progress rather
-          # than a broken install. Failing would redden doctor for an hour of
-          # correct behaviour, and a check whose failing condition is a normal
-          # state gets ignored — an ignored check certifies nothing. So: report
-          # direction and age, and enforce identity where it is the right
-          # question, at push time (test/verify-mirror-live.sh). Everything else
-          # that is copy-policy IS a broken install and still fails.
+          # afterwards, so for those files a difference is usually work in
+          # progress. Failing would redden doctor for an hour of correct
+          # behaviour, and a check whose failing condition is a normal state gets
+          # ignored — an ignored check certifies nothing. Report direction and
+          # age; identity is enforced where it is the right question, at push
+          # time (test/verify-mirror-live.sh).
+          #
+          # Everything else that is copy-policy IS a broken install, and the
+          # message names the direction before the fix: after a merge that
+          # reverted the mirror, running ./install.sh would promote the
+          # regression into the running fleet, leave a backup nobody reads, and
+          # keep every gate green. A lane follows the error message rather than
+          # the reasoning, so the message has to carry it.
           case "$rel" in
             .overlord/tools/* | .overlord/bin/*)
               noted=$((noted + 1))
-              if [ "$target" -nt "$HOME_SRC/$rel" ]; then
-                record info "home/$rel" "live copy is $(ago "$(stat -c %Y -- "$target")") newer than the mirror — commit it, or ./install.sh to take the mirror's copy"
+              if [ "$compare_target" -nt "$HOME_SRC/$rel" ]; then
+                record info "home/$rel" "live copy is $(ago "$(stat -c %Y -- "$compare_target")") newer than the mirror — commit it, or ./install.sh to take the mirror's copy"
               else
-                record info "home/$rel" "mirror is newer than the live copy (live $(ago "$(stat -c %Y -- "$target")") old) — ./install.sh will install it"
+                record info "home/$rel" "mirror is newer than the live copy (live $(ago "$(stat -c %Y -- "$compare_target")") old) — ./install.sh will install it"
               fi
               ;;
             *)
               bad=$((bad + 1))
-              record fail "home/$rel" "differs from $(short "$target") — re-run ./install.sh, or diff $(short "$HOME_SRC/$rel") $(short "$target")"
+              record fail "home/$rel" "differs from $(short "$compare_target") — diff them first: if the live file is the correct one, copy it into the mirror and commit; only ./install.sh if the tree's copy is right"
               ;;
           esac
         fi
