@@ -152,12 +152,15 @@ the measurement. Four of its decisions shaped the entries above:
    not "two candidates, pick one": the test line is *ahead* of the published branch and the
    fleet runs it. Either that work lands on `apothic`, or the install is rolled back to it.
    Both are decisions; neither is a copy.
-2. **Three remotes have two checkouts each.**
+2. **Two remotes have two checkouts each**, and a third `pi-extensions` that is not one of them.
    `Apothic-AI/pi-pretty-tui` → `~/Code/pi-pretty-tui` and `tooling/pi-pretty-tui`;
-   `Apothic-AI/pi-persist` → `~/Code/pi-persist` and `~/Code/pi-persist-toggle`;
-   pi-extensions exists as `~/Code/pi-extensions` (**`bitnom/pi-extensions.git`**) and
-   `~/Code/pi-extensions-apothic` (**`Apothic-AI/pi-extensions`**, the one
-   `pi/settings.json` resolves `@PI_EXTENSIONS_APOTHIC@` to).
+   `Apothic-AI/pi-persist` → `~/Code/pi-persist` and `~/Code/pi-persist-toggle`.
+   `~/Code/pi-extensions` looks like a third duplicate and is not one: it is
+   `bitnom/pi-extensions`, a fork of `arhen/pi-extensions`, carrying `packages/add`, `core` and
+   `pi-toolset` — neither `pi-goal` nor `pi-persist` is in it. No live settings file references
+   it (measured: 0 of 43), so it is unused rather than competing. It is not a subrepo, and
+   deleting the checkout is hygiene for a later item — not something this issue does to another
+   space's repository.
 3. **Uncommitted work sits in six of the twelve.** `unblock` (6 files, including a new
    `test/weekly-keep.test.js`), `apothic-pi-extensions` (54 files — and it is a live lane's
    workspace), `pi-rooms` (2: `.pi/`, `AGENTS.md`), `pi-extensions-apothic` (untracked `.pi/`),
