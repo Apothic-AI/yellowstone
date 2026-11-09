@@ -63,31 +63,37 @@ excluded() {
 #
 # checkout and merge stamp mtime = now regardless of content age, so a merge that
 # resolves a conflict back to an older mirror shows OLDER CONTENT WITH A NEWER
-# mtime. An mtime test reads that as "the mirror is newer, an install is pending"
-# and notes it — the one classification that promotes a reverted mirror into the
-# running fleet on the next install, with a backup nobody reads.
+# mtime — which any mtime test reads as "the mirror is newer, an install is
+# pending", the one classification that promotes a reverted mirror into the
+# running fleet. mtime records when a file was written, never what it descended
+# from, so it decides nothing here except the case where live content has no
+# history at all.
 #
-# So: find the commit whose blob for this path equals the live file's content.
-#   live content committed at a DESCENDANT of the mirror's commit -> the tree has
-#     moved backwards since; the mirror lacks what the machine runs -> FAIL.
-#   live content never committed -> the normal edit-then-commit window -> note.
-#   live content committed at an ANCESTOR -> the mirror is legitimately ahead and
-#     an install is pending -> note.
-revert_detected() {
-  local mirror="$1" live="$2" rel cur live_blob c found=""
-  rel="$mirror"
-  cur="$(git log -1 --format=%H -- "$rel" 2>/dev/null)"
-  [ -n "$cur" ] || return 1
+#   echo runtime  live content is uncommitted and newer than the mirror: the
+#                 machine runs something the tree has never seen  -> FAIL
+#   echo revert   live content was committed at a DESCENDANT of the mirror's
+#                 commit: the tree moved backwards                  -> FAIL
+#   echo pending  mirror content is newer in history, live content is an
+#                 ancestor: an install is simply outstanding        -> note
+direction() {
+  local mirror="$1" live="$2" cur live_blob c found=""
+  cur="$(git log -1 --format=%H -- "$mirror" 2>/dev/null)"
   live_blob="$(git hash-object -- "$live" 2>/dev/null)"
-  [ -n "$live_blob" ] || return 1
-  for c in $(git rev-list --max-count=400 -- "$rel" 2>/dev/null); do
-    [ "$(git rev-parse "$c:$rel" 2>/dev/null)" = "$live_blob" ] && { found="$c"; break; }
-  done
-  [ -n "$found" ] || return 1
-  git merge-base --is-ancestor "$cur" "$found" 2>/dev/null
+  if [ -n "$cur" ] && [ -n "$live_blob" ]; then
+    for c in $(git rev-list --max-count=400 HEAD -- "$mirror" 2>/dev/null); do
+      [ "$(git rev-parse "$c:$mirror" 2>/dev/null)" = "$live_blob" ] && { found="$c"; break; }
+    done
+  fi
+  if [ -n "$found" ]; then
+    if git merge-base --is-ancestor "$cur" "$found" 2>/dev/null; then echo revert; else echo pending; fi
+    return 0
+  fi
+  # Live content has no history: either the normal edit-then-commit window, or the
+  # machine runs something never committed. Only here does mtime mean anything.
+  if [ "$live" -nt "$mirror" ]; then echo runtime; else echo pending; fi
 }
 
-same=0; behind=0; ahead=0; liveonly=0
+same=0; behind=0; ahead=0; liveonly=0same=0; behind=0; ahead=0; liveonly=0
 behind_list=""; ahead_list=""; liveonly_list=""
 
 # Mirror side: every shipped file, compared to its live copy.
@@ -99,19 +105,21 @@ while IFS= read -r path; do
     continue
   fi
   if cmp -s -- "$path" "$live"; then same=$((same + 1)); continue; fi
-  if [ "$live" -nt "$path" ]; then
-    behind=$((behind + 1))
-    behind_list="$behind_list
+  case "$(direction "$path" "$live")" in
+    runtime)
+      behind=$((behind + 1))
+      behind_list="$behind_list
   $rel  (live edited $(ago_of "$live"), mirror $(ago_of "$path"))"
-  elif revert_detected "$path" "$live"; then
-    # mtime said "mirror newer", but the live content was committed at a
-    # descendant of the mirror's commit: the tree moved backwards.
-    behind=$((behind + 1))
-    behind_list="$behind_list
+      ;;
+    revert)
+      behind=$((behind + 1))
+      behind_list="$behind_list
   $rel  (REVERTED — the live content is newer in history than the mirror's)"
-  else
-    ahead=$((ahead + 1)); ahead_list="$ahead_list $rel"
-  fi
+      ;;
+    *)
+      ahead=$((ahead + 1)); ahead_list="$ahead_list $rel"
+      ;;
+  esac
 done < <(find "$SRC/tools" "$SRC/bin" -type f 2>/dev/null | LC_ALL=C sort)
 
 # Live side: anything the machine runs that the mirror has no copy of.
