@@ -236,6 +236,46 @@ install_tabs() {
   return $failed
 }
 
+# ensure_skill_link <link> <target> — create a skill symlink, never a copy.
+#
+# The direction matters. The real skill lives at $OVERLORD_DIR/skills/, the
+# mirrored copy; what gets created in $AGENTS_SKILLS is a link to it. A real
+# directory here would be a hand copy — exactly the drift 2df88aee removed for
+# profile-config — and it would leave repo and installed skill free to diverge
+# forever. Created at install time rather than shipped as a home/.agents/skills/
+# entry because a mirrored symlink has to point at a target that already exists
+# at checkout time; this way the order is fixed.
+ensure_skill_link() {
+  local link="$1" target="$2" name
+  name="$(basename -- "$link")"
+
+  if [ -L "$link" ]; then
+    if [ "$(readlink -- "$link")" = "$target" ]; then
+      info "linked $name -> $(short "$target")"
+      return 0
+    fi
+    if [ "${DRY_RUN:-0}" = 1 ]; then
+      dryrun "relink $name -> $(short "$target")"
+      return 0
+    fi
+    rm -f -- "$link"
+  elif [ -e "$link" ]; then
+    # A real directory: someone hand-copied the skill. Report it and leave it.
+    # Replacing a directory the operator may have edited is not an install step.
+    warn "$(short "$link") is a real directory, not a link"
+    info "  the mirrored copy is at $(short "$target")"
+    info "  remove it and re-run this stage to link it instead"
+    return 0
+  elif [ "${DRY_RUN:-0}" = 1 ]; then
+    dryrun "link $name -> $(short "$target")"
+    return 0
+  fi
+
+  mkdir -p -- "$(dirname -- "$link")"
+  ln -s -- "$target" "$link"
+  info "linked $name -> $(short "$target")"
+}
+
 install_dir() {
   step "Overlord context directory"
 
@@ -257,6 +297,12 @@ install_dir() {
   #   README.md  the live workspace index, which the operator updates as spaces
   #              come and go. Never overwritten: it is the only map.
   install_home_tree .overlord
+
+  # The overlord-operations skill is mirrored under $OVERLORD_DIR/skills/, but pi
+  # discovers skills from $AGENTS_SKILLS. The link between the two is part of the
+  # install, not a one-time act on whichever machine happened to make it first.
+  ensure_skill_link "$AGENTS_SKILLS/overlord-operations" \
+    "$OVERLORD_DIR/skills/overlord-operations"
 }
 
 # ensure_workspace <label> <cwd> — create the workspace only when the label is

@@ -657,6 +657,19 @@ suite_mirror() {
   check_eq "every mirrored file landed at its destination" "" "$not_landed"
   check_eq "every copied file is byte-identical to home/" "" "$not_identical"
 
+  # The overlord-operations skill is mirrored under .overlord/skills and linked
+  # into .agents/skills. A fresh machine must get the LINK, not a copy: a copied
+  # directory would be a skill the repo no longer owns, which is the drift
+  # 2df88aee removed for profile-config. And the link must resolve, or a fresh
+  # machine gets a dangling skill and no diagnostic.
+  check "overlord skill is linked, not copied" \
+    test -L "$home/.agents/skills/overlord-operations"
+  check_eq "overlord skill links to the mirrored copy" \
+    "$home/.overlord/skills/overlord-operations" \
+    "$(readlink -- "$home/.agents/skills/overlord-operations" 2>/dev/null)"
+  check "overlord skill link resolves to a real SKILL.md" \
+    test -f "$home/.agents/skills/overlord-operations/SKILL.md"
+
   # A first install must not hand pi a package placeholder as a path.
   check_eq "no unrendered package placeholder in a fresh settings.json" "" \
     "$(node -e 'const s=require(process.argv[1]);const b=(s.packages||[]).map(p=>String(typeof p==="string"?p:p.source)).filter(x=>x.startsWith("@"));console.log(b.join(" "))' "$home/.pi/agent/settings.json")"
