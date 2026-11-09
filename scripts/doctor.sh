@@ -46,6 +46,17 @@ record() {  # record <status: ok|warn|fail|info> <component> <detail>
 
 section() { [ "$MODE" = text ] && printf '\n%s%s%s\n' "$C_BOLD" "$1" "$C_RESET"; return 0; }
 
+# ago <epoch> — "12m", "3h", "2d". Used by the mirror-drift report, where the age
+# is the part that tells an operator whether they are mid-edit or looking at a
+# stale snapshot.
+ago() {
+  local secs=$(( $(date +%s) - ${1:-0} ))
+  [ "$secs" -lt 0 ] && secs=0
+  if [ "$secs" -lt 3600 ]; then printf '%dm' $((secs / 60))
+  elif [ "$secs" -lt 86400 ]; then printf '%dh' $((secs / 3600))
+  else printf '%dd' $((secs / 86400)); fi
+}
+
 # Compare two version strings; echoes "newer", "equal" or "older" for $1 vs $2.
 vercmp() {
   if [ "$1" = "$2" ]; then printf 'equal\n'; return 0; fi
@@ -419,7 +430,7 @@ while IFS='|' read -r root dest; do
     continue
   fi
 
-  total=0; bad=0
+  total=0; bad=0; noted=0
   while IFS= read -r rel; do
     [ -n "$rel" ] || continue
     total=$((total + 1))
@@ -437,8 +448,28 @@ while IFS='|' read -r root dest; do
     case "$policy" in
       copy|copy-exec)
         if ! cmp -s -- "$HOME_SRC/$rel" "$target"; then
-          bad=$((bad + 1))
-          record fail "home/$rel" "differs from $(short "$target") — re-run ./install.sh, or diff $(short "$HOME_SRC/$rel") $(short "$target")"
+          # The fleet edits its own tooling IN PLACE and commits the mirror
+          # afterwards, so a difference here is usually work in progress rather
+          # than a broken install. Failing would redden doctor for an hour of
+          # correct behaviour, and a check whose failing condition is a normal
+          # state gets ignored — an ignored check certifies nothing. So: report
+          # direction and age, and enforce identity where it is the right
+          # question, at push time (test/verify-mirror-live.sh). Everything else
+          # that is copy-policy IS a broken install and still fails.
+          case "$rel" in
+            .overlord/tools/* | .overlord/bin/*)
+              noted=$((noted + 1))
+              if [ "$target" -nt "$HOME_SRC/$rel" ]; then
+                record info "home/$rel" "live copy is $(ago "$(stat -c %Y -- "$target")") newer than the mirror — commit it, or ./install.sh to take the mirror's copy"
+              else
+                record info "home/$rel" "mirror is newer than the live copy (live $(ago "$(stat -c %Y -- "$target")") old) — ./install.sh will install it"
+              fi
+              ;;
+            *)
+              bad=$((bad + 1))
+              record fail "home/$rel" "differs from $(short "$target") — re-run ./install.sh, or diff $(short "$HOME_SRC/$rel") $(short "$target")"
+              ;;
+          esac
         fi
         ;;
       skill)
@@ -452,7 +483,13 @@ while IFS='|' read -r root dest; do
   done <<< "$files"
 
   if [ "$bad" = 0 ]; then
-    record ok "home/$root" "$total file(s) in place under $(short "$dest")"
+    if [ "$noted" = 0 ]; then
+      record ok "home/$root" "$total file(s) in place under $(short "$dest")"
+    else
+      # Saying "ok, N files in place" while N files differ from the machine would
+      # be the same self-satisfied reading the fail/noted split exists to avoid.
+      record info "home/$root" "$total file(s) in place under $(short "$dest") — $noted differ from live, listed above"
+    fi
   fi
 done < <(home_dest_roots)
 

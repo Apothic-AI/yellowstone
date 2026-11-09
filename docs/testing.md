@@ -186,3 +186,29 @@ enumerate* each of those; the enumeration itself is a snapshot.
   catch a missing or empty one.
 - **The container is Linux x86_64.** macOS and Windows paths are untested;
   `install.sh` is POSIX-ish bash but has not been proven there.
+
+### The one gate that looks outside the tree
+
+`./test/run.sh gates` also runs `test/verify-mirror-live.sh`, which is the only
+check here that compares the tree against the **machine** rather than against
+itself. It compares `home/.overlord/tools/*` and `home/.overlord/bin/*` with their
+installed copies and fails on exactly one thing: **a live file that is newer than
+its mirror**. That is a snapshot about to be published which lacks changes the
+machine already runs.
+
+The other two findings are notes, not failures, and that is deliberate:
+
+- **mirror newer than live** is the ordinary edit-then-commit window, or an
+  install that has not run yet. Failing here would redden the gate for correct
+  work, and a check whose failing condition is a normal state gets ignored.
+- **a file that is live-only** fails only when it is not one of the migration's
+  declared omissions (`*.bak*`, `__pycache__`, `tools/rooms-names.json`,
+  `pi-modes-cli.secret`). A new tool that is none of those is the machine running
+  something the repository cannot reproduce — the same class as a skill the
+  package list did not name.
+
+It skips itself when `~/.overlord/tools` does not exist, because a fresh clone on
+a machine that never installed the overlord space has nothing to compare against.
+`doctor.sh` reports the same comparison with direction and age, but never fails on
+it: doctor is what an operator runs while working, and this gate is what a push
+runs before publishing.

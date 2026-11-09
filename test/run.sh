@@ -24,6 +24,12 @@ if [ "${1:-}" = gates ]; then
   ./test/verify-monorepo-install.sh || rc=1
   echo
   ./test/verify-profile-skills.sh || rc=1
+  echo
+  # Host-side like the others, and machine-local: it compares the mirror to the
+  # machine it is being pushed from, which no container suite can do (they install
+  # a copy of this tree and compare the install to the tree). Skips itself when
+  # there is no live overlord space to compare against.
+  ./test/verify-mirror-live.sh || rc=1
   exit "$rc"
 fi
 
