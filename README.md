@@ -43,10 +43,20 @@ a new file needs only a path under `home/`.
 | `home/.pi/agent/*.json` | extension configs: goal, pretty-tui, persist, auto-compact |
 | `home/.overlord/` | instructions + index for the `overlord` orchestrator space |
 | `home/.agents/skills/` | the skills this repo is the source of truth for |
+| `src/` | the thirteen components this repo carries as git subrepos — forks and owned repos, each pinned to a branch at a commit |
 | `skills/skills.tsv` | which tree owns each agent skill |
 | `scripts/` | `install` helpers, plugin sync, `doctor`, `upgrade`, `overlord` |
 | `test/` | Docker test environment for the installer |
 | `docs/` | longer notes on the forks and the decisions behind them |
+
+`src/` holds the components as **git subrepos**, so a plain clone is complete and
+`git subrepo pull <dir>` is an ordinary reviewable commit; `.gitrepo` inside each
+directory records the remote, branch and commit it is synced to. `docs/design.md`
+explains why subrepos rather than submodules, vendored copies or sibling checkouts,
+and `docs/ft-01-inventory.md` records which repository each one is and why it is
+carried. Anything under `src/` is upgraded with `git subrepo pull` plus
+`./test/verify-subrepo-roundtrip.sh` — **not** with `pi update`, which reconciles
+only the npm packages.
 
 Two `$HOME` paths are deliberately **not** mirrored, and the installer says so:
 `~/.pi/agent/secrets/` (empty credential files for you to fill in — a credential must

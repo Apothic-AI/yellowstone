@@ -46,6 +46,24 @@ cannot do for you:
 - **Accept a plugin bump.** Pinned refs move only when someone edits
   `home/.config/herdr/plugins.toml`. `scripts/herdr-plugins.sh update` re-fetches the pinned
   ref; it will not move you to a newer upstream release.
+- **Move a carried component.** The thirteen repositories under `src/` are git
+  subrepos, so `upgrade.sh` does not touch them and `pi update --extensions` does
+  not either — nine of the fleet's packages load straight out of `src/` as local
+  paths. One at a time:
+
+  ```bash
+  git subrepo pull src/pi-extensions/bizzy      # an ordinary commit you can read and revert
+  ./test/verify-subrepo-roundtrip.sh            # the pin matches its remote, and a further pull is a no-op
+  ```
+
+  Never sweep them in a loop: each pull should be reviewable on its own, and a
+  pin that moved without a gate run is how a component and the skill that
+  documents it drift apart.
+
+  **This is why "no merge without a green gate" is load-bearing now.** Every lane
+  that reads `~/.pi/agent/settings.json` resolves those nine packages to paths
+  inside this checkout, so an uncommitted or half-merged tree is no longer a
+  private inconvenience — it is what those lanes load.
 
 ## When things break
 
