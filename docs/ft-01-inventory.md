@@ -131,6 +131,12 @@ recorded `subrepo.remote` — before any loose checkout, which pins each skill t
 as the component it documents. Measured after the change: `unblock` →
 `src/herdr-plugins/unblock`, `mycord-skill` → `src/apps/mycord`.
 
+**Why it must read `.gitrepo` and not ask git:** a subrepo directory has no `.git` of its own, so
+`git -C src/apps/mycord remote get-url origin` walks up to the *parent* repository and answers
+`Apothic-AI/yellowstone`. A resolver that asked git would match every subrepo against yellowstone
+and none of them against the repository actually wanted — a plausible-looking, uniformly wrong
+answer. `.gitrepo` is the only file in that directory that knows what it is a copy of.
+
 The manifest resolves paths at run time and takes the repo root as an argument, so it does **not**
 use the `@YELLOWSTONE_REPO@` placeholder the package list uses. One substitution scheme per repo
 is enough; two is how one of them gets missed.
