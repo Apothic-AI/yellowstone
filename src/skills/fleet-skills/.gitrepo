@@ -6,7 +6,7 @@
 [subrepo]
 	remote = https://github.com/bitnom/fleet-skills
 	branch = master
-	commit = f471ec534afc82a545ec2f9c69388b9ab8ac6139
-	parent = d1e7c746a20a892e8ca958307549e681c3d2eeb8
+	commit = 18427d6dbf8a7e6ad9c3936cf36b7fd9b1eec323
+	parent = 1acf0389796964b356898fc97a7c2cb0579b7efe
 	method = merge
 	cmdver = 0.4.9
