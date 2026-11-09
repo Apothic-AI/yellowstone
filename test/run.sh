@@ -7,8 +7,23 @@
 #
 #   ./test/run.sh            all suites
 #   ./test/run.sh install    one suite
+#   ./test/run.sh gates      the two monorepo gates, on the host (see below)
+#
+# `gates` is deliberately not a container suite. Both gates clone the repository
+# and talk to its remotes, so they need network and a real git; the image has
+# neither on purpose. They are also the checks that say whether the subrepo
+# conversion and the install sources are still coherent, which is a question you
+# ask on the host before pushing, not inside a sandbox.
 set -euo pipefail
 cd "$(dirname -- "$0")/.."
+
+if [ "${1:-}" = gates ]; then
+  rc=0
+  ./test/verify-subrepo-roundtrip.sh || rc=1
+  echo
+  ./test/verify-monorepo-install.sh || rc=1
+  exit "$rc"
+fi
 
 IMAGE="${IMAGE:-yellowstone-test}"
 
