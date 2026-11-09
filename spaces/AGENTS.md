@@ -57,11 +57,32 @@ The sharpest case is the one a lane is most likely to hit: `pi-modes` lives at
 `tryinget/packages/pi-modes/AGENTS.md` (71 lines, written for that directory). The inner one is the
 worse miss, because it is the file written for the exact directory the lane is changing.
 
-The instruction is a pointer rather than a copy: **`find src/<component> -name AGENTS.md`** and read
-what it returns. This file does not duplicate that text, deliberately — it belongs where the
-maintainers keep it current, and a pointer is the cheap half of keeping it there. (An earlier version
-of this paragraph said "four components", which was the root count presented as the population. The
-instrument costs one command and returns worse news than the estimate.)
+### Required before work: read the component's own AGENTS.md
+
+This is not a pointer for convenience. It is a **required first step for any lane working under
+`src/`**, because those files carry *constraints that exist because of how the component works* — not
+style notes — and a lane cannot go looking for a file it has no reason to know exists.
+
+Measured example, from `tryinget/packages/pi-modes/AGENTS.md` (71 lines, unreachable from a space cwd):
+
+> pi-modes' own out-of-band mode contract — `state|expected|attest` is read-only and **must never
+> attach** (a second writer on a live session is forbidden), and `--expect` digests are per-key over
+> scope+path via `modeDefinitionFingerprint`, never a hash of file bytes.
+
+A lane editing that package could have broken a safety rule on its first working turn, with no signal
+that a rule existed. That is the cost of the blind spot, and it is why this is a requirement rather
+than a mention.
+
+**Do this before touching anything under `src/`:**
+
+```sh
+find src/<component> -name AGENTS.md     # 44 exist under src/: 4 at component roots, 40 in packages
+```
+
+Read every file it returns and treat the constraints in them as binding. The text is not copied here,
+deliberately — it belongs where each component's maintainers keep it current, and a copy would drift
+from its source within a week. A pointer plus a requirement is the cheap half of keeping instructions
+where they are maintained; a coordinator remembering to mention it at launch is not a state.
 
 ## Verifying that a space composed correctly
 
