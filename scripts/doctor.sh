@@ -457,7 +457,13 @@ while IFS='|' read -r root dest; do
         fi
         if ! cmp -s -- "$HOME_SRC/$rel" "$compare_target"; then
           bad=$((bad + 1))
-          record fail "home/$rel" "differs from $(short "$compare_target") — re-run ./install.sh, or diff $(short "$HOME_SRC/$rel") $(short "$compare_target")"
+          # install_file copies the TREE's file over the live one (backup, then cp),
+          # so "re-run ./install.sh" is right when the tree is right and exactly
+          # wrong when it is not: after a merge that reverted the mirror, installing
+          # promotes the regression into the running fleet, leaves a backup nobody
+          # reads, and every gate stays green. So name the direction before the
+          # fix, because a lane follows the error message rather than the reasoning.
+          record fail "home/$rel" "differs from $(short "$compare_target") — diff them first: if the live file is the correct one, copy it into the mirror and commit; only ./install.sh if the tree's copy is right"
         fi
         ;;
       skill)
