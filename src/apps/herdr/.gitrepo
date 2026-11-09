@@ -6,7 +6,7 @@
 [subrepo]
 	remote = https://github.com/Apothic-AI/herdr
 	branch = apothic-main
-	commit = 6dca9a29b95e42b9391bdfc758b06b2316ec6e5a
-	parent = d6ddedd14a22135929b619a61836224acef5e64b
+	commit = 501275a38e7f59e1b4704d95d98fb386c6afddcb
+	parent = 60a7a50a4784462a90ebc66854ae65a6b7d7fb12
 	method = merge
 	cmdver = 0.4.9
