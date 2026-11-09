@@ -180,9 +180,13 @@ all three failed the same way:
 | `pi list` shows a package | is this source string in `settings.json`? | does the path exist on disk? |
 | `grep` finds no `~/Code` paths | does the text contain that substring? | do the **resolved** paths leave the checkout? |
 | a skill is `linked` | is this a symlink? | does its target still resolve? |
+| no entry leaves `~/Code` | does the string contain `/home/<user>/Code/`? | does the **resolved** path leave the checkout, relative forms included? |
 
 Each was a truthful answer to the wrong question: a *name* standing in for a
-*property*. `pi list` printed a nonexistent local path and exited 0; a grep for
+*property*. The last one is the sharpest, because the checkout itself lives under
+the prefix being searched — so a correctly migrated entry
+(`…/Code/yellowstone/src/pi-extensions/bizzy`) matches the pattern for "still on a
+loose checkout", and the migration signal could never have reached zero. `pi list` printed a nonexistent local path and exited 0; a grep for
 `/home/<user>/Code/` never saw the one relative `../../Code/…` entry, and matched
 its own replacement string; and `skills-sync status` reported `linked` for a
 symlink into a directory that had moved, so a restructure stayed green until a
