@@ -32,6 +32,13 @@ if [ "${1:-}" = gates ]; then
   # there is no live overlord space to compare against.
   ./test/verify-mirror-live.sh || rc=1
   echo
+  # The same idea for the spaces themselves. verify-mirror-live covers home/.overlord/tools
+  # only — its count does not move when a space's AGENTS.md or .pi/modes appears under home/,
+  # which is how a 510-line file and a 108-line file of the same name sat in the tree and on
+  # the machine without anything noticing. This gate holds the scaffolding together, and
+  # requires a difference that has been decided to be written down rather than tolerated.
+  ./test/verify-space-scaffold.sh || rc=1
+  echo
   # The mirror gate's own test: a reverted mirror, an uncommitted live edit and a
   # pending install must be told apart. Without it, that gate is verified only by
   # whatever happened to be true on this machine the day it was written — and its
