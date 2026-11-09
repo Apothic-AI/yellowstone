@@ -98,7 +98,17 @@ cmd_install() {
     fi
 
     if [ "$source" = "local" ]; then
-      local path="${link_path/#\~/$HOME}"
+      # A link_path is either ~-rooted (an operator checkout somewhere under $HOME) or
+      # repo-relative (`src/herdr-plugins/...`). The repo-relative form is what FT-01
+      # Objective 4 asks for: components install by their local yellowstone path, so a
+      # linked plugin comes out of the monorepo instead of out of wherever this machine
+      # happened to clone it. Absolute paths still work for local experiments.
+      local path
+      case "$link_path" in
+        "~"*) path="${link_path/#\~/$HOME}" ;;
+        /*)   path="$link_path" ;;
+        *)    path="$REPO_ROOT/$link_path" ;;
+      esac
       if [ ! -d "$path" ]; then
         if [ "$optional" = "true" ]; then
           warn "$id: optional, missing checkout at $(short "$path") — skipped"

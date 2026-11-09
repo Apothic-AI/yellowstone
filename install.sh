@@ -56,7 +56,7 @@ while [ $# -gt 0 ]; do
 done
 
 if [ ${#STAGES[@]} -eq 0 ]; then
-  STAGES=(herdr pi skills agents spaces overlord secrets verify)
+  STAGES=(herdr pi skills agents plugins spaces overlord secrets verify)
 fi
 
 # Where the pi-goal fork lives (PI_EXTENSIONS_APOTHIC) is a layout path, so its
@@ -135,15 +135,9 @@ install_herdr() {
       || warn "herdr integration install pi failed"
   fi
 
-  # The plugin set is declarative; apply it here. A plugin whose local checkout
-  # is absent is a report, not a reason to abandon the install: the stages below
-  # still have work to do, and under `set -e` an unguarded failure here used to
-  # end the run before pi, skills, agents or overlord were reached.
-  if [ "$DRY_RUN" = 1 ]; then
-    dryrun "herdr plugin install/update for every entry in herdr/plugins.toml"
-  else
-    "$REPO_ROOT/scripts/herdr-plugins.sh" install || warn "some herdr plugins need attention (see above)"
-  fi
+  # The plugin set is declarative and its own stage (see install_plugins), because
+  # `./install.sh plugins` is advertised in the usage line and must do what it says.
+  install_plugins
 
   # The herdr skill is not linked here: it is a skill like any other, so
   # home/.agents/skills/herdr is installed by the skills stage from
@@ -249,6 +243,25 @@ install_overlord() {
   fi
 }
 
+# ----------------------------------------------------------------- plugins --
+install_plugins() {
+  step "Herdr plugins"
+  # herdr/plugins.toml is the manifest; scripts/herdr-plugins.sh applies it. Kept as
+  # its own stage so that `./install.sh plugins` is not a no-op: it was reachable
+  # only from inside the herdr stage, while the usage line advertised it, so asking
+  # for plugins alone printed a summary and changed nothing.
+  #
+  # A plugin whose local checkout is absent is a report, not a reason to abandon the
+  # install: the later stages still have work to do, and under `set -e` an unguarded
+  # failure here used to end the run before pi, skills, agents or overlord were
+  # reached.
+  if [ "$DRY_RUN" = 1 ]; then
+    dryrun "herdr plugin install/update for every entry in herdr/plugins.toml"
+    return 0
+  fi
+  "$REPO_ROOT/scripts/herdr-plugins.sh" install || warn "some herdr plugins need attention (see above)"
+}
+
 # ------------------------------------------------------------------ spaces --
 install_spaces() {
   step "Herdr spaces"
@@ -324,6 +337,7 @@ install_verify() {
 
 want herdr   && install_herdr
 want pi      && install_pi
+want plugins && install_plugins
 want skills   && install_skills
 want agents   && install_agents
 want overlord && install_overlord

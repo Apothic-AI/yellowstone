@@ -39,6 +39,13 @@ if [ "${1:-}" = gates ]; then
   # requires a difference that has been decided to be written down rather than tolerated.
   ./test/verify-space-scaffold.sh || rc=1
   echo
+  # What a new machine actually receives: the plugin manifest must link components out
+  # of the repo (Objective 4) and the space table must carry all seven labels verbatim.
+  # Both failed silently: two plugins pointed at ~/Code checkouts, and three space
+  # labels were lowercased against the operator's capitalised workspaces, which would
+  # have created duplicate spaces rather than failing.
+  ./test/verify-fleet-manifest.sh || rc=1
+  echo
   # The mirror gate's own test: a reverted mirror, an uncommitted live edit and a
   # pending install must be told apart. Without it, that gate is verified only by
   # whatever happened to be true on this machine the day it was written — and its
