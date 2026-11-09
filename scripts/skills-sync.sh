@@ -241,7 +241,22 @@ cmd_status() {
         ;;
       repo)
         if local ck; ck="$(find_checkout "$spec")"; then
-          if skill_dir_in "$ck" "$id" >/dev/null; then detail="$kind (checkout $(short "$ck"))"
+          if skill_dir_in "$ck" "$id" >/dev/null; then
+            detail="$kind (checkout $(short "$ck"))"
+            # `linked` only proves the link resolves, not that it resolves to THIS
+            # checkout. A link into a lane's worktree of the same repository
+            # resolves perfectly and reads as healthy, then dies the day the
+            # worktree is removed — eight fleet-skills links did exactly that
+            # tonight. Compare the resolved target against the resolved source and
+            # call it what it is.
+            if [ "$state" = linked ] && [ -n "$target" ]; then
+              local want
+              want="$(readlink -f "$(skill_dir_in "$ck" "$id")" 2>/dev/null || true)"
+              if [ -n "$want" ] && [ "$target" != "$want" ]; then
+                state="elsewhere"
+                detail="$kind -> $(short "$target") (not this checkout)"
+              fi
+            fi
           else detail="$kind ($spec — checkout lacks this skill)"; fi
         else detail="$kind ($spec — no checkout; will fetch)"; fi
         ;;
@@ -253,6 +268,10 @@ cmd_status() {
       missing)  color="$C_YELLOW"; rc=1 ;;
       dangling) color="$C_RED"; rc=1; detail="$detail -> $(short "${target:-?}") (BROKEN)" ;;
       linked)   color="$C_GREEN" ;;
+      # Resolves, but not to the copy the manifest names: a worktree, a stale
+      # checkout, an old path. Yellow, not red — the skill loads — but it is a
+      # link that will break on someone else's cleanup, so it counts as attention.
+      elsewhere) color="$C_YELLOW"; rc=1 ;;
       present) color="$C_YELLOW"; rc=1 ;;   # a real dir where a link should be
     esac
     printf '%s%-8s%s %-16s %-9s %s\n' "$color" "$state" "$C_RESET" "$id" "$kind" "$detail"
