@@ -27,7 +27,8 @@ working state, it does not live here.
 
 | space | where a lane runs | in this tree? |
 |---|---|---|
-| `pi-rooms`, `pi-pretty-tui`, `pi-modes`, `unblock`, `mycord`, `herdr-voice` | **transitional** — a lane runs in the **yellowstone** space/worktree; these directories are not the destination for new work | **yes, for now** |
+| `pi-rooms`, `pi-pretty-tui`, `pi-modes`, `unblock`, `mycord` | **transitional** — a lane runs in the **yellowstone** space/worktree; these directories are not the destination for new work | **yes, for now** |
+| `herdr-voice` | as above, but this directory exists **only on branch `space/herdr-voice`** — not on `master` | **on that branch only** |
 | `assistant`, `comms`, `overlord`, `self-improvement`, `sysops`, `personal` | `~/Documents/*`, `~/.overlord`, `~/.sysops` | **no, permanently** |
 
 The reason is not tidiness. Those spaces carry **fleet-specific data we do not want in git** — continuity
@@ -38,6 +39,29 @@ which is the whole point of carrying components as subrepos: the code syncs, the
 So do not add a `spaces/<name>` for a non-component lane, and do not move fleet state into `home/`
 because it is fleet-related. **The mirror carries content that lands on a machine; it does not carry the
 fleet's working data.**
+
+### The pilot lanes are the last holders of this layer
+
+Six pilot lanes run in these directories today, each in its own worktree whose branch is
+`space/<component>`:
+
+```
+mycord-pilot-leader          ~/Code/yellowstone-wt/space-mycord/spaces/mycord
+pi-modes-pilot-leader        ~/Code/yellowstone-wt/space-pi-modes/spaces/pi-modes
+pi-pretty-tui-pilot-leader   ~/Code/yellowstone-wt/space-pi-pretty-tui/spaces/pi-pretty-tui
+pi-rooms-pilot-leader        ~/Code/yellowstone-wt/space-pi-rooms/spaces/pi-rooms
+unblock-pilot-leader         ~/Code/yellowstone-wt/space-unblock/spaces/unblock
+herdr-voice-pilot-leader     ~/Code/yellowstone-wt/space-herdr-voice/spaces/herdr-voice
+```
+
+They are the experiment that showed a component space works, and they are now the only thing keeping
+the layer alive. **No new `spaces/<component>` is created.** When the last pilot lane retires, these
+directories and the `space/*` worktrees go with them, and a component lane starts in the yellowstone
+space like any other lane.
+
+Until then the directories stay, because deleting one removes the cwd of a running lane — and a lane
+cannot change its own cwd. Retiring a pilot is a lane restart, so it belongs to whoever runs
+workspace ops, not to whoever edits this file.
 
 ## Why the space is not the component directory
 
