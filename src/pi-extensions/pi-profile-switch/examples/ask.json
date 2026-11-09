@@ -1,0 +1,13 @@
+{
+  "label": "Ask & Discuss",
+  "description": "Read-only Q&A and code exploration; no file modifications or command execution",
+  "skills": [],
+  "extensions": [],
+  "tools": [
+    "read",
+    "grep",
+    "find",
+    "ls"
+  ],
+  "instructions": "You are in read-only discussion mode. Answer questions and explain code without modifying any files or running shell commands."
+}
