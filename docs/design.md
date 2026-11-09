@@ -183,7 +183,7 @@ all three failed the same way:
 
 Each was a truthful answer to the wrong question: a *name* standing in for a
 *property*. `pi list` printed a nonexistent local path and exited 0; a grep for
-`/home/bitnom/Code/` never saw the one relative `../../Code/…` entry, and matched
+`/home/<user>/Code/` never saw the one relative `../../Code/…` entry, and matched
 its own replacement string; and `skills-sync status` reported `linked` for a
 symlink into a directory that had moved, so a restructure stayed green until a
 lane ran `readlink -f` by hand.
