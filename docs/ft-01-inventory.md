@@ -31,7 +31,7 @@ git -C <path> status --porcelain | wc -l
 test -d <path>/.jj && echo jj
 ```
 
-## Forked components — these are the subrepo candidates
+## Forked components — the thirteen subrepos
 
 Each is a real delta we maintain, installed from its own repository.
 
@@ -105,6 +105,41 @@ read off the machine. Its branch outcome is `main` either way; the label stays o
   `pi/extensions/transient-error-retry.ts`, `scripts/`, `herdr/scripts/`, `skills/`,
   `fleet/AGENTS.md`, and the config files (`config.toml`, `plugins.toml`, `models.json`,
   `settings.json`, `pi/*.json`).
+
+## The skills manifest is a third source of truth
+
+This page started by measuring two surfaces — pi packages and herdr plugins — and inferring the
+rest. That was wrong, and it is how `mycord` was missed: **the skills are a separate population**,
+listed in `skills/skills.tsv`, and a repository can own skills without installing a single pi
+package. `readlink ~/.agents/skills/mycord-skill` pointed at a checkout no package list mentions.
+
+| Kind | Rows | What it means |
+|---|---|---|
+| `repo` | 9 | the skill comes from a repository's checkout, and only falls back to the network when no checkout exists |
+| `bundle` | 4 | no installable home exists; carried here and each row says what would retire it |
+| `dagr` | 1 | generated at install time by a pinned plugin's binary, so the text cannot drift from the validator |
+
+The nine `repo` rows resolve against two repositories, and **both are now subrepos**: `unblock`
+(`src/herdr-plugins/unblock`) and `mycord` (`src/apps/mycord`, eight rows). Before that,
+`mycord` was carried nowhere and its eight skills resolved only because a loose checkout existed
+under `tooling/`.
+
+**Resolution order is the load-bearing detail, and it is why D12 has a clause about skills.**
+`scripts/skills-sync.sh` asks for a checkout before the network, so if it looks in `~/Code` first
+then the thirteen subrepos are carried and never used. It now matches `src/**/.gitrepo` — the
+recorded `subrepo.remote` — before any loose checkout, which pins each skill to the same commit
+as the component it documents. Measured after the change: `unblock` →
+`src/herdr-plugins/unblock`, `mycord-skill` → `src/apps/mycord`.
+
+The manifest resolves paths at run time and takes the repo root as an argument, so it does **not**
+use the `@YELLOWSTONE_REPO@` placeholder the package list uses. One substitution scheme per repo
+is enough; two is how one of them gets missed.
+
+**One gap this surfaced, unchanged since:** `mycord` ships **ten** skill directories
+(`ferdium`, `google-voice`, `mycord-discord`, `mycord-email`, `mycord-irc`, `mycord-signal`,
+`mycord-skill`, `mycord-slack`, `mycord-telegram`, `mycord-zoom`) and the manifest carries
+**eight** of them. `mycord-signal-skill` and `mycord-zoom-skill` have no row, so nothing links
+them. Carrying the repository does not install a skill; the row does.
 
 ## Explicitly out of scope
 
