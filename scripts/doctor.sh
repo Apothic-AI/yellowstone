@@ -293,16 +293,25 @@ fi
 
 # The non-blocking guard: opt-in, and worth surfacing because its absence is
 # invisible until a turn blocks and queues an operator message behind it.
-if [ -f "$PI_DIR/extensions/nonblock.ts" ]; then
-  nb_state="installed, disabled"
+# Delivered as a pi package (`pi-fleet-hooks` declares both hooks in its
+# `pi.extensions`), not as a file copied into the agent dir: the copies that used
+# to live in `$PI_DIR/extensions/` were retired on 2026-10-31 and sit in
+# `extensions.bak-fleet-hooks/`. Checking the old location reported "not
+# installed" on a machine where the hook was loading fine, so both places are
+# accepted here rather than one being believed.
+nb_pkg=""
+if node -e 'const s=require(process.argv[1]);process.exit((s.packages||[]).some(p=>(typeof p==="string"?p:p.source||"").includes("pi-fleet-hooks"))?0:1)' \
+     "$PI_DIR/settings.json" >/dev/null 2>&1; then nb_pkg="package"; fi
+if [ -n "$nb_pkg" ] || [ -f "$PI_DIR/extensions/nonblock.ts" ]; then
+  nb_state="installed via $([ -n "$nb_pkg" ] && echo "the pi-fleet-hooks package" || echo "an extension copy"), disabled"
   if [ "${PI_NONBLOCK:-}" = "1" ]; then
-    nb_state="installed, enabled (PI_NONBLOCK=1)"
+    nb_state="${nb_state/disabled/enabled (PI_NONBLOCK=1)}"
   elif [ -f "$PI_DIR/nonblock.json" ] && grep -q '"enabled"[[:space:]]*:[[:space:]]*true' "$PI_DIR/nonblock.json" 2>/dev/null; then
-    nb_state="installed, enabled"
+    nb_state="${nb_state/disabled/enabled}"
   fi
   record info nonblock "$nb_state"
 else
-  record info nonblock "not installed (./install.sh pi)"
+  record info nonblock "not installed (pi-fleet-hooks package missing)"
 fi
 
 # The fleet instruction core at $HOME. Compared against the shipped artifact,

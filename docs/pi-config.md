@@ -13,8 +13,7 @@ means the first column *is* the installed path: `home/.pi/agent/settings.json` i
 | `pi-persist.json` | copied **only if absent** — the trailing reminders are personal |
 | `model-picker.json` | copied **only if absent** — the MRU list is personal |
 | `web-search.json` | copied **only if absent** — names a browser profile |
-| `extensions/nonblock.ts` | copied; disabled unless `PI_NONBLOCK=1` or `nonblock.json` enables it |
-| `extensions/transient-error-retry.ts` | copied |
+| `extensions/nonblock.ts`, `extensions/transient-error-retry.ts` | **not mirrored** — delivered as the `pi-fleet-hooks` package, which declares both in `pi.extensions`. The copies that used to be written into the agent dir were retired on 2026-10-31 (they sit in `extensions.bak-fleet-hooks/`), because two delivery paths for one hook means it runs twice. `doctor.sh` accepts either and says which. |
 | `docs/trust.example.json` | nothing — a template to copy by hand |
 
 ## Credentials
