@@ -245,6 +245,11 @@ install_overlord() {
 
 # ----------------------------------------------------------------- plugins --
 install_plugins() {
+  # Once per run. The herdr stage calls this and the `plugins` stage calls it, so a
+  # full install would otherwise apply the manifest twice. The guard is what makes
+  # "own stage" and "called from herdr" compatible rather than double work.
+  [ "${PLUGINS_DONE:-0}" = 1 ] && return 0
+  PLUGINS_DONE=1
   step "Herdr plugins"
   # herdr/plugins.toml is the manifest; scripts/herdr-plugins.sh applies it. Kept as
   # its own stage so that `./install.sh plugins` is not a no-op: it was reachable
