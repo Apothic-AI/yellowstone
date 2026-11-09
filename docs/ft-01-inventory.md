@@ -43,11 +43,18 @@ Each is a real delta we maintain, installed from its own repository.
 | pi-fleet-hooks | `Apothic-AI/pi-fleet-hooks` | **none** | `master` | no | 0 | `~/Code/pi-fleet-hooks` |
 | pi-modes (in `packages/`) | `Apothic-AI/pi-extensions-1` | `origin/apothic-main` (no local) | `feat/same-key-append-composition` | no | 54 | `~/Code/apothic-pi-extensions` |
 | pi-profile-switch (`pil`) | `Apothic-AI/pi-profile-switch` | **none** | `main` | no | 4 | `~/Code/pi-profile-switch` |
+| mycord | `Apothic-AI/mycord` | **none** | `master` | yes | 0 | `~/Code/apothic-monorepo-workspace/tooling/mycord` |
 
-Twelve repositories. Five carry an `apothic*` branch (`pi-pretty-tui`, `pi-extensions`,
+Thirteen repositories. Five carry an `apothic*` branch (`pi-pretty-tui`, `pi-extensions`,
 `bizzy`, `unblock`, and `pi-extensions-1` — the last only as `origin/apothic-main`, with no
-local branch); the other seven are on `master`, `main`, `linux-port`,
+local branch); the other eight are on `master`, `main`, `linux-port`,
 `feat/opencode-cache-stats` and `feat/same-key-append-composition`.
+
+`mycord` was added after the first pass, and it is the case that shows why "is it a package?" is
+the wrong test: it installs nothing as a pi package and appears in no pi manifest, but it owns
+nine skills the fleet links, so a conversion without it leaves those skills with no checkout to
+resolve against. It converts from its remote at `master`; its local checkout is jj-colocated and
+detached, which is exactly the state a remote clone sidesteps.
 
 The last three rows are **installed but not declared**, so a sweep of `pi/settings.json` alone
 misses them: `pi-fleet-hooks` (absolute path), `pi-modes` (local path into
@@ -106,14 +113,15 @@ read off the machine. Its branch outcome is `main` either way; the label stays o
 
 ## `src/apps` and `src/libs`
 
-Candidates that exist, are clean, and could be members of `src/apps`:
-`mycord` (`Apothic-AI/mycord`, jj-colocated, detached), `apothic-website-v2`
-(`Apothic-AI/apothic-website-v2`, jj-colocated, detached), `cargo-remote-3000`
-(`Apothic-AI/cargo-remote-3000`, git, `master`).
+`src/apps` holds `pi-profile-switch` and `mycord`. Still candidates, not converted:
+`apothic-website-v2` (`Apothic-AI/apothic-website-v2`, jj-colocated, detached) and
+`cargo-remote-3000` (`Apothic-AI/cargo-remote-3000`, git, `master`). Neither is installed from
+and neither owns a skill, so nothing resolves against them today.
 
 For `src/libs` this sweep found **nothing**: no library is installed from, or forked into, this
-fleet's dependency set. The directory should be recorded as empty rather than filled to match the
-outline.
+fleet's dependency set. The directory is absent and recorded as empty rather than filled to
+match the outline. If a later dependency is genuinely shared code, it goes here; matching the
+outline is not a reason to invent one.
 
 ## Decisions adopted from the lead's record
 
@@ -210,7 +218,7 @@ the measurement. Four of its decisions shaped the entries above:
 
 1. Which checkout is canonical for the two duplicated remotes, and whether the losers are
    deleted or left alone.
-2. What to do about the seven repos with no `apothic*` branch. For the four that are forks
+2. What to do about the eight repos with no `apothic*` branch. For the four that are forks
    (`pi-rooms`, `apothic-todo`, `pi-persist`, `pi-cache-optimizer`) the choice is create the
    merge branch, or track `master`/`main`/`feat/…` as-is. For `pi-fleet-hooks`,
    `pi-profile-switch`, `mycord` and `herdr-voice-linux` there is no upstream to merge from, so
