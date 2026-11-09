@@ -44,4 +44,5 @@ exec docker run --rm \
   --memory-swap "${YELLOWSTONE_TEST_MEMORY:-4g}" \
   -v "$PWD:/repo:ro" \
   -e REPO=/repo \
+  -e YELLOWSTONE_TEST_MEMORY="${YELLOWSTONE_TEST_MEMORY:-4g}" \
   "$IMAGE" "${1:-all}"

@@ -850,8 +850,9 @@ suite_resolvers() {
 
 # ------------------------------------------------------------------ main ----
 main() {
-  printf 'yellowstone test suite\nrepo: %s\nnode: %s\nherdr: %s\npi: %s\n' \
-    "$REPO" "$(node --version)" "$(herdr --version 2>/dev/null | awk '{print $2}')" "$(pi --version 2>/dev/null)"
+  printf 'yellowstone test suite\nrepo: %s\nnode: %s\nherdr: %s\npi: %s\ncontainer memory limit: %s\n' \
+    "$REPO" "$(node --version)" "$(herdr --version 2>/dev/null | awk '{print $2}')" \
+    "$(pi --version 2>/dev/null)" "${YELLOWSTONE_TEST_MEMORY:-unset (host default)}"
 
   # Prefer a mounted work tree when present.
   if [ -d /repo ] && [ -n "$(ls -A /repo 2>/dev/null)" ]; then REPO=/repo; fi
