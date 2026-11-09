@@ -269,6 +269,7 @@ if [ -x "$REPO_ROOT/scripts/skills-sync.sh" ]; then
     while IFS= read -r line; do
       case "$line" in
         linked*)   record ok   "skill:$(printf '%s' "$line" | awk '{print $2}')" "linked to its owning tree" ;;
+        dangling*) record fail "skill:$(printf '%s' "$line" | awk '{print $2}')" "link points into a directory that no longer exists — the owning checkout was moved or deleted" ;;
         present*)  record warn "skill:$(printf '%s' "$line" | awk '{print $2}')" "a real directory, not a link — run install.sh skills" ;;
         missing*)  record fail "skill:$(printf '%s' "$line" | awk '{print $2}')" "missing — run ./install.sh skills" ;;
         "")  : ;;
@@ -276,6 +277,26 @@ if [ -x "$REPO_ROOT/scripts/skills-sync.sh" ]; then
         *)         record info skill "$line" ;;
       esac
     done <<< "$skills_report"
+
+    # The population nothing else measures: skills that are real directories in
+    # $AGENTS_SKILLS rather than links into a repository. They are not in
+    # skills.tsv, are not symlinks, and live outside ~/Code, so every other check
+    # in this repo skips them — a "tidy the unmanaged entries" pass would delete
+    # them silently. The baseline is machine-local because the count is a fact
+    # about this machine, never about the repo: a fresh machine legitimately has
+    # none, and a repo-constant number would fail every correct new install.
+    baseline_file="${YELLOWSTONE_STATE_DIR:-$(dirname "$BACKUP_HOME")}/skills-baseline"
+    real_dirs="$(find "$AGENTS_SKILLS" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')"
+    if [ -f "$baseline_file" ]; then
+      baseline=""
+      baseline="$(head -1 "$baseline_file" | tr -dc '0-9')"
+      if [ -n "$baseline" ] && [ "$real_dirs" -lt "$baseline" ]; then
+        record fail skills-population \
+          "$real_dirs real directories in $AGENTS_SKILLS, baseline $baseline — $(($baseline - real_dirs)) missing; if this followed a tidy of unmanaged entries, restore them from backup (re-record with: find $AGENTS_SKILLS -maxdepth 1 -mindepth 1 -type d | wc -l > $baseline_file)"
+      else
+        record ok skills-population "$real_dirs real directories (baseline $baseline)"
+      fi
+    fi
 
     # Bundled skills are debt, not a fault: they are skills with no installable
     # home yet. Count them from the manifests's own rows (the status output also

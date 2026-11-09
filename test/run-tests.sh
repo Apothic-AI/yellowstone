@@ -686,6 +686,22 @@ suite_failures() {
   check_eq "doctor exits non-zero on an empty machine" 1 "$rc"
   check_contains "doctor names the missing config" "$out" "missing"
 
+  # The unmanaged-directory population has no other guard: a tidy that removes
+  # real directories in AGENTS_SKILLS is invisible to every other check, so a
+  # machine-local baseline makes it loud.
+  local home4; (
+    home4="$(new_home baseline)"
+    mkdir -p "$home4/.agents/skills/keep-me" "$home4/.local/state/yellowstone"
+    echo 5 > "$home4/.local/state/yellowstone/skills-baseline"
+    out="$(in_home "$home4" bash "$REPO/scripts/doctor.sh" 2>&1)"; rc=$?
+    check_eq "a skills population below its baseline fails doctor" 1 "$rc"
+    check_contains "the failure names the shortfall" "$out" "1 real directories"
+    check_contains "the failure names the baseline" "$out" "baseline 5"
+    echo 1 > "$home4/.local/state/yellowstone/skills-baseline"
+    out="$(in_home "$home4" bash "$REPO/scripts/doctor.sh" 2>&1)" || true
+    check_contains "a matching baseline does not report a shortfall" "$out" "1 real directories (baseline 1)"
+  )
+
   # skills-sync with no checkouts must explain the remedy, not just fail.
   # Two correct paths now: resolve the skill from a checkout inside the
   # monorepo (the normal case), or explain the clone remedy when there is none.
