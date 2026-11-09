@@ -118,8 +118,16 @@ rc=0
 provenance="$REPO/home/.overlord/tools/mirror-provenance.sh"
 if [ -x "$provenance" ] || [ -f "$provenance" ]; then
   bash "$provenance" --repo "$REPO" --live "$OVERLORD_DIR" || rc=1
+elif [ "$ahead" = 0 ]; then
+  # Nothing differs, so there is no direction to decide.
+  echo "note: no mirror-provenance.sh in the tree — but nothing differs, so no direction to decide"
 else
-  echo "note: no mirror-provenance.sh in the tree — direction is UNDECIDED for $ahead differing file(s)" >&2
+  # Differing files AND no way to judge them. Announcing the gap is not enough:
+  # a note above "gate passed" is a vacuous pass, and a reverted mirror would sail
+  # through any tree that predates the tool. An undecidable question about a
+  # difference is a failure to answer, not an answer.
+  echo "FAIL: no mirror-provenance.sh in the tree — direction is UNDECIDED for $ahead differing file(s), and an unjudged difference must not be published"
+  rc=1
 fi
 
 if [ "$rc" = 0 ]; then

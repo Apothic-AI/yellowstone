@@ -76,6 +76,23 @@ commit_introducing() {
 }
 ancestor() { git -C "$REPO" merge-base --is-ancestor "$1" "$2" 2>/dev/null; }
 
+# The newest commit reachable from <rev> whose blob at <path> equals <blob>.
+# Used to answer "did this content already exist BEFORE that point in history?", which is the
+# only question that separates a revert from an advance. Walking back from HEAD cannot answer
+# it: a COMMITTED revert puts the old content in a NEW commit, so HEAD-relative search finds
+# the revert commit itself and calls it the origin.
+commit_introducing_before() {
+  local rev="$1" path="$2" blob="$3" c
+  [ -n "$rev" ] || return 1
+  while IFS= read -r c; do
+    [ -n "$c" ] || continue
+    if [ "$(git -C "$REPO" rev-parse "$c:$path" 2>/dev/null)" = "$blob" ]; then
+      printf '%s' "$c"; return 0
+    fi
+  done < <(git -C "$REPO" rev-list "$rev" -- "$path" 2>/dev/null)
+  return 1
+}
+
 fails=0; same=0; notes=0
 fail_lines=(); note_lines=()
 
@@ -95,24 +112,23 @@ compare() {
   # The repo path, not the mirror-relative one: rel is used for messages and exclusions,
   # but every git lookup must address the file where the repo actually stores it.
   local repo_path="home/.overlord/$rel"
-  mcommit="$(commit_introducing "$repo_path" "$mblob")"
   lcommit="$(commit_introducing "$repo_path" "$lblob")"
 
   if [ -z "$lcommit" ]; then
     fails=$((fails + 1))
     fail_lines+=("$rel  the machine's content was never committed at this path — commit it before publishing")
-  elif [ -z "$mcommit" ]; then
+  elif ! ancestor "$lcommit" HEAD; then
     fails=$((fails + 1))
-    fail_lines+=("$rel  the mirror's content is not in this repo's history for that path")
-  elif ancestor "$mcommit" "$lcommit"; then
+    fail_lines+=("$rel  the machine runs content from a commit that is not an ancestor of HEAD — unrelated lineage")
+  elif commit_introducing_before "$lcommit^" "$repo_path" "$mblob" >/dev/null; then
+    # The mirror's content already existed BEFORE the live content was committed. The tree
+    # has gone back to a state the machine has since moved past: that is a revert, however
+    # recently the reverting commit was written.
     fails=$((fails + 1))
-    fail_lines+=("$rel  the tree moved BACKWARDS: live committed in ${lcommit:0:8}, mirror at earlier ${mcommit:0:8} — a revert would ship")
-  elif ancestor "$lcommit" "$mcommit"; then
+    fail_lines+=("$rel  the tree moved BACKWARDS: live content committed in ${lcommit:0:8}, and the mirror's copy restores content that predates it — a revert would ship")
+  else
     notes=$((notes + 1))
     note_lines+=("$rel  the mirror carries newer committed content than this host — install pending")
-  else
-    fails=$((fails + 1))
-    fail_lines+=("$rel  both sides changed independently (${mcommit:0:8} vs ${lcommit:0:8}) — content diverged")
   fi
 }
 
