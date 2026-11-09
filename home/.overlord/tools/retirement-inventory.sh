@@ -58,46 +58,63 @@ while IFS= read -r d; do
   printf '%-44s %-9s %-6s %-12s %-8s %-26s %s\n' "${d#$HOME/Code/}" "$kind" "$dirty" "$unpub" "$head" "${branch:0:26}" "$note"
 done < <(find "$root" -maxdepth 4 -name .git \( -type d -o -type f \) 2>/dev/null | sed 's:/\.git$::' | sort -u)
 
-# LOOSE: instances that LOAD a package from outside the monorepo's src/.
+# LOOSE: instances that LOAD anything from outside the monorepo's src/.
 #
-# A `Code/` string is NOT evidence. settings.json also records past installs as version-map
-# keys (`"{\"source\":\"...\",\"scope\":\"user\"}": "1.4.8"`) — notes that resolve nothing and
-# load nothing. Counting those as loose invents lanes that will never load from ~/Code again;
-# ignoring them loses the fact that the instance once did. Only packages[].source decides.
-python3 - "$repo" <<'PY'
+# Two files, because an instance loads components from both:
+#   settings.json    packages[].source            — pi extensions and packages
+#   pi-profile.json  extensions[].entry / paths   — profile-declared extensions
+#
+# A `Code/` string is NOT evidence on its own. settings.json also records past installs as
+# version-map keys (`"{\"source\":\"...\",\"scope\":\"user\"}": "1.4.8"`), which resolve nothing
+# and load nothing. Only a live load path counts.
+#
+# Scanning settings.json alone undercounts: launch-ZTKNdC (herdr-leader) loads an extension from
+# ~/Code/herdr/.pi/extensions/ and declares it in pi-profile.json while its 25 package sources are
+# all inside src/. That is a fourth component behind the same precondition.
+python3 - "$repo" <<'PY2'
 import json, os, glob, sys
 want = os.path.join(sys.argv[1], "src") + os.sep
+def walk(o, path=""):
+    if isinstance(o, str):
+        yield path, o
+    elif isinstance(o, dict):
+        for k, v in o.items():
+            yield from walk(v, f"{path}.{k}" if path else k)
+    elif isinstance(o, list):
+        for i, v in enumerate(o):
+            yield from walk(v, f"{path}[{i}]")
 rows = []
 insts = sorted(glob.glob(os.path.expanduser("~/.pi-profile-switch/instances/launch-*")))
 scanned = 0
 for i in insts:
-    f = os.path.join(i, "settings.json")
-    if not os.path.exists(f):
-        continue
-    scanned += 1
-    srcs = []
-    def c(o):
-        if isinstance(o, dict):
-            for k, v in o.items():
-                if k == "source" and isinstance(v, str):
-                    srcs.append(v)
-                c(v)
-        elif isinstance(o, list):
-            for v in o:
-                c(v)
-    try:
-        c(json.load(open(f)))
-    except Exception:
-        continue
-    out = [s for s in srcs if "Code/" in s and not s.startswith(want)]
-    if out:
-        rows.append((os.path.basename(i), out))
-
+    name = os.path.basename(i)
+    found = []
+    for fn in ("settings.json", "pi-profile.json"):
+        f = os.path.join(i, fn)
+        if not os.path.exists(f):
+            continue
+        try:
+            data = json.load(open(f))
+        except Exception:
+            continue
+        for p, s in walk(data):
+            if p.startswith("{"):
+                continue
+            for c in (s, s.replace('\\"', '"')):
+                if "Code/" in c and not c.startswith(want) and ".pi/agent" not in c and os.sep + "Code" in c:
+                    found.append((fn, c))
+    if os.path.exists(os.path.join(i, "settings.json")):
+        scanned += 1
+    if found:
+        rows.append((name, sorted(set(found))))
 print()
-print(f"LOOSE — instances loading a package from outside {want}")
-print(f"        {len(rows)} of {scanned} instances with a settings.json")
-for n, out in rows:
+print(f"LOOSE - instances loading a component from outside {want}")
+print(f"        {len(rows)} of {scanned} instances")
+comps = set()
+for n, found in rows:
     print(f"  {n}")
-    for s in out:
-        print(f"    {s}")
-PY
+    for fn, c in found:
+        comps.add(c)
+        print(f"    [{fn}] {c}")
+print(f"  distinct outer paths: {len(comps)}")
+PY2
