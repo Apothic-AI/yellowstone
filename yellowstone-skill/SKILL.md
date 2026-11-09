@@ -799,7 +799,24 @@ git subrepo pull src/herdr-plugins/unblock
 ```
 
 When the subrepo is already at its tracked commit, `pull` prints `is up to date` and creates no
-commit; that is the expected result, not a failure. After **any** pull, run the round-trip gate:
+commit; that is the expected result, not a failure.
+
+**`pi list` is not evidence that a local path resolves.** It prints a nonexistent local path as an
+installed package and exits 0 — measured, not assumed:
+
+```sh
+$ PI_CODING_AGENT_DIR=/tmp/probe pi list     # settings declare /tmp/does-not-exist-pkg
+  /tmp/does-not-exist-pkg
+$ echo $?
+0
+```
+
+So after re-pointing a package or moving a checkout, check the **filesystem**, not the listing:
+every local-path entry must exist on disk. `test/verify-monorepo-install.sh` does exactly that and is
+the thing to run; a path that appears in `pi list` is `reported`, a path that resolves is `checked`,
+and a lane that composes its mode is `verified`.
+
+After **any** pull, run the round-trip gate:
 
 ```sh
 ./test/verify-subrepo-roundtrip.sh
@@ -833,7 +850,7 @@ on another machine. Then raise `EXPECTED` and run the gate.
 | Requests succeed but the bill jumps | `home/.pi/agent/models.json` `compat` | `sendSessionAffinityHeaders: true` on the gateway |
 | Config edit does nothing | `herdr config check` | `herdr server reload-config` |
 | A plugin pane will not open | `herdr plugin log list --plugin <id>` | `scripts/herdr-plugins.sh install` |
-| A package silently stopped loading | `pi list` vs `settings.json` | `pi update --extensions` |
+| A package silently stopped loading | `ls` the path `settings.json` names — **not** `pi list`, which lists a nonexistent path and exits 0 | `pi update --extensions`, or re-point the entry |
 | Two extensions claim the same tool | startup error naming both | they conflict by design; disable one |
 | herdr updated but behaves old | `herdr status` → `server_binary_stale` | reattach (`herdr`); the new client works at once, server features need a server restart — avoid `herdr server stop` while agents are running, it ends their panes |
 | `doctor.sh` says a skill is elsewhere | `readlink -f ~/.agents/skills/<s>` | re-run `./install.sh skills`, or leave it if intentional |
