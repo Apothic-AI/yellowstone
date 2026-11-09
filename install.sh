@@ -222,6 +222,16 @@ install_agents() {
   # it up first and says so — silently replacing someone's instructions is worse
   # than a stale file.
   install_home_tree AGENTS.md
+
+  # Each fleet space carries its own scaffolding — AGENTS.md and .pi/modes, which pi
+  # reads from the working directory it starts in. That is configuration, so it ships
+  # in home/ and installs like any other file. Documents/ holds four of the seven
+  # spaces; .sysops is walked only once it has been authored, because install_home_tree
+  # dies on a subtree that is absent rather than no-opping.
+  install_home_tree Documents
+  if [ -e "$HOME_SRC/.sysops" ]; then
+    install_home_tree .sysops
+  fi
 }
 
 # ---------------------------------------------------------------- overlord --

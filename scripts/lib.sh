@@ -196,6 +196,11 @@ home_dest() {
     .local/bin/*)     printf '%s/%s\n' "$LOCAL_BIN"     "${rel#.local/bin/}" ;;
     .overlord/*)      printf '%s/%s\n' "$OVERLORD_DIR"  "${rel#.overlord/}" ;;
     .sysops/*)        printf '%s/%s\n' "$SYSOPS_DIR"    "${rel#.sysops/}" ;;
+    # The fleet's operational spaces live under ~/Documents. They are configuration —
+    # each space's AGENTS.md and .pi/modes — so they ship in home/ and install like any
+    # other file. Without this case they fell to the `*) return 1` below, which dies with
+    # "no destination": four of the seven spaces had nowhere to be installed.
+    Documents/*)      printf '%s/%s\n' "$HOME/Documents" "${rel#Documents/}" ;;
     *) return 1 ;;
   esac
 }
