@@ -70,6 +70,65 @@ Some files describe a machine rather than a configuration:
 ship a default that a fresh machine needs, never overwrite a choice a human
 made by using the tool.
 
+## 5. Components are subrepos, not copies
+
+Every fork and owned repository this setup depends on lives under `src/` as a
+**git subrepo**, not a submodule, not a vendored copy, and not a second checkout
+that happens to be next to this one.
+
+| | Why not the alternative |
+|---|---|
+| Not a submodule | a submodule is a pointer in `.gitmodules` plus a nested `.git`; a fresh clone has empty directories until someone runs `--recursive`, and half the fleet has run instead of read that |
+| Not a vendored copy | a copy has no version `pi list` can report and nobody rebases it; the delta becomes invisible, then stale, then wrong |
+| Not a sibling checkout | that is what this replaced: twelve directories under `~/Code` and `tooling/`, each with its own branch conventions, discoverable only by remembering |
+
+A subrepo keeps the component's files **in this repository's history**. A clone
+is complete — no recursion, no subcommand to remember — and `git subrepo pull`
+lands one ordinary commit that reviews and reverts like any other. The `.gitrepo`
+file inside each directory records remote, branch, commit and pull parent; that
+file is the record, and hand-editing it is how a pull later fails in a way that
+looks like a corrupted checkout.
+
+### Pin the branch the install resolves to
+
+Clone from the **remote at a named ref**, never from the local checkout. Two
+reasons, both measured rather than argued:
+
+- a local checkout carries per-lane scaffolding — `.pi/`, a rewritten `AGENTS.md`,
+  a launch file — that must never enter this repo, and in a jj workspace it sits
+  at a detached `HEAD` with no branch name to read;
+- the branch an install *resolves to* is not always the merge branch. `pi-pretty-tui`
+  installs from `test/composer-selection-on-apothic`, not `apothic`, and pinning
+  the tidier-looking `apothic` would reproduce a machine nobody runs.
+
+So the rule is: read `pi list` (or the plugin install record), pin what it names,
+and only then ask whether that branch should be the merge branch too.
+
+### Membership is "does anything resolve against it"
+
+Not "is it a pi package". `mycord` installs nothing as a package and appears in
+no manifest, but it owns nine skills the fleet links — so a conversion without it
+leaves those skills with no checkout to resolve against. Conversely, a pinned
+upstream herdr plugin is *not* a subrepo: a pinned ref is already a complete
+record of something we do not patch, and a subrepo of an unmodified upstream is a
+clone with no delta to review.
+
+`src/libs` is empty and stays empty. The layout names four categories; inventing
+a member so the outline looks balanced would be the same mistake as bundling a
+skill that has an installable home.
+
+### The gate
+
+A subrepo tree is only converted if it reproduces from its own history and the
+remotes. `test/verify-subrepo-roundtrip.sh` clones this repo into a throwaway
+directory and asserts, for every `src/**/.gitrepo`, that `git subrepo status`
+resolves, that the pulled commit and branch equal the recorded ones, that the
+directory has content, and that `git subrepo pull` is a no-op — plus a hard
+count, so a subrepo deleted to make the rest pass fails instead of shrinking the
+gate. It runs on the host, needs network, and refuses a dirty tree: it clones
+what is committed, and a gate that can be run over uncommitted work is not
+describing what ships.
+
 ## Design decisions worth knowing
 
 ### Plugin refs are pinned commits
