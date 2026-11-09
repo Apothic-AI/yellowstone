@@ -9,4 +9,3 @@
 # resolved, delete its line — the gate then holds the two copies together again.
 #
 # An undeclared difference is a failure, because a copy in either direction destroys content.
-.overlord/AGENTS.md    two different documents, not two versions: repo copy 510 lines (5310dbba5, 2026-11-08 19:34) vs live 108 lines (mtime 2026-11-08 06:47), zero sentence overlap in either direction; the merge is outstanding — FT-01-LEAD-DECISIONS.md §34
