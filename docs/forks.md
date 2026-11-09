@@ -19,7 +19,7 @@ Two rules apply to all of them:
 | Upstream | [`ykn0309/pi-pretty-tui`](https://github.com/ykn0309/pi-pretty-tui) 0.3.0 |
 | Our fork | `Apothic-AI/pi-pretty-tui` |
 | License | MIT, © 2026 Kainan Yang (kept in the fork's `LICENSE`) |
-| Installed as | `git:github.com/Apothic-AI/pi-pretty-tui@apothic` in `home/.pi/agent/settings.json` |
+| Installed as | `@YELLOWSTONE_REPO@/src/pi-extensions/pi-pretty-tui` in `home/.pi/agent/settings.json` — the subrepo tracks `test/composer-selection-on-apothic`, the branch the machine runs, not the merge branch (`apothic`). The seven commits the test line carries beyond `apothic` are that space's follow-up; when they land, the manifest, the subrepo ref and the install flip together. |
 | Delta notes | the fork's `LOCAL-PATCHES.md` |
 
 **Why a fork.** pi allows exactly one owner per tool name, and the check runs
@@ -65,7 +65,7 @@ npm release. That is the retirement condition.
 |---|---|
 | Upstream | [`jiangge/pi-cache-optimizer`](https://github.com/jiangge/pi-cache-optimizer) |
 | Our fork | [`bitnom/pi-cache-optimizer`](https://github.com/bitnom/pi-cache-optimizer) |
-| Installed as | `git:github.com/bitnom/pi-cache-optimizer` in `home/.pi/agent/settings.json` |
+| Installed as | `@YELLOWSTONE_REPO@/src/pi-extensions/pi-cache-optimizer` in `home/.pi/agent/settings.json` — the subrepo tracks `feat/opencode-cache-stats`, not the default, because it is what the machine loads |
 | Base | upstream 2.10.4, merged forward |
 
 **Why a fork.** It adds provider adapters and cache-key handling for routes that
@@ -84,7 +84,7 @@ dirty.
 |---|---|
 | Upstream | [`patty-io/pi-patty-bg-tasks`](https://github.com/patty-io/pi-patty-bg-tasks) |
 | Our fork | [`Apothic-AI/bizzy`](https://github.com/Apothic-AI/bizzy) |
-| Installed as | `git:github.com/Apothic-AI/bizzy` in `home/.pi/agent/settings.json` |
+| Installed as | `@YELLOWSTONE_REPO@/src/pi-extensions/bizzy` in `home/.pi/agent/settings.json` |
 | Package name | `pi-bizzy-bg-tasks` |
 
 **Why a fork.** Background tasks are the mechanism this whole setup leans on:
@@ -123,7 +123,7 @@ checkout supplies the binary.
 | Upstream | [`signalridge/pi-extensions`](https://github.com/signalridge/pi-extensions), `packages/pi-goal` |
 | Our fork | `Apothic-AI/pi-extensions`, branch `apothic` |
 | Upstream PR | [signalridge/pi-extensions#77](https://github.com/signalridge/pi-extensions/pull/77) |
-| Installed as | a local path: `$PI_EXTENSIONS_APOTHIC/packages/pi-goal` (default `~/Code/pi-extensions-apothic/packages/pi-goal`). `home/.pi/agent/settings.json` carries the `@PI_EXTENSIONS_APOTHIC@` placeholder and `install.sh` resolves it. |
+| Installed as | `@YELLOWSTONE_REPO@/src/pi-extensions/signalridge/packages/pi-goal` in `home/.pi/agent/settings.json`, rendered at install. The `PI_EXTENSIONS_APOTHIC` override in `install.sh` is the checkout-based path for a machine without the monorepo, and is inert otherwise. |
 | Delta | one setting, `experimental.notices` |
 
 **Why a fork.** Enabling the experimental ordered-goal queue emits a warning on
@@ -159,13 +159,38 @@ by npm, so `pi update` silently reverts any in-place edit of it, and a local
 edit leaves the version `pi list` reports describing code that is not running.
 A fork costs one checkout and survives updates.
 
+## pi-modes (`Apothic-AI/pi-extensions-1`) — a fork, and a second lineage
+
+| | |
+|---|---|
+| Upstream | [`tryingET/pi-extensions`](https://github.com/tryingET/pi-extensions) |
+| Our fork | `Apothic-AI/pi-extensions-1`, branch `apothic-main` |
+| Installed as | `@YELLOWSTONE_REPO@/src/pi-extensions/tryinget/packages/pi-modes` in `home/.pi/agent/settings.json`, rendered at install. The `PI_EXTENSIONS_1` override is the checkout-based path, inert otherwise. |
+| Supplies | `packages/pi-modes` — the mode-composition layer every lane runs on |
+
+**Why this is a separate entry from `pi-extensions` above.** The two are not
+the same project under two names: `pi-extensions` descends from Signalridge
+(root commit 2026-08-16) and supplies `pi-goal`; `pi-extensions-1` was
+bootstrapped from a monorepo template (2026-03-05) and supplies `pi-modes`.
+Different root commits, different upstreams, and neither package exists in the
+other. The org names are misleading enough that the subrepos are named by
+lineage instead — `src/pi-extensions/signalridge` and
+`src/pi-extensions/tryinget` — and this entry exists because a fork with a live
+upstream and no record here is exactly what the rule above forbids. Whether
+they should eventually be consolidated is its own piece of work, deliberately
+out of scope while `pi-extensions-1` carries uncommitted work.
+
+**Retirement condition.** The two forks merge, or upstream publishes a
+mode-composition package. Until then both are carried, and neither is a
+candidate for deletion on the grounds that the other looks similar.
+
 ## pi-rooms — fork
 
 | | |
 |---|---|
 | Upstream | `signalridge/pi-extensions`, `packages/pi-rooms` (rooms/DM extension) |
 | Our fork | `Apothic-AI/pi-rooms`, branch `master` |
-| Installed as | `git:github.com/Apothic-AI/pi-rooms@master` |
+| Installed as | `@YELLOWSTONE_REPO@/src/pi-extensions/pi-rooms` in `home/.pi/agent/settings.json` |
 
 Rooms, DMs and reply-all between pi sessions, file-based with no daemon. State
 lives under `~/.pi/agent/rooms`. Identity is the one thing to pin: a session
@@ -179,7 +204,7 @@ survive a restart under the same name.
 |---|---|
 | Upstream | `@arhen/pi-core-todo` (flat/nested todos with statuses and dependencies) |
 | Our fork | `Apothic-AI/apothic-todo`, branch `main` |
-| Installed as | `git:github.com/Apothic-AI/apothic-todo@main` |
+| Installed as | `@YELLOWSTONE_REPO@/src/pi-extensions/apothic-todo` in `home/.pi/agent/settings.json` |
 | Package name | still `@arhen/pi-core-todo`, so it replaces the npm package rather than sitting beside it |
 
 ## pi-persist — fork
@@ -188,7 +213,7 @@ survive a restart under the same name.
 |---|---|
 | Upstream | `signalridge/pi-extensions`, `packages/pi-persist` |
 | Our fork | `Apothic-AI/pi-persist`, branch `main` |
-| Installed as | `git:github.com/Apothic-AI/pi-persist@main` |
+| Installed as | `@YELLOWSTONE_REPO@/src/pi-extensions/pi-persist` in `home/.pi/agent/settings.json` |
 | Config | `home/.pi/agent/pi-persist.json` — the trailing reminders it appends to every request |
 
 A cached prompt section plus a per-request trailing message that other extensions
