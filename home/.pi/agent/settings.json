@@ -18,7 +18,7 @@
     "+codemode"
   ],
   "packages": [
-    "git:github.com/Apothic-AI/bizzy@apothic-main",
+    "@YELLOWSTONE_REPO@/src/pi-extensions/bizzy",
     {
       "source": "npm:@99percentpeople/pi-thinking-fold",
       "extensions": [
@@ -40,14 +40,14 @@
     "npm:pi-double-paste",
     "npm:@henryqw/pi-undo",
     "npm:@xynogen/pix-voice",
-    "git:github.com/bitnom/pi-cache-optimizer@feat/opencode-cache-stats",
-    "git:github.com/Apothic-AI/pi-pretty-tui@test/composer-selection-on-apothic",
-    "git:github.com/Apothic-AI/pi-rooms@master",
-    "git:github.com/Apothic-AI/apothic-todo@main",
-    "git:github.com/Apothic-AI/pi-persist@main",
-    "@PI_EXTENSIONS_APOTHIC@/packages/pi-goal",
-    "@PI_EXTENSIONS_1@/packages/pi-modes",
-    "@PI_FLEET_HOOKS@"
+    "@YELLOWSTONE_REPO@/src/pi-extensions/pi-cache-optimizer",
+    "@YELLOWSTONE_REPO@/src/pi-extensions/pi-pretty-tui",
+    "@YELLOWSTONE_REPO@/src/pi-extensions/pi-rooms",
+    "@YELLOWSTONE_REPO@/src/pi-extensions/apothic-todo",
+    "@YELLOWSTONE_REPO@/src/pi-extensions/pi-persist",
+    "@YELLOWSTONE_REPO@/src/pi-extensions/signalridge/packages/pi-goal",
+    "@YELLOWSTONE_REPO@/src/pi-extensions/tryinget/packages/pi-modes",
+    "@YELLOWSTONE_REPO@/src/pi-extensions/pi-fleet-hooks"
   ],
   "enabledModels": [
     "openrouter/xiaomi/mimo-v2.6-flash:nitro",
