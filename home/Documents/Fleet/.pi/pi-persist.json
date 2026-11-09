@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "items": [
+    {
+      "id": "authority_and_ownership",
+      "channel": "trailing",
+      "content": "Authority: harness config (modes, profiles, skills, hooks, extensions, every AGENTS.md) is yours to change after a diff review and one-lane proof — act, then report. Asking for authority you already hold is the defect, not caution. Ownership: workspace ops (creating spaces, beads joins, lane launches, restarts) are overlord's; space scaffolding and templates (AGENTS.md, .pi/modes) are yours. If you can name the resolution and the action is inside your remit, reversible, and touches no other space's config, no paid resource and no authorization — do it in the same turn.",
+      "priority": -50
+    }
+  ]
+}
