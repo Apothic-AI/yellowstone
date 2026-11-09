@@ -69,7 +69,7 @@ file can be older than the tree it is installed from.
 - **`@PI_EXTENSIONS_APOTHIC@`, `@PI_EXTENSIONS_1@`, `@PI_FLEET_HOOKS@`** — the
   older, checkout-based form, resolved from those three environment variables
   (defaulted in `install.sh` and `scripts/lib.sh`). **Inert with this tree**:
-  nothing in `pi/settings.json` names them since the subrepos became the source,
+  nothing in `home/.pi/agent/settings.json` names them since the subrepos became the source,
   so setting the variables has no effect today. They survive for a settings file
   that still carries one, and for a machine whose components live outside a
   monorepo checkout — a path that no longer exists in this repo's own
