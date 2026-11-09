@@ -59,6 +59,34 @@ excluded() {
   esac
 }
 
+# Direction by provenance, not by mtime.
+#
+# checkout and merge stamp mtime = now regardless of content age, so a merge that
+# resolves a conflict back to an older mirror shows OLDER CONTENT WITH A NEWER
+# mtime. An mtime test reads that as "the mirror is newer, an install is pending"
+# and notes it — the one classification that promotes a reverted mirror into the
+# running fleet on the next install, with a backup nobody reads.
+#
+# So: find the commit whose blob for this path equals the live file's content.
+#   live content committed at a DESCENDANT of the mirror's commit -> the tree has
+#     moved backwards since; the mirror lacks what the machine runs -> FAIL.
+#   live content never committed -> the normal edit-then-commit window -> note.
+#   live content committed at an ANCESTOR -> the mirror is legitimately ahead and
+#     an install is pending -> note.
+revert_detected() {
+  local mirror="$1" live="$2" rel cur live_blob c found=""
+  rel="$mirror"
+  cur="$(git log -1 --format=%H -- "$rel" 2>/dev/null)"
+  [ -n "$cur" ] || return 1
+  live_blob="$(git hash-object -- "$live" 2>/dev/null)"
+  [ -n "$live_blob" ] || return 1
+  for c in $(git rev-list --max-count=400 -- "$rel" 2>/dev/null); do
+    [ "$(git rev-parse "$c:$rel" 2>/dev/null)" = "$live_blob" ] && { found="$c"; break; }
+  done
+  [ -n "$found" ] || return 1
+  git merge-base --is-ancestor "$cur" "$found" 2>/dev/null
+}
+
 same=0; behind=0; ahead=0; liveonly=0
 behind_list=""; ahead_list=""; liveonly_list=""
 
@@ -75,6 +103,12 @@ while IFS= read -r path; do
     behind=$((behind + 1))
     behind_list="$behind_list
   $rel  (live edited $(ago_of "$live"), mirror $(ago_of "$path"))"
+  elif revert_detected "$path" "$live"; then
+    # mtime said "mirror newer", but the live content was committed at a
+    # descendant of the mirror's commit: the tree moved backwards.
+    behind=$((behind + 1))
+    behind_list="$behind_list
+  $rel  (REVERTED — the live content is newer in history than the mirror's)"
   else
     ahead=$((ahead + 1)); ahead_list="$ahead_list $rel"
   fi
