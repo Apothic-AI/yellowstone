@@ -19,13 +19,15 @@
 set -euo pipefail
 cd "$(dirname -- "$0")/.."
 
-EXPECTED=12
+EXPECTED=13
 REPO="$(pwd)"
 
-# The canonical checkout is permanently dirty in one file: `.pi/launch.env` is a lane-local
-# launch selector that profile machinery rewrites and nobody commits. Treating that as dirt
-# would make the gate unrunnable exactly where people work, so it is exempt by name — and by
-# name only. Any other modification still fails.
+# `.pi/launch.env` is tracked on purpose: it is this space's launch line, and `pil` falls back to
+# it for leader-named lanes. Profile machinery rewrites it in a live checkout, so it can be dirty
+# at any moment without meaning anything is wrong. Exempting it by exact name keeps the gate
+# runnable where people work; any other modification still fails, and so does this one if its
+# name ever changes. A blanket "ignore dotfiles" or "ignore .pi/" would be the same exemption
+# applied to files that do matter.
 DIRT="$(git status --porcelain | grep -vx ' M \.pi/launch\.env' || true)"
 if [ -n "$DIRT" ]; then
   echo "fail: working tree is dirty — commit first, the gate clones what is committed" >&2

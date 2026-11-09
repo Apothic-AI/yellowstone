@@ -1,0 +1,62 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Testing
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+.tox/
+
+# Env
+.env
+.env.local
+.venv
+venv/
+ENV/
+
+# Tooling caches
+.ruff_cache/
+.mypy_cache/
+
+# Transient agent working notes
+.agent-context/
+
+# Google Voice session jar: a full-account credential. The trailing * also covers the
+# `<path>.tmp` staging file the writer creates before the atomic rename.
+gv-session.json*
+sendsms-capture.json*
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
