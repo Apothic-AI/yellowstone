@@ -15,7 +15,7 @@
 #           `dagr --skill` into the plugin's own skills/ directory, so the
 #           SKILL.md and the examples/ its links point at stay together, then
 #           linked into ~/.agents/skills. Never bundled: the plugin is pinned in
-#           herdr/plugins.toml, and `dagr --skill` prints exactly
+#           home/.config/herdr/plugins.toml, and `dagr --skill` prints exactly
 #           its copy.
 #   bundle  no installable home exists. This repo is the source of truth, and
 #           the files live under home/.agents/skills/ — the mirror of the

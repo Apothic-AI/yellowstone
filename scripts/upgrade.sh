@@ -10,7 +10,7 @@
 # Order matters and is deliberate:
 #   1. herdr binary  — plugins declare min_herdr_version, so the host comes first
 #   2. herdr server  — a restarted server picks up the new binary
-#   3. plugins       — re-fetched at the refs pinned in herdr/plugins.toml
+#   3. plugins       — re-fetched at the refs pinned in home/.config/herdr/plugins.toml
 #   4. pi            — the agent itself
 #   5. pi packages   — third-party and forked extensions
 #   6. skills        — our own symlinked skills need no update; this reports them
@@ -208,7 +208,7 @@ report_forks() {
 
   # unblock: local checkout linked into herdr; the CLI is npm-linked from it.
   local unblock_path
-  unblock_path="$(node "$REPO_ROOT/scripts/plugins-manifest.js" get "$REPO_ROOT/herdr/plugins.toml" unblock link_path)"
+  unblock_path="$(node "$REPO_ROOT/scripts/plugins-manifest.js" get "$HOME_SRC/.config/herdr/plugins.toml" unblock link_path)"
   unblock_path="${unblock_path/#\~/$HOME}"
   if [ -d "$unblock_path/.git" ]; then
     local ub

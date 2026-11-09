@@ -251,10 +251,10 @@ suite_smoke() {
   # config.toml because neither manifest declares keys: plugin without bind is
   # unreachable, bind without plugin does nothing.
   check "manifest declares herdr-bar" \
-    awk -F'\t' '$1=="herdr-bar"' "$REPO/herdr/plugins.toml" >/dev/null 2>&1 || \
-    node "$REPO/scripts/plugins-manifest.js" ids "$REPO/herdr/plugins.toml" | grep -qx herdr-bar
+    awk -F'\t' '$1=="herdr-bar"' "$REPO/home/.config/herdr/plugins.toml" >/dev/null 2>&1 || \
+    node "$REPO/scripts/plugins-manifest.js" ids "$REPO/home/.config/herdr/plugins.toml" | grep -qx herdr-bar
   check "manifest declares the plugin manager" \
-    node "$REPO/scripts/plugins-manifest.js" ids "$REPO/herdr/plugins.toml" | grep -qx ray.plugin-manager
+    node "$REPO/scripts/plugins-manifest.js" ids "$REPO/home/.config/herdr/plugins.toml" | grep -qx ray.plugin-manager
   check "config ships the command-bar bind" grep -q 'command = "herdr-bar.open"' "$REPO/home/.config/herdr/config.toml"
   check "config ships the plugin-manager bind" grep -q 'command = "ray.plugin-manager.open"' "$REPO/home/.config/herdr/config.toml"
   # Every plugin whose manifest declares a keybind must have that bind in
@@ -263,7 +263,7 @@ suite_smoke() {
   while IFS=$'\x1f' read -r id source ref link_path optional why repo note; do
     [ -n "$id" ] || continue
     # read the bind recorded in the manifest's keybind field, if any
-    bind="$(node "$REPO/scripts/plugins-manifest.js" get "$REPO/herdr/plugins.toml" "$id" keybind)"
+    bind="$(node "$REPO/scripts/plugins-manifest.js" get "$REPO/home/.config/herdr/plugins.toml" "$id" keybind)"
     [ -n "$bind" ] || continue
     # A plugin may declare several binds in one field, comma-separated
     # ("prefix+v -> dictate.toggle, prefix+shift+v -> dictate.toggle-send").
@@ -275,7 +275,7 @@ suite_smoke() {
       grep -q "command = \"$action\"" "$REPO/home/.config/herdr/config.toml" \
         || missing_bind="$missing_bind$id($action) "
     done < <(printf '%s' "$bind" | tr ',' '\n')
-  done < <(node "$REPO/scripts/plugins-manifest.js" rows "$REPO/herdr/plugins.toml")
+  done < <(node "$REPO/scripts/plugins-manifest.js" rows "$REPO/home/.config/herdr/plugins.toml")
   check_eq "every declared keybind is present in config.toml" "" "$missing_bind"
 
   # The non-blocking invariant must be enforced at a call site, not just written
@@ -289,8 +289,8 @@ suite_smoke() {
 
   # Plugin manifest.
   local n
-  n="$(node "$REPO/scripts/plugins-manifest.js" ids "$REPO/herdr/plugins.toml" 2>/dev/null | wc -l)"
-  [ "${n:-0}" -ge 5 ] && ok "herdr/plugins.toml declares $n plugins" || bad "plugins.toml parsed $n plugins (expected >=5)"
+  n="$(node "$REPO/scripts/plugins-manifest.js" ids "$REPO/home/.config/herdr/plugins.toml" 2>/dev/null | wc -l)"
+  [ "${n:-0}" -ge 5 ] && ok "home/.config/herdr/plugins.toml declares $n plugins" || bad "plugins.toml parsed $n plugins (expected >=5)"
 
   # Every plugin entry needs a pinned ref or a local link path.
   local badpin=0
@@ -301,7 +301,7 @@ suite_smoke() {
     else
       [ -n "$ref" ] || { badpin=1; bad "plugins.toml: $id has no pinned ref"; }
     fi
-  done < <(node "$REPO/scripts/plugins-manifest.js" rows "$REPO/herdr/plugins.toml")
+  done < <(node "$REPO/scripts/plugins-manifest.js" rows "$REPO/home/.config/herdr/plugins.toml")
   [ "$badpin" = 0 ] && ok "every plugin is pinned or locally linked"
 
   # No secrets and no absolute home paths in the tree.

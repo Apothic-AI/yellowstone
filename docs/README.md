@@ -29,5 +29,5 @@ in dependency order.
   tracks the version you actually have.
 - **pi itself.** The package ships `docs/` beside the installed binary — start
   at `configuration.md`, `models.md`, `packages.md`, `extensions.md`.
-- **Each plugin's own behaviour.** `herdr/plugins.toml` records why a plugin is
+- **Each plugin's own behaviour.** `home/.config/herdr/plugins.toml` records why a plugin is
   installed and what it needs; the plugin's upstream README records the rest.
