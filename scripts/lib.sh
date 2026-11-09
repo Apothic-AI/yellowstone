@@ -363,3 +363,112 @@ install_home_tree() {
     esac
   done < <(home_files "$subtree")
 }
+
+# ---------------------------------------------------------------- workspaces --
+# These two are generic herdr operations, not overlord-specific, so they live here
+# beside every other shared helper rather than in the one script that needed them
+# first. `install.sh spaces` and `scripts/overlord.sh` both call them.
+
+# workspace ids + labels, one "id<TAB>label" per line
+workspaces() {
+  have herdr || return 1
+  # `workspace list` already emits JSON and rejects a --json flag.
+  herdr workspace list 2>/dev/null | node -e '
+    let s = "";
+    process.stdin.on("data", (d) => (s += d)).on("end", () => {
+      try {
+        for (const w of JSON.parse(s).result?.workspaces ?? []) {
+          console.log(`${w.workspace_id}\t${w.label}`);
+        }
+      } catch {}
+    });
+  '
+}
+ensure_workspace() {
+  local label="$1" dir="$2"
+
+  if ! have herdr; then
+    warn "herdr not installed — skipping workspace '$label'"
+    info "  install it: curl -fsSL https://herdr.dev/install.sh | sh"
+    return 0
+  fi
+  if ! needs_herdr_server; then
+    warn "no herdr server is running — cannot inspect or create workspace '$label'"
+    info "  start one with: herdr        (then re-run: ./install.sh overlord)"
+    return 0
+  fi
+
+  local existing
+  existing="$(workspaces 2>/dev/null | awk -F'\t' -v want="$label" '$2 == want { print $1; exit }' || true)"
+
+  if [ -n "$existing" ]; then
+    info "workspace '$label' already exists ($existing) — not creating another"
+    if [ -d "$dir" ]; then
+      info "  its cwd is whatever the operator set; this script does not move it"
+    fi
+    return 0
+  fi
+
+  if [ "${DRY_RUN:-0}" = 1 ]; then
+    dryrun "herdr workspace create --cwd $dir --label $label --no-focus"
+    return 0
+  fi
+
+  local out id
+  out="$(herdr workspace create --cwd "$dir" --label "$label" --no-focus 2>&1)"
+  id="$(printf '%s' "$out" | node -e '
+    let s = "";
+    process.stdin.on("data", (d) => (s += d)).on("end", () => {
+      try { process.stdout.write(JSON.parse(s).result.workspace.workspace_id); } catch {}
+    });
+  ' 2>/dev/null)"
+
+  if [ -n "$id" ]; then
+    info "created workspace '$label' ($id) at $(short "$dir")"
+  else
+    warn "workspace create failed for '$label'; run it by hand:"
+    info "  herdr workspace create --cwd $(short "$dir") --label $label"
+    printf '%s\n' "$out" | head -3 | sed 's/^/    /'
+    return 1
+  fi
+}
+
+# The seven spaces the fleet must have on any machine, in the operator's order.
+# `label|path` — the path is where a lane in that space starts, and it is the same
+# path its scaffolding is installed to, so the two cannot drift apart.
+#
+# THE LABELS ARE MATCHED EXACTLY AS THE OPERATOR CREATED THEM, including the ones
+# that are capitalised: `Assistant`, `Comms` and `Personal` are title case while
+# `overlord`, `self-improvement`, `sysops` and `yellowstone` are lower. Normalising
+# them would make the lookup miss an existing space and create a second one with a
+# near-identical name at the same cwd — the exact failure ensure_workspace guards
+# against, since `herdr workspace create` does not deduplicate. Verified against
+# `herdr workspace list` on 2026-11-09: w1Z Assistant · w1T Comms · wE overlord ·
+# w1K self-improvement · w19 sysops · w17 yellowstone · w1M Personal.
+#
+# yellowstone's path is the repo root: that space's scaffolding *is* this tree, which
+# is why test/verify-space-scaffold.sh deliberately omits it from its own table.
+fleet_space_paths() {
+  printf '%s\n' \
+    "Assistant|$HOME/Documents/Assistant" \
+    "Comms|$HOME/Documents/Comms" \
+    "overlord|$OVERLORD_DIR" \
+    "self-improvement|$HOME/Documents/Fleet" \
+    "sysops|$SYSOPS_DIR" \
+    "yellowstone|$REPO_ROOT" \
+    "Personal|$HOME/Documents/Personal"
+}
+
+# ensure_fleet_spaces — create any of the seven workspaces that are absent.
+#
+# Idempotent by construction: ensure_workspace looks the label up first and refuses to
+# create a second space with the same name, which `herdr workspace create` would
+# otherwise do silently. Under DRY_RUN it prints and changes nothing.
+ensure_fleet_spaces() {
+  local entry label dir rc=0
+  while IFS='|' read -r label dir; do
+    [ -n "$label" ] || continue
+    ensure_workspace "$label" "$dir" || rc=1
+  done < <(fleet_space_paths)
+  return "$rc"
+}

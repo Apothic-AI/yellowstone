@@ -43,21 +43,6 @@ SYSOPS_TAB="${SYSOPS_TAB_LABEL:-sysop-leader}"
 # empty directory respectively; both are declared in scripts/lib.sh beside every
 # other destination, so this script does not re-derive them.
 
-# workspace ids + labels, one "id<TAB>label" per line
-workspaces() {
-  have herdr || return 1
-  # `workspace list` already emits JSON and rejects a --json flag.
-  herdr workspace list 2>/dev/null | node -e '
-    let s = "";
-    process.stdin.on("data", (d) => (s += d)).on("end", () => {
-      try {
-        for (const w of JSON.parse(s).result?.workspaces ?? []) {
-          console.log(`${w.workspace_id}\t${w.label}`);
-        }
-      } catch {}
-    });
-  '
-}
 
 find_overlord_workspace() {
   workspaces 2>/dev/null | awk -F'\t' -v want="$OVERLORD_LABEL" '$2 == want { print $1; exit }'
@@ -305,58 +290,6 @@ install_dir() {
     "$OVERLORD_DIR/skills/overlord-operations"
 }
 
-# ensure_workspace <label> <cwd> — create the workspace only when the label is
-# absent. `herdr workspace create` does not deduplicate by label or cwd (verified:
-# identical arguments produced two workspaces), so a blind create splits attention
-# between two spaces with the same name and no diagnostic.
-ensure_workspace() {
-  local label="$1" dir="$2"
-
-  if ! have herdr; then
-    warn "herdr not installed — skipping workspace '$label'"
-    info "  install it: curl -fsSL https://herdr.dev/install.sh | sh"
-    return 0
-  fi
-  if ! needs_herdr_server; then
-    warn "no herdr server is running — cannot inspect or create workspace '$label'"
-    info "  start one with: herdr        (then re-run: ./install.sh overlord)"
-    return 0
-  fi
-
-  local existing
-  existing="$(workspaces 2>/dev/null | awk -F'\t' -v want="$label" '$2 == want { print $1; exit }' || true)"
-
-  if [ -n "$existing" ]; then
-    info "workspace '$label' already exists ($existing) — not creating another"
-    if [ -d "$dir" ]; then
-      info "  its cwd is whatever the operator set; this script does not move it"
-    fi
-    return 0
-  fi
-
-  if [ "${DRY_RUN:-0}" = 1 ]; then
-    dryrun "herdr workspace create --cwd $dir --label $label --no-focus"
-    return 0
-  fi
-
-  local out id
-  out="$(herdr workspace create --cwd "$dir" --label "$label" --no-focus 2>&1)"
-  id="$(printf '%s' "$out" | node -e '
-    let s = "";
-    process.stdin.on("data", (d) => (s += d)).on("end", () => {
-      try { process.stdout.write(JSON.parse(s).result.workspace.workspace_id); } catch {}
-    });
-  ' 2>/dev/null)"
-
-  if [ -n "$id" ]; then
-    info "created workspace '$label' ($id) at $(short "$dir")"
-  else
-    warn "workspace create failed for '$label'; run it by hand:"
-    info "  herdr workspace create --cwd $(short "$dir") --label $label"
-    printf '%s\n' "$out" | head -3 | sed 's/^/    /'
-    return 1
-  fi
-}
 
 install_workspace() {
   step "Herdr spaces"

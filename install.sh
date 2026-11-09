@@ -49,14 +49,14 @@ while [ $# -gt 0 ]; do
     -y|--yes) ASSUME_YES=1 ;;
     -n|--dry-run) DRY_RUN=1 ;;
     -h|--help) usage; exit 0 ;;
-    herdr|pi|plugins|skills|agents|overlord|secrets|verify) STAGES+=("$1") ;;
+    herdr|pi|plugins|skills|agents|spaces|overlord|secrets|verify) STAGES+=("$1") ;;
     *) err "unknown argument: $1"; usage; exit 2 ;;
   esac
   shift
 done
 
 if [ ${#STAGES[@]} -eq 0 ]; then
-  STAGES=(herdr pi skills agents overlord secrets verify)
+  STAGES=(herdr pi skills agents spaces overlord secrets verify)
 fi
 
 # Where the pi-goal fork lives (PI_EXTENSIONS_APOTHIC) is a layout path, so its
@@ -249,6 +249,20 @@ install_overlord() {
   fi
 }
 
+# ------------------------------------------------------------------ spaces --
+install_spaces() {
+  step "Herdr spaces"
+  # FT-01 Objective 1: installing the fleet must leave all seven spaces present.
+  # scripts/overlord.sh creates two of them (overlord, sysops) as part of its own
+  # setup, so a label that already exists is looked up and skipped rather than
+  # created twice — `herdr workspace create` does not deduplicate by label or cwd,
+  # and a second space with the same name splits attention with no diagnostic.
+  #
+  # The table is in scripts/lib.sh beside every other destination, so a space's
+  # workspace path and its scaffolding destination cannot drift apart.
+  ensure_fleet_spaces || warn "some spaces need attention — see above"
+}
+
 # ----------------------------------------------------------------- secrets --
 install_secrets() {
   step "Provider credentials"
@@ -313,6 +327,7 @@ want pi      && install_pi
 want skills   && install_skills
 want agents   && install_agents
 want overlord && install_overlord
+want spaces  && install_spaces
 want secrets && install_secrets
 if want verify; then
   if [ "$DRY_RUN" = 1 ]; then
