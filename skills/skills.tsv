@@ -44,3 +44,11 @@ mycord-email-skill	repo	Apothic-AI/mycord	The comms space's email surface: Himal
 google-voice-skill	repo	Apothic-AI/mycord	The comms space's SMS/voice surface (unofficial gvoice TS client). Reading works; sending SMS needs a captured exchange.
 ferdium-skill	repo	Apothic-AI/mycord	Drives a Ferdium install over CDP: launches it headless on a virtual display or headed, discovers per-service webviews, and reads or interacts with any of them. The catch-all for a service with no dedicated skill.
 shared-flyio-build-server	bundle	./home/.agents/skills/shared-flyio-build-server	Host-specific half of the shared Fly build box: provisioning, the idle supervisor and scale-to-zero. The build-side half is the cargo-remote-build skill in the cargo-remote-3000 repo.
+agents-cron	repo	bitnom/fleet-skills	Fleet scheduling with agents-cron: the systemd timer, task registry, run artifacts and failure semantics. Delivered only as a repo skill — no pi package ships it, so a package sweep cannot see it.
+beads	repo	bitnom/fleet-skills	Durable project task tracking with bd: ready work, claim/close, dependency blockers, multi-session handoff. Delivered only as a repo skill.
+context-economy	repo	bitnom/fleet-skills	Token and context conservation: measure before reading, keyhole inspection, and construct every wait to fire on failure as well as success. Delivered only as a repo skill.
+lane-identity	repo	bitnom/fleet-skills	How a lane's name is derived and where it must match — herdr agent name, PI_ROOMS_NAME, dagr owner, all from the tab label at spawn. Delivered only as a repo skill.
+pi-goal-contracts	repo	bitnom/fleet-skills	The pi-goal completion contract: goal_complete/goal_blocked/goal_wait and the queue verbs. Delivered only as a repo skill.
+pi-hermes-memory-usage	repo	bitnom/fleet-skills	Policy-only memory retrieval: memory_search and session_search before work that depends on durable context. Delivered only as a repo skill.
+pi-persist-usage	repo	bitnom/fleet-skills	How pi-persist injects text into every request: the cached section channel versus the trailing channel. Delivered only as a repo skill.
+pi-rooms-protocol	repo	bitnom/fleet-skills	Agent messaging rules: stable name pins, the two delivery states, and rooms_dm versus a herdr prompt. Delivered only as a repo skill.
