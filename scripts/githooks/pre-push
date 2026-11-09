@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# pre-push — the fast half of ./test/run.sh gates, for the one property no clone can check.
+#
+# Why this exists: test/verify-mirror-live.sh compares the mirror against the live copy on
+# *this* machine. A fresh clone has no live directory, so the container suites cannot run it
+# and a green gate says nothing about it — that direction is structurally outside the gates.
+# At push time the question is exactly the right one and has an answer: is the snapshot I am
+# publishing the machine I am publishing from?
+#
+# Scope is the fast invariants only:
+#   test/verify-revert-detection.sh   builds the three direction cases in throwaway repos (~2s)
+#   test/verify-mirror-live.sh        compares mirror to live; prints `skip:` where there is none (~1s)
+# The round-trip gate clones fifteen repositories and belongs to the full run, not to every push.
+#
+# Escape: `git push --no-verify` for a lane with a real reason. Prefer fixing what it reports;
+# a hook that fails wrongly blocks every lane pushing from every worktree of this repository.
+set -uo pipefail
+
+repo="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+cd "$repo" || exit 0
+
+rc=0
+for t in test/verify-revert-detection.sh test/verify-mirror-live.sh; do
+  [ -f "$t" ] || continue
+  printf 'pre-push: %s\n' "$t" >&2
+  bash "$t" || rc=1
+done
+
+if [ "$rc" != 0 ]; then
+  echo "pre-push: FAILED — nothing was pushed. Fix the finding above, or use --no-verify with a reason." >&2
+fi
+exit "$rc"
