@@ -73,11 +73,21 @@ Package sources are compared by *package name*, so a machine that already has
 up with two copies of the same extension — which for a package that registers a
 tool would mean a load conflict, not just clutter.
 
-Nothing in `packages` points into this repository. Every entry is either an
-upstream release or one of our forks, installed from its own repository, so an
-upgrade is `pi update` rather than a `git pull` here. If you ever need to load a
-package from a local path, `json-edit.js` still supports a `@YELLOWSTONE_REPO@`
-prefix that it rewrites to the repo root at install time — but prefer a repo.
+**Nine of the entries point into this repository.** Each is written as
+`@YELLOWSTONE_REPO@/src/…` and `json-edit.js` renders it to the checkout at
+install time, so what `pi` loads and what this repo pins are the same files. The
+consequence is deliberate and easy to mistake for a bug: `pi update --extensions`
+reconciles the npm packages and **does nothing** to those nine. Their upgrade
+path is `git subrepo pull <dir>` followed by `./test/verify-subrepo-roundtrip.sh`,
+and `.gitrepo` is the record of what each one is synced to. The remaining
+entries are upstream npm releases, and `pi update` is still what moves them.
+
+An entry whose name is not configured — no `@PI_EXTENSIONS_APOTHIC@` or
+`@PI_FLEET_HOOKS@` checkout on this machine — is *dropped* rather than written
+as an unloadable path, and `json-edit.js` says which one it skipped. A missing
+fork is reported; a package entry pointing at a directory that does not exist is
+silently invisible to `pi list`, which is the failure this rendering exists to
+prevent.
 
 If you delete a provider block from `models.json` and re-run the installer, the
 provider comes back. To keep a different route, edit the existing block rather

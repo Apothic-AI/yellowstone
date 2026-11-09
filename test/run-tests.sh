@@ -290,7 +290,7 @@ suite_smoke() {
   # Plugin manifest.
   local n
   n="$(node "$REPO/scripts/plugins-manifest.js" ids "$REPO/home/.config/herdr/plugins.toml" 2>/dev/null | wc -l)"
-  [ "${n:-0}" -ge 5 ] && ok "herdr/plugins.toml declares $n plugins" || bad "plugins.toml parsed $n plugins (expected >=5)"
+  [ "${n:-0}" -ge 5 ] && ok "home/.config/herdr/plugins.toml declares $n plugins" || bad "plugins.toml parsed $n plugins (expected >=5)"
 
   # Every plugin entry needs a pinned ref or a local link path.
   local badpin=0

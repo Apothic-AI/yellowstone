@@ -726,15 +726,26 @@ Then it prints the state of the forks, which do not move with a blanket update:
 
 | Component | Where it lives | How it updates |
 |---|---|---|
-| `pi-cache-optimizer` | `git:github.com/bitnom/pi-cache-optimizer` | `pi update` reconciles; upstream is `jiangge/pi-cache-optimizer` |
-| `bizzy` | `git:github.com/Apothic-AI/bizzy` | `pi update`; upstream is `patty-io/pi-patty-bg-tasks` |
-| `pi-pretty-tui` | `git:github.com/Apothic-AI/pi-pretty-tui@apothic` | `pi update`; upstream is `ykn0309/pi-pretty-tui` |
-| `pi-rooms` | `git:github.com/Apothic-AI/pi-rooms@master` | `pi update` |
-| `apothic-todo` | `git:github.com/Apothic-AI/apothic-todo@main` | `pi update` (replaces `@arhen/pi-core-todo`) |
-| `pi-persist` | `git:github.com/Apothic-AI/pi-persist@main` | `pi update` |
-| `pi-goal` | local path into `$PI_EXTENSIONS_APOTHIC` | **not** `pi update` — it is a path, not a git package; see `docs/forks.md` |
-| `unblock` | a local checkout, linked | `git pull` there, then `npm link` if the CLI changed |
+| `pi-cache-optimizer` | `src/pi-extensions/pi-cache-optimizer` (`feat/opencode-cache-stats`) | `git subrepo pull` + gate; upstream is `jiangge/pi-cache-optimizer` |
+| `bizzy` | `src/pi-extensions/bizzy` (`apothic-main`) | `git subrepo pull` + gate; upstream is `patty-io/pi-patty-bg-tasks` |
+| `pi-pretty-tui` | `src/pi-extensions/pi-pretty-tui` (`test/composer-selection-on-apothic`) | `git subrepo pull` + gate; upstream is `ykn0309/pi-pretty-tui` |
+| `pi-rooms` | `src/pi-extensions/pi-rooms` (`master`) | `git subrepo pull` + gate |
+| `apothic-todo` | `src/pi-extensions/apothic-todo` (`main`) | `git subrepo pull` + gate (replaces `@arhen/pi-core-todo`) |
+| `pi-persist` | `src/pi-extensions/pi-persist` (`main`) | `git subrepo pull` + gate |
+| `pi-goal` | `src/pi-extensions/signalridge/packages/pi-goal` | `git subrepo pull` + gate; see `docs/forks.md` |
+| `pi-modes` | `src/pi-extensions/tryinget/packages/pi-modes` | `git subrepo pull` + gate; the second `pi-extensions` lineage |
+| `pi-fleet-hooks` | `src/pi-extensions/pi-fleet-hooks` | `git subrepo pull` + gate |
+| `unblock` | `src/herdr-plugins/unblock` | `git subrepo pull` + gate, then re-link the CLI if it changed |
 | `herdr-dagr` | a herdr plugin | `scripts/herdr-plugins.sh update`, or bump `ref` first |
+
+**`pi update` no longer touches those nine, and that is correct rather than broken.**
+Every carried package is a local path into this checkout, rendered from the
+`@YELLOWSTONE_REPO@` placeholder at install time, so `pi update --extensions`
+reconciles the npm packages and does nothing to them. An upgrade is a
+`git subrepo pull <dir>` — one subrepo at a time, so each change is a commit you
+can read and revert — followed by the round-trip gate, which proves the pin
+matches its remote and that a further pull is a no-op. The `.gitrepo` file is the
+record of what each component is synced to.
 
 Upgrading a pinned plugin is a two-step decision, not a command: bump `ref` in
 `home/.config/herdr/plugins.toml`, run `upgrade.sh plugins`, run `doctor.sh`, then commit.

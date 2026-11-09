@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// plugins-manifest.js — read herdr/plugins.toml for the installer.
+// plugins-manifest.js — read home/.config/herdr/plugins.toml for the installer.
 //
 // Shell cannot parse TOML and should not try. This reads the one shape the
 // manifest uses ([[plugin]] tables of scalar string keys) and prints one record
