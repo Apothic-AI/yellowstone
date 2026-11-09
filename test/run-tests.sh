@@ -286,9 +286,17 @@ suite_smoke() {
 
   # The non-blocking invariant must be enforced at a call site, not just written
   # down: an agent that forgets does not get the benefit of a paragraph.
-  check "nonblock extension ships" test -f "$REPO/home/.pi/agent/extensions/nonblock.ts"
-  check "nonblock defaults to disabled" grep -q 'function enabled' "$REPO/home/.pi/agent/extensions/nonblock.ts"
-  check "nonblock targets the attach trap" grep -q 'action !== "attach"' "$REPO/home/.pi/agent/extensions/nonblock.ts"
+  #
+  # The hooks ship in the `pi-fleet-hooks` package now, declared in its own
+  # `pi.extensions`, so the source is in the subrepo and no copy belongs in the
+  # agent dir — a copy there double-loads every hook on a fresh machine. These
+  # three assertions kept reading the retired location and failed for a week
+  # after the move, which is the same staleness the install suite had: an
+  # assertion that names a path outlives the decision that moved it.
+  local hooks="$REPO/src/pi-extensions/pi-fleet-hooks/src/nonblock.ts"
+  check "nonblock extension ships in pi-fleet-hooks" test -f "$hooks"
+  check "nonblock defaults to disabled" grep -q 'function enabled' "$hooks"
+  check "nonblock targets the attach trap" grep -q 'action !== "attach"' "$hooks"
   check "skill documents the blocking table" \
     grep -q "jobs action='attach'" "$REPO/yellowstone-skill/SKILL.md"
   check "overlord doc carries the invariants" grep -qF '## Operational invariants' "$REPO/home/.overlord/AGENTS.md"
@@ -333,8 +341,15 @@ suite_smoke() {
   # excluded on purpose: those are other repositories' trees at pinned commits,
   # delivered by `git subrepo`, and their fixtures are not ours to edit — the
   # credentials check above carries the same exclusion for the same reason.
+  # One file in the mirror names a developer path on purpose and is allowed to:
+  # `relaunch-lane-monorepo.sh` is the tool that MEASURES loose references, and
+  # its expression has to contain the prefix it searches for — the same
+  # self-matching grep that once made the migration count unable to reach zero.
+  # Excluding it by name, rather than by laundering the pattern, keeps the
+  # exemption visible: anything else that hardcodes a checkout is a defect.
   hits="$(grep -rnE '/home/(bitnom|ubuntu|runner|[a-z]+)/Code/' --exclude-dir=.git --exclude-dir=src "$REPO" 2>/dev/null \
-          | grep -v '^[^:]*/\.git:' | wc -l)"
+          | grep -v '^[^:]*/\.git:' \
+          | grep -v '^[^:]*/home/\.overlord/tools/relaunch-lane-monorepo\.sh:' | wc -l)"
   check_eq "no absolute developer paths in the tree" 0 "$hits"
 }
 
