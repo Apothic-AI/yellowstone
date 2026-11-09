@@ -257,6 +257,22 @@ install_dir() {
   #   README.md  the live workspace index, which the operator updates as spaces
   #              come and go. Never overwritten: it is the only map.
   install_home_tree .overlord
+
+  # The `overlord-operations` skill ships under .overlord/skills/ — it belongs to
+  # this space, not to a component — but pi reads skills from ~/.agents/skills,
+  # so the installer owes that link: it writes the target, and no `skills.tsv` row
+  # names this skill because the file arrives with this stage rather than from a
+  # checkout. Without the link a fresh machine installs a skill nothing can find,
+  # which is the mycord gap in the other direction: declared in the tree, absent
+  # from the only directory that is searched. `link_dir` is reused rather than a
+  # bare `ln -s` so a real directory at that path is moved aside, not clobbered.
+  #
+  # The test is on the SOURCE in the mirror, not on the destination: in a dry run
+  # nothing has been copied yet, and a plan that silently omits a step it will
+  # really perform is the failure this flag exists to prevent.
+  if [ -d "$REPO_ROOT/home/.overlord/skills/overlord-operations" ]; then
+    link_dir "$OVERLORD_DIR/skills/overlord-operations" "$AGENTS_SKILLS/overlord-operations"
+  fi
 }
 
 # ensure_workspace <label> <cwd> — create the workspace only when the label is
