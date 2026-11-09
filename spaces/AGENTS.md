@@ -12,13 +12,22 @@ scaffolding pi reads from the working directory — this file, and `.pi/launch.e
 
 ## What a space is for — and what it is not for
 
+> **Superseded in part, 2026-11-09.** The operator's FT-01 Objectives settle what this section was
+> written before: *"Components like mycord, pi-modes, pi-pretty-tui, pi-rooms, unblock do not need
+> herdr spaces because once those components have yellowstone subrepos, the yellowstone space will
+> cover them all."* So a component no longer gets a **herdr workspace** of its own, and the
+> `spaces/<component>` directories below are **transitional, not a pattern to extend**. A lane
+> working a component runs in the **yellowstone space** (or a yellowstone worktree) and edits
+> `../../src/…` from there. What still holds, unchanged, is the second half: the six operational
+> spaces are permanently out of this tree, because they carry fleet data we do not want in git.
+
 **A space exists for one thing: a lane developing a fleet component** — a pi extension, a herdr plugin,
 or herdr itself. If the lane's subject is documents, coordination, personal data, or the fleet's own
 working state, it does not live here.
 
 | space | where a lane runs | in this tree? |
 |---|---|---|
-| `pi-rooms`, `pi-pretty-tui`, `pi-modes`, `unblock`, `mycord`, `herdr-voice` | `spaces/<component>` in a worktree | **yes** |
+| `pi-rooms`, `pi-pretty-tui`, `pi-modes`, `unblock`, `mycord`, `herdr-voice` | **transitional** — a lane runs in the **yellowstone** space/worktree; these directories are not the destination for new work | **yes, for now** |
 | `assistant`, `comms`, `overlord`, `self-improvement`, `sysops`, `personal` | `~/Documents/*`, `~/.overlord`, `~/.sysops` | **no, permanently** |
 
 The reason is not tidiness. Those spaces carry **fleet-specific data we do not want in git** — continuity
