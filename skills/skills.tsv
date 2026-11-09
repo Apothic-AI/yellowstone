@@ -37,6 +37,8 @@ mycord-discord-skill	repo	Apothic-AI/mycord	The comms space's Discord surface (d
 mycord-telegram-skill	repo	Apothic-AI/mycord	The comms space's Telegram surface (Telethon REPL). Supports real user accounts; Telegram permits third-party clients.
 mycord-slack-skill	repo	Apothic-AI/mycord	The comms space's Slack surface: drives Slack as the signed-in human via an xoxc- client token plus the httpOnly `d` cookie, with no app registration.
 mycord-irc-skill	repo	Apothic-AI/mycord	The comms space's IRC surface (pydle REPL), TLS by default.
+mycord-signal-skill	repo	Apothic-AI/mycord	The comms space's Signal surface: drives Signal as the signed-in human through signal-cli's JSON-RPC daemon (no bot, no app registration) and carries 1:1 call audio as raw PCM over a per-call Unix socket; refuses the call path loudly on a stale version pin instead of failing mid-call.
+mycord-zoom-skill	repo	Apothic-AI/mycord	The comms space's Zoom surface: joins the desktop client via its own `zoommtg://` URL scheme (no account, no SDK app), speaks into the meeting with Piper TTS and captures the speaker output with an energy VAD through a PipeWire/PulseAudio virtual device plane.
 mycord-email-skill	repo	Apothic-AI/mycord	The comms space's email surface: Himalaya CLI with a per-account wrapper config.
 google-voice-skill	repo	Apothic-AI/mycord	The comms space's SMS/voice surface (unofficial gvoice TS client). Reading works; sending SMS needs a captured exchange.
 ferdium-skill	repo	Apothic-AI/mycord	Drives a Ferdium install over CDP: launches it headless on a virtual display or headed, discovers per-service webviews, and reads or interacts with any of them. The catch-all for a service with no dedicated skill.

@@ -286,7 +286,10 @@ if [ -x "$REPO_ROOT/scripts/skills-sync.sh" ]; then
     # about this machine, never about the repo: a fresh machine legitimately has
     # none, and a repo-constant number would fail every correct new install.
     baseline_file="${YELLOWSTONE_STATE_DIR:-$(dirname "$BACKUP_HOME")}/skills-baseline"
-    real_dirs="$(find "$AGENTS_SKILLS" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')"
+    # `|| true`: under `set -o pipefail` a missing $AGENTS_SKILLS makes `find`
+    # exit non-zero and the pipeline abort the whole script — which would make
+    # doctor die on a fresh machine, the one case the baseline must stay silent for.
+    real_dirs="$(find "$AGENTS_SKILLS" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | wc -l | tr -d ' ' || true)"
     if [ -f "$baseline_file" ]; then
       baseline=""
       baseline="$(head -1 "$baseline_file" | tr -dc '0-9')"
@@ -333,6 +336,23 @@ if [ -n "$nb_pkg" ] || [ -f "$PI_DIR/extensions/nonblock.ts" ]; then
   record info nonblock "$nb_state"
 else
   record info nonblock "not installed (pi-fleet-hooks package missing)"
+fi
+
+# Double delivery of the same hook: the state that was live before 2026-10-31 and
+# that the mirror would have re-created. `pi-fleet-hooks` declares both hooks in
+# `pi.extensions`; if a file of the same basename also exists in the agent dir's
+# `extensions/`, pi loads the hook twice and nothing anywhere errors — it simply
+# behaves as if written twice. Comparing basenames is enough and cannot
+# false-positive on an unrelated extension.
+if [ -n "$nb_pkg" ] && [ -d "$PI_DIR/extensions" ]; then
+  for hook in $(node -e 'const s=require(process.argv[1]);
+      const want=(s.pi&&s.pi.extensions)||[];
+      for (const w of want) console.log(require("path").basename(w));' \
+      "$REPO_ROOT/src/pi-extensions/pi-fleet-hooks/package.json" 2>/dev/null); do
+    if [ -f "$PI_DIR/extensions/$hook" ]; then
+      record fail hook-double-delivery "$hook is delivered by the pi-fleet-hooks package AND exists in $PI_DIR/extensions — pi will load the same hook twice with no error; delete the copy"
+    fi
+  done
 fi
 
 # The fleet instruction core at $HOME. Compared against the shipped artifact,
