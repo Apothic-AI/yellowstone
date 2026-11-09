@@ -242,12 +242,30 @@ artefact is consistent, never that it is correct. Correctness needs one input fr
 live machine, the upstream remote, the operator's sentence — and that input is usually unavailable
 in CI, which is why such a check must be **named as uncovered** rather than assumed covered.
 
+The reading rule that follows is short enough to carry: **a green gate says the tree is
+self-consistent, not that the machine matches it.**
+
 Where it is covered here: `scripts/doctor.sh`, "Installed mirror", compares every `copy`/`copy-exec`
-mirror file to its installed destination with `cmp -s`; `test/verify-mirror-live.sh` does the same at
-push time and fails when a live file is newer than its mirror. Both are **machine-local by
-construction**. A host with an installed overlord space gets real coverage from `./test/run.sh gates`;
-a fresh clone with none gets `skip: no live overlord tooling` printed in the gate output, so a green
-run is either coverage or **named** non-coverage and never a silent assumption.
+mirror file to its installed destination with `cmp -s` and reports direction and age;
+`home/.overlord/tools/mirror-provenance.sh` answers the harder half at push time. Both are
+**machine-local by construction**. A host with an installed overlord space gets real coverage from
+`./test/run.sh gates`; a fresh clone with none gets `skip: no live overlord tooling` printed in the
+gate output, so a green run is either coverage or **named** non-coverage and never a silent
+assumption.
+
+That last check had to learn this the hard way, which is worth recording because it was written by
+someone who had just written the paragraph above. Its first version compared **mtimes**, and mtime
+cannot tell a reverted mirror from a pending install: `git checkout` and `git merge` stamp mtime =
+now whatever the content is, so a revert writes the *old* file with a *new* timestamp and the check
+passes the exact case it was built to catch. Direction is decided by **commit ancestry** — is the
+mirror's commit an ancestor of the live content's commit — because ancestry is the property and
+mtime is only a name for recency. Measured before it was believed, in a throwaway repository, and
+then again against a reverted mirror:
+
+```
+FAIL: tools/leader-board.py  the tree moved BACKWARDS: live committed in 3afa0d43,
+      mirror at earlier e7476ce3 — a revert would ship
+```
 
 ### Plugin refs are pinned commits
 
