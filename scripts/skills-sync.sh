@@ -220,9 +220,18 @@ cmd_status() {
   local id kind spec why rc=0 debt=0
   while IFS=$'\t' read -r id kind spec why; do
     [ -n "$id" ] || continue
-    local dest="$AGENTS_SKILLS/$id" state="missing"
-    [ -e "$dest" ] && state="present"
-    [ -L "$dest" ] && state="linked"
+    # A symlink is only evidence when its target resolves. `[ -L ]` alone reports
+    # `linked` for a link into a directory that moved or was deleted underneath it
+    # — which is what happened when the reorganisation moved herdr/skills/herdr to
+    # home/.agents/skills/herdr: status stayed green while the link pointed at
+    # nothing, and a proof lane found it only by running readlink by hand.
+    local dest="$AGENTS_SKILLS/$id" state="missing" target=""
+    if [ -L "$dest" ]; then
+      target="$(readlink -f "$dest" 2>/dev/null || true)"
+      if [ -n "$target" ] && [ -e "$target" ]; then state="linked"; else state="dangling"; fi
+    elif [ -e "$dest" ]; then
+      state="present"
+    fi
 
     local detail="$kind"
     case "$kind" in
@@ -241,8 +250,9 @@ cmd_status() {
 
     local color="$C_GREEN"
     case "$state" in
-      missing) color="$C_YELLOW"; rc=1 ;;
-      linked)  color="$C_GREEN" ;;
+      missing)  color="$C_YELLOW"; rc=1 ;;
+      dangling) color="$C_RED"; rc=1; detail="$detail -> $(short "${target:-?}") (BROKEN)" ;;
+      linked)   color="$C_GREEN" ;;
       present) color="$C_YELLOW"; rc=1 ;;   # a real dir where a link should be
     esac
     printf '%s%-8s%s %-16s %-9s %s\n' "$color" "$state" "$C_RESET" "$id" "$kind" "$detail"
