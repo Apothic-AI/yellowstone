@@ -218,6 +218,38 @@ only the per-item evidence tells them apart. This is the
 cheapest durable lesson FT-01 produced, and it applies to any check written
 after it — including the ones that will one day police this page.
 
+### A self-consistent system cannot certify itself
+
+Every gate in this repo tests the tree against the tree. A fresh clone is compared
+to the pins, a mirror is compared to `home/`, an installer is run into a throwaway
+`HOME` and the result is compared to what the mirror said it would write. That is
+the right shape for reproducibility, and it has one blind spot that nothing in
+`test/` can close: **a change that reverts the tree and the mirror together is
+internally consistent, and every gate stays green.**
+
+The case that makes it concrete: `home/.overlord/tools/` is a copy of the fleet's
+living tooling. Suppose a merge resolves a conflict in favour of the mirror's
+older side. The mirror and the freshly installed tree then agree with each other
+perfectly — byte-identical, gates green, round-trip 13/13 — and the fleet is
+running the retired wake contract, because the installed copy was overwritten by
+a tree that certified itself.
+
+The only witness is the **live** file, compared from outside: `doctor.sh` compares
+every `copy`/`copy-exec` mirror file against its installed counterpart and fails
+naming the path. That check cannot move into `./test/run.sh gates` and still be
+the same check — a fresh clone has no live directory to compare against, which is
+precisely why the gates can be green on a machine that is wrong.
+
+So the rule for reading a green run is narrower than it looks: **a green gate says
+the tree is self-consistent, not that the machine matches it.** Mirror-to-live is
+`doctor`'s question. Before merging anything that changes `home/`, compare at
+least the files that changed recently against the live copies — and if the
+comparison is impossible, say so rather than inferring safety from the gates.
+
+This is the same failure as *a name is not a property*, one level up: there a
+string stood in for a resolved path, and here a self-referential test stands in
+for an external fact. Both are truthful answers to the wrong question.
+
 ### Plugin refs are pinned commits
 
 `herdr/plugins.toml` records a `ref` per plugin. Installing therefore produces
