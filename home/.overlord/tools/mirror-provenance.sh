@@ -74,6 +74,22 @@ commit_introducing() {
   done < <(git -C "$REPO" rev-list HEAD -- "$path" 2>/dev/null)
   return 1
 }
+
+# The same search across every ref. Used only to separate two conditions that the
+# HEAD-relative search cannot tell apart: content committed on a lineage HEAD cannot
+# reach (branches diverged) versus content never committed at all. Conflating them
+# reported a committed change as uncommitted — right verdict, wrong reason, which is
+# the failure this tool exists to name.
+commit_introducing_anywhere() {
+  local path="$1" blob="$2" c
+  while IFS= read -r c; do
+    [ -n "$c" ] || continue
+    if [ "$(git -C "$REPO" rev-parse "$c:$path" 2>/dev/null)" = "$blob" ]; then
+      printf '%s' "$c"; return 0
+    fi
+  done < <(git -C "$REPO" rev-list --all -- "$path" 2>/dev/null)
+  return 1
+}
 ancestor() { git -C "$REPO" merge-base --is-ancestor "$1" "$2" 2>/dev/null; }
 
 # The newest commit reachable from <rev> whose blob at <path> equals <blob>.
@@ -116,7 +132,12 @@ compare() {
 
   if [ -z "$lcommit" ]; then
     fails=$((fails + 1))
-    fail_lines+=("$rel  the machine's content was never committed at this path — commit it before publishing")
+    local elsewhere
+    if elsewhere="$(commit_introducing_anywhere "$repo_path" "$lblob")" && [ -n "$elsewhere" ]; then
+      fail_lines+=("$rel  the machine's content is committed on a lineage this branch cannot reach (${elsewhere:0:8}) — the lineages diverged; reconcile them, do not publish over it")
+    else
+      fail_lines+=("$rel  the machine's content was never committed at this path — commit it before publishing")
+    fi
   elif ! ancestor "$lcommit" HEAD; then
     fails=$((fails + 1))
     fail_lines+=("$rel  the machine runs content from a commit that is not an ancestor of HEAD — unrelated lineage")
