@@ -411,8 +411,12 @@ section "Updates available"
 
 if have herdr && [ "$(vercmp "$(herdr --version 2>/dev/null | awk '{print $2}')" "0.0.0")" != "older" ]; then
   # `herdr update` has no dry-run; ask the release channel instead.
+  # `|| latest=""` is load-bearing, not defensive habit: under `set -e` a failed
+  # probe aborts this script with curl's status (22) before any of the findings
+  # are printed. Offline machines and rate-limited CI are exactly where doctor is
+  # run, and the branch below already handles an empty answer.
   latest="$(curl -fsSL --max-time 6 https://api.github.com/repos/herdrdev/herdr/releases/latest 2>/dev/null \
-            | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{process.stdout.write(JSON.parse(s).tag_name.replace(/^v/,""))}catch{}})')"
+            | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{process.stdout.write(JSON.parse(s).tag_name.replace(/^v/,""))}catch{}})')" || latest=""
   cur="$(herdr --version 2>/dev/null | awk '{print $2}')"
   if [ -z "$latest" ]; then
     record info herdr-update "could not reach GitHub to compare versions"

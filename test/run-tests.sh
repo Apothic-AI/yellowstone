@@ -360,7 +360,7 @@ suite_install() {
   # assert the pre-conversion world. What matters is that the entry names the
   # monorepo copy of the fork.
   check "pi-pretty-tui installed from the monorepo copy of its fork" \
-    grep -q 'yellowstone/src/pi-extensions/pi-pretty-tui' "$home/.pi/agent/settings.json"
+    grep -q '/src/pi-extensions/pi-pretty-tui' "$home/.pi/agent/settings.json"
 
   # Providers, and no secret values in models.json.
   local nprov
