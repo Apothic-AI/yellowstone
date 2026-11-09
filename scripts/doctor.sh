@@ -436,9 +436,28 @@ while IFS='|' read -r root dest; do
     fi
     case "$policy" in
       copy|copy-exec)
-        if ! cmp -s -- "$HOME_SRC/$rel" "$target"; then
+        # On a pi-profile-switch lane, $PI_DIR is that lane's instance directory,
+        # not ~/.pi/agent. Its .pi/agent files are a snapshot taken at launch, and
+        # the live agent dir moves on afterwards (the extensions write there), so
+        # comparing the mirror against the snapshot reports drift that does not
+        # exist. Compare against the real agent dir instead, and say which one was
+        # used — a false fail here trains the operator to stop reading this section,
+        # which costs the whole check.
+        compare_target="$target"
+        case "$rel" in
+          .pi/agent/*)
+            if [ "$PI_DIR" != "$HOME/.pi/agent" ]; then
+              compare_target="$HOME/.pi/agent/${rel#.pi/agent/}"
+            fi
+            ;;
+        esac
+        if [ ! -e "$compare_target" ]; then
+          # The instance lane has no counterpart; the snapshot is all there is.
+          continue
+        fi
+        if ! cmp -s -- "$HOME_SRC/$rel" "$compare_target"; then
           bad=$((bad + 1))
-          record fail "home/$rel" "differs from $(short "$target") — re-run ./install.sh, or diff $(short "$HOME_SRC/$rel") $(short "$target")"
+          record fail "home/$rel" "differs from $(short "$compare_target") — re-run ./install.sh, or diff $(short "$HOME_SRC/$rel") $(short "$compare_target")"
         fi
         ;;
       skill)
