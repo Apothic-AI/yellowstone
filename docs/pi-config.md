@@ -59,14 +59,24 @@ If you prefer per-project prompts, leave `trust.json` out entirely and set
 
 `settings.json` in this directory is a **template**, not a copy of a live file.
 
-Placeholders: three package entries name a checkout rather than a release —
-`@PI_EXTENSIONS_APOTHIC@/packages/pi-goal`,
-`@PI_EXTENSIONS_1@/packages/pi-modes` and `@PI_FLEET_HOOKS@`. The installer
-rewrites them to the paths in `PI_EXTENSIONS_APOTHIC`, `PI_EXTENSIONS_1` and
-`PI_FLEET_HOOKS`, and *drops* an entry whose checkout is not configured, saying
-so. That is deliberate: a placeholder copied verbatim into a live
-`settings.json` is a package entry pi cannot load, and the failure is silent
-until the feature is missing.
+Placeholders: no entry in this template names a checkout any more, but
+`json-edit.js` still understands two kinds of placeholder, because a settings
+file can be older than the tree it is installed from.
+
+- **`@YELLOWSTONE_REPO@/<path>`** — the live mechanism. Rewritten to
+  `<checkout>/<path>` at install time. Nine entries use it, pointing at the
+  subrepos under `src/`; see below.
+- **`@PI_EXTENSIONS_APOTHIC@`, `@PI_EXTENSIONS_1@`, `@PI_FLEET_HOOKS@`** — the
+  older, checkout-based form, resolved from those three environment variables
+  (defaulted in `install.sh` and `scripts/lib.sh`). **Inert with this tree**:
+  nothing in `pi/settings.json` names them since the subrepos became the source,
+  so setting the variables has no effect today. They survive for a settings file
+  that still carries one, and for a machine whose components live outside a
+  monorepo checkout — a path that no longer exists in this repo's own
+  deployment. An entry whose variable is unset is *dropped* rather than written
+  as an unloadable path, and `json-edit.js` says which one it skipped: a missing
+  fork reported is better than a package entry pointing at a directory that
+  `pi list` will cheerfully list and never load.
 
 Package sources are compared by *package name*, so a machine that already has
 `pi-pretty-tui` from a local path or `pi-cache-optimizer` from git does not end
@@ -82,12 +92,11 @@ path is `git subrepo pull <dir>` followed by `./test/verify-subrepo-roundtrip.sh
 and `.gitrepo` is the record of what each one is synced to. The remaining
 entries are upstream npm releases, and `pi update` is still what moves them.
 
-An entry whose name is not configured — no `@PI_EXTENSIONS_APOTHIC@` or
-`@PI_FLEET_HOOKS@` checkout on this machine — is *dropped* rather than written
-as an unloadable path, and `json-edit.js` says which one it skipped. A missing
-fork is reported; a package entry pointing at a directory that does not exist is
-silently invisible to `pi list`, which is the failure this rendering exists to
-prevent.
+A rendered `@YELLOWSTONE_REPO@` path is only useful if the file is there, and
+`./test/verify-monorepo-install.sh` is what holds that: it installs into a
+throwaway `HOME` with `herdr` stubbed and asserts every package and skill
+resolves inside the checkout, because `pi list` will report a nonexistent local
+path as an installed package and exit 0.
 
 If you delete a provider block from `models.json` and re-run the installer, the
 provider comes back. To keep a different route, edit the existing block rather
