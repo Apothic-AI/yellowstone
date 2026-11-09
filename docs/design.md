@@ -218,6 +218,32 @@ only the per-item evidence tells them apart. This is the
 cheapest durable lesson FT-01 produced, and it applies to any check written
 after it — including the ones that will one day police this page.
 
+### A self-consistent system certifies itself
+
+Every gate in this repository tests the tree against the tree. Round-trip compares the mirror to a
+fresh clone of itself; the install suite compares the installer to the mirror; the mirror suite
+compares the mirror to its own lists. All of them can be green while the machine the mirror was
+copied from and the mirror disagree, because nothing in the set observes both.
+
+The concrete hazard: a merge resolved in favour of a stale `home/.overlord/tools/*` copy restores a
+retired script into the mirror. Every gate stays green. The published snapshot is wrong, the tests
+say it is right, and the only witness is the file on disk, compared from outside the repository.
+
+This is the same defect as five count disputes, four `plugins.toml` flips, and a guard that passed
+while the bug sat behind it: **the measurement and the thing measured shared a source.**
+
+The rule: when a check's two inputs both come from the artefact under test, it can tell you the
+artefact is consistent, never that it is correct. Correctness needs one input from outside — the
+live machine, the upstream remote, the operator's sentence — and that input is usually unavailable
+in CI, which is why such a check must be **named as uncovered** rather than assumed covered.
+
+Where it is covered here: `scripts/doctor.sh`, "Installed mirror", compares every `copy`/`copy-exec`
+mirror file to its installed destination with `cmp -s`; `test/verify-mirror-live.sh` does the same at
+push time and fails when a live file is newer than its mirror. Both are **machine-local by
+construction**. A host with an installed overlord space gets real coverage from `./test/run.sh gates`;
+a fresh clone with none gets `skip: no live overlord tooling` printed in the gate output, so a green
+run is either coverage or **named** non-coverage and never a silent assumption.
+
 ### Plugin refs are pinned commits
 
 `herdr/plugins.toml` records a `ref` per plugin. Installing therefore produces
