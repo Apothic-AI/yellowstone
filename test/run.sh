@@ -24,6 +24,7 @@ if [ "${1:-}" = gates ]; then
   ./test/verify-monorepo-install.sh || rc=1
   echo
   ./test/verify-profile-skills.sh || rc=1
+  ./test/verify-pre-push-hook.sh || rc=1
   echo
   # Host-side like the others, and machine-local: it compares the mirror to the
   # machine it is being pushed from, which no container suite can do (they install
