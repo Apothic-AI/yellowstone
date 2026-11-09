@@ -430,7 +430,7 @@ while IFS='|' read -r root dest; do
     continue
   fi
 
-  total=0; bad=0; noted=0
+  total=0; bad=0; noted=0; where=""
   while IFS= read -r rel; do
     [ -n "$rel" ] || continue
     total=$((total + 1))
@@ -510,12 +510,23 @@ while IFS='|' read -r root dest; do
   done <<< "$files"
 
   if [ "$bad" = 0 ]; then
+    # On an instance lane `.pi/agent` was compared against the real agent dir, not
+    # against $dest (the launch snapshot). Saying "in place under <snapshot>" would
+    # name a directory the check did not read — the same defect as a link reported
+    # `linked` while pointing somewhere else.
+    where="$(short "$dest")"
+    case "$root" in
+      .pi/agent)
+        if [ "$PI_DIR" != "$HOME/.pi/agent" ]; then
+          where="$(short "$HOME/.pi/agent"), not the launch snapshot $(short "$dest")"
+        fi ;;
+    esac
     if [ "$noted" = 0 ]; then
-      record ok "home/$root" "$total file(s) in place under $(short "$dest")"
+      record ok "home/$root" "$total file(s) in place under $where"
     else
       # Saying "ok, N files in place" while N files differ from the machine would
       # be the same self-satisfied reading the fail/noted split exists to avoid.
-      record info "home/$root" "$total file(s) in place under $(short "$dest") — $noted differ from live, listed above"
+      record info "home/$root" "$total file(s) in place under $where — $noted differ from live, listed above"
     fi
   fi
 done < <(home_dest_roots)
