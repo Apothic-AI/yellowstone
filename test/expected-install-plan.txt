@@ -12,6 +12,7 @@
 <repo>/src/apps/mycord/mycord-slack-skill
 <repo>/src/apps/mycord/mycord-telegram-skill
 <repo>/src/apps/mycord/mycord-zoom-skill
+<repo>/src/apps/pi-profile-switch/skills/profile-config
 <repo>/src/herdr-plugins/unblock/skills/unblock
 <repo>/yellowstone-skill
 ~/.config/herdr/config.toml
