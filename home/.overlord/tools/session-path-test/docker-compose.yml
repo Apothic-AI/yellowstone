@@ -1,0 +1,20 @@
+# Container test for session-path prevention.
+#
+# Runs pi's real session-manager (mounted read-only) against production session
+# files (mounted read-only) to prove that a lane's session path is canonical from
+# launch. No network, no auth, no live lane is touched.
+#
+#   docker compose run --rm test
+#
+# Exit code is the test result.
+services:
+  test:
+    image: node:22-slim
+    working_dir: /work
+    volumes:
+      - /home/bitnom/.local/share/mise/installs/node/22.23.3/lib/node_modules/@earendil-works/pi-coding-agent:/pi:ro
+      - /home/bitnom/.pi/agent/sessions:/store:ro
+      - /home/bitnom/.overlord/bin/pil:/pil/pil:ro
+      - ./test.mjs:/work/test.mjs:ro
+      - ./stub:/work/stub:ro
+    command: ["node", "/work/test.mjs"]

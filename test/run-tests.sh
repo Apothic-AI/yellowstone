@@ -176,9 +176,15 @@ suite_smoke() {
   for f in home/.overlord/AGENTS.md home/.overlord/README.md; do
     check "ships $f" test -f "$REPO/$f"
   done
+  # The two shipped docs are templates every fleet inherits, so they must not
+  # name one operator's projects. The guard is scoped to those two files on
+  # purpose: home/.overlord/tools/ is this fleet's own machinery, and naming a
+  # fleet lane there (a rooms file, a lane-seeding list) is the tool doing its
+  # job, not a leak. Scoping to the docs the sentence claims to guard is what
+  # keeps the check honest once the tooling lives in the mirror too.
   local leaks
   leaks="$(grep -riE 'apothic|autopod|subtoken|starla|sibyl|solid-lynx|omebian|mycord|vpn2proxy|surreal|account-management' \
-           "$REPO/home/.overlord/" 2>/dev/null | wc -l)"
+           "$REPO/home/.overlord/AGENTS.md" "$REPO/home/.overlord/README.md" 2>/dev/null | wc -l)"
   check_eq "no operator project names in the shipped overlord docs" 0 "$leaks"
 
   # mycord: five skills, one repository, resolved from a checkout at the repo
@@ -555,6 +561,30 @@ suite_mirror() {
 
   check_eq "every file in home/ has a destination" "" \
     "$(printf '%s\n' "$rows" | awk -F'\t' '$3=="NONE"{printf "%s ", $1}')"
+
+  # The fleet tooling: shipped, runnable, and free of a path into a ~/Code
+  # checkout — the whole point of migrating it into the mirror. The executable
+  # check is not cosmetic: four tools had lost their exec bit in the live
+  # directory, so a plain copy would have shipped files that only run when
+  # called through an interpreter, and nothing would have noticed.
+  check "ships the fleet tooling" test -d "$REPO/home/.overlord/tools"
+  local nonexec
+  nonexec="$(find "$REPO/home/.overlord/tools" "$REPO/home/.overlord/bin" -maxdepth 1 -type f ! -perm -u+x | wc -l)"
+  check_eq "every mirrored tool is executable" 0 "$nonexec"
+  # relaunch-lane-monorepo.sh names the pattern on purpose: it is the tool that
+  # measures loose references. Every other tool must reach the fleet's own code
+  # through the installed package list, not through a checkout path.
+  #
+  # Two shapes, because the first version of this check only caught the first:
+  # a literal "/home/<user>/Code/…" string, and a Python-style join
+  # Path.home() / "Code" / "<repo>". The join form is how the second hardcoded
+  # path hid from the guard while a real ~/Code dependency was still there.
+  local codept=0 codept_join
+  codept="$(grep -rnE '/home/[a-z]+/Code/' "$REPO/home/.overlord/tools" 2>/dev/null \
+           | grep -vE 'yellowstone|relaunch-lane-monorepo' | wc -l)"
+  codept_join="$(grep -rnE '"Code"[[:space:]]*/[[:space:]]*"' "$REPO/home/.overlord/tools" 2>/dev/null \
+           | grep -v 'yellowstone' | wc -l)"
+  check_eq "no mirrored tool hardcodes a ~/Code path" 0 "$((codept + codept_join))"
 
   # Paths this repo deliberately stopped installing must not come back. A
   # full-plan golden file was the first attempt and it was the wrong shape: it

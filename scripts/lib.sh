@@ -252,6 +252,11 @@ home_policy() {
     .pi/agent/web-search.json)   printf 'keep\n' ;;
     .overlord/AGENTS.md)         printf 'template\n' ;;
     .overlord/README.md)         printf 'keep\n' ;;
+    # The fleet's own tooling: every script here is invoked directly, and four of
+    # them had lost their exec bit in the live directory, so a plain copy would
+    # have shipped files that only run when called through an interpreter.
+    .overlord/tools/*)           printf 'copy-exec\n' ;;
+    .overlord/bin/*)             printf 'copy-exec\n' ;;
     .agents/skills/*)            printf 'skill\n' ;;
     .local/bin/*)                printf 'copy-exec\n' ;;
     *)                           printf 'copy\n' ;;

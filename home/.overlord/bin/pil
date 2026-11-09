@@ -1,0 +1,678 @@
+#!/usr/bin/env bash
+# pil — start a pi lane inside herdr under a stable, derived name.
+#
+# Why this exists: pi-rooms derives an identity from cwd+pid when nothing else is
+# set (`m2-core-309f`), and that suffix does not survive a restart. A pin in
+# names.json does not fix it either — a pin is stamped with pid+starttime on first
+# claim and is *rejected* by any other process, so a lane reverts to its derived
+# name the moment it restarts. The only identity that survives churn is one
+# established at spawn.
+#
+# So: name the lane when it starts, from the tab label the operator already typed.
+# herdr's tab label is already the canonical lane name (`neti-leader`,
+# `dxdb-m2-core`, `comms`); it is unique across the fleet (verified: 60 tabs, 0
+# collisions, 0 invalid) and it is the one field a human keeps correct without
+# being asked.
+#
+#   PI_ROOMS_NAME    set in the environment here   -> rooms identity
+#   herdr agent name renamed in the background     -> herdr identity
+#
+# Both derive from the same source at the same moment, so they cannot drift, and a
+# restart re-derives the same name because the name comes from the launcher rather
+# than from a patch-up table.
+#
+# Usage:
+#   pil [pi args...]        start pi as this lane
+#   pil --lane-name         print the name this pane would get, then exit
+#   pil --help
+#
+# Overrides:
+#   PI_LANE_NAME=<name>     explicit name, beats the tab label
+#
+# Nothing here may stop pi from starting: every probe is time-boxed and every
+# failure falls through to pi-rooms' own derivation.
+
+set -uo pipefail
+
+# A pane inherits HERDR_BIN_PATH from whichever herdr server created it. When that build
+# is moved or deleted the path goes stale — and a stale path is worse than no path at all:
+# every herdr probe below fails, so the name derivation and the WHOLE role restore are
+# skipped silently. The lane then comes back unnamed (pi-rooms invents a fallback) and on
+# the global profile instead of its recorded role. One deleted worktree build cost two
+# lanes their identity this way (2026-11-06). Fall back to `herdr` on PATH and say so,
+# rather than degrading quietly.
+HERDR_BIN="${HERDR_BIN_PATH:-herdr}"
+if [ -n "${HERDR_BIN_PATH:-}" ] && [ ! -x "$HERDR_BIN_PATH" ]; then
+  if command -v herdr >/dev/null 2>&1; then
+    printf 'pil: HERDR_BIN_PATH=%s is not executable; using herdr from PATH\n' "$HERDR_BIN_PATH" >&2
+    HERDR_BIN="$(command -v herdr)"
+  else
+    printf 'pil: HERDR_BIN_PATH=%s is not executable and no herdr is on PATH; lane name and role restore will be skipped\n' "$HERDR_BIN_PATH" >&2
+  fi
+fi
+PROBE_TIMEOUT=3
+RENAME_POLL_SECS=20
+
+usage() {
+  cat <<'EOS'
+pil — start a pi lane inside herdr under a stable, derived name.
+
+  pil [pi args...]        start pi as this lane
+  pil --lane-name         print the name this pane would get, then exit
+  pil --rename [name]     re-identify this running lane (herdr name + pin)
+  pil --help
+
+The name comes from the herdr tab label, slugified. An auto-generated numeric
+label (herdr names a fresh tab "12") is refused rather than baked in, so name
+the tab before starting the lane. Override with PI_LANE_NAME or `--rename`.
+EOS
+}
+
+# pi-rooms accepts lowercase letters, digits, dash and underscore only.
+slug() {
+  printf '%s' "$1" \
+    | tr '[:upper:]' '[:lower:]' \
+    | sed -e 's/[^a-z0-9]\+/-/g' -e 's/^-//' -e 's/-$//'
+}
+
+# Pull one string field out of a herdr JSON response.
+json_field() {
+  if command -v python3 >/dev/null 2>&1; then
+    python3 -c '
+import json,sys
+key=sys.argv[1]
+try:
+    d=json.load(sys.stdin)
+except Exception:
+    sys.exit(1)
+def walk(o):
+    if isinstance(o,dict):
+        if key in o and isinstance(o[key],str):
+            print(o[key]); raise SystemExit(0)
+        for v in o.values():
+            walk(v)
+    elif isinstance(o,list):
+        for v in o: walk(v)
+walk(d)
+raise SystemExit(1)
+' "$1" 2>/dev/null
+  else
+    sed -n "s/.*\"$1\":\"\([^\"]*\)\".*/\1/p" | head -1
+  fi
+}
+
+herdr_ready() {
+  [ "${HERDR_ENV:-}" = "1" ] && [ -n "${HERDR_TAB_ID:-}" ] \
+    && command -v "$HERDR_BIN" >/dev/null 2>&1
+}
+
+derive_name() {
+  local explicit="${PI_LANE_NAME:-}"
+  if [ -n "$explicit" ]; then
+    slug "$explicit"
+    return 0
+  fi
+  herdr_ready || return 1
+  local json label ws
+  json="$(timeout "$PROBE_TIMEOUT" "$HERDR_BIN" tab get "$HERDR_TAB_ID" 2>/dev/null)"
+  [ -n "$json" ] || return 1
+  label="$(printf '%s' "$json" | json_field label)"
+  ws="$(printf '%s' "$json" | json_field workspace_id)"
+  # Guard: never name a lane from a tab outside this pane's workspace, so a stale
+  # or hand-overridden environment cannot rename some other lane.
+  if [ -n "${ws:-}" ] && [ -n "${HERDR_WORKSPACE_ID:-}" ] && [ "$ws" != "$HERDR_WORKSPACE_ID" ]; then
+    return 1
+  fi
+  [ -n "${label:-}" ] || return 1
+  # herdr auto-names a fresh tab with a bare number ("12"). That is not a name the
+  # operator chose, so refuse it and let pi-rooms fall back to its own derivation
+  # rather than baking a meaningless number into a lane's identity.
+  if [[ "$label" =~ ^[0-9]+$ ]]; then
+    return 1
+  fi
+  slug "$label"
+}
+
+# Rename the herdr agent to match: only once herdr has detected it, and only if
+# it is unnamed — never clobber a name the operator chose.
+#
+# Runs under setsid in its own session. A plain background child of the spawning
+# shell dies with it once `exec pi` hands the terminal over, which is how the
+# first version silently did nothing.
+rename_when_detected() {
+  local want="$1" pane="${HERDR_PANE_ID:-}"
+  [ -n "$pane" ] || return 0
+  local script
+  script=$(cat <<'EOS'
+want="$1"; pane="$2"; herdr="$3"; limit="$4"; waited=0
+while [ "$waited" -lt "$limit" ]; do
+  out="$(timeout 2 "$herdr" agent get "$pane" 2>/dev/null)"
+  case "$out" in
+    *'"name":"'*) exit 0 ;;                 # already named: respect it
+  esac
+  case "$out" in
+    *'"agent_status"'*)                     # detected, unnamed -> claim it
+      timeout 3 "$herdr" agent rename "$pane" "$want" >/dev/null 2>&1
+      exit 0 ;;
+  esac
+  sleep 1
+  waited=$((waited + 1))
+done
+EOS
+)
+  if command -v setsid >/dev/null 2>&1; then
+    setsid bash -c "$script" _ "$want" "$pane" "$HERDR_BIN" "$RENAME_POLL_SECS" \
+      </dev/null >/dev/null 2>&1 &
+  else
+    bash -c "$script" _ "$want" "$pane" "$HERDR_BIN" "$RENAME_POLL_SECS" \
+      </dev/null >/dev/null 2>&1 &
+  fi
+  disown 2>/dev/null || true
+}
+
+# Pin this lane's pane to a name in pi-rooms' own pin file.
+#
+# Used only by `--rename`, i.e. re-identifying a lane that is already running.
+# A pin is resolved on every tool call, so it is adopted live — but only when the
+# lane has no PI_ROOMS_NAME, because an explicit env name short-circuits the pin
+# file entirely.
+pin_pane() {
+  local name="$1" pane="${HERDR_PANE_ID:-}" file="$HOME/.pi/agent/rooms/names.json"
+  [ -n "$pane" ] || return 1
+  python3 - "$file" "pane:$pane" "$name" <<'EOS' 2>/dev/null
+import json, os, sys
+path, key, name = sys.argv[1], sys.argv[2], sys.argv[3]
+try:
+    doc = json.load(open(path))
+except Exception:
+    doc = {}
+doc.setdefault("pins", {})[key] = {"name": name}
+os.makedirs(os.path.dirname(path), exist_ok=True)
+tmp = "%s.%d.tmp" % (path, os.getpid())
+with open(tmp, "w") as f:
+    json.dump(doc, f, indent=2)
+    f.write("\n")
+os.replace(tmp, path)
+EOS
+}
+
+case "${1:-}" in
+  --lane-name)
+    n="$(derive_name)" || { echo "pil: no derivable name (set PI_LANE_NAME)" >&2; exit 1; }
+    printf '%s\n' "$n"
+    exit 0
+    ;;
+  --rename)
+    new="${2:-}"
+    if [ -z "$new" ]; then
+      new="$(derive_name)" || {
+        echo "pil: no name derivable from this tab; pass one: pil --rename <name>" >&2
+        exit 1
+      }
+    fi
+    new="$(slug "$new")"
+    [ -n "$new" ] || { echo "pil: empty name after slug" >&2; exit 1; }
+    if [ -n "${PI_ROOMS_NAME:-}" ]; then
+      # An explicit env name short-circuits the pin file, so a pin written here would
+      # never be read by this lane — and an unstamped pane pin is inherited by
+      # whatever process occupies the pane next. Rename herdr only; the rooms name
+      # comes back from the tab label on the next spawn.
+      [ "$PI_ROOMS_NAME" = "$new" ] ||
+        printf 'pil: this lane started as `%s`; a running lane keeps its spawn name.\n' "$PI_ROOMS_NAME" >&2
+      printf 'pil: herdr renamed only; `%s` is derived from the tab label on restart.\n' "$new" >&2
+    else
+      pin_pane "$new" && printf 'pil: pinned pane %s -> %s\n' "${HERDR_PANE_ID:-?}" "$new"
+    fi
+    if [ -n "${HERDR_PANE_ID:-}" ] && timeout 3 "$HERDR_BIN" agent rename "$HERDR_PANE_ID" "$new" >/dev/null 2>&1; then
+      printf 'pil: herdr agent -> %s\n' "$new"
+    else
+      printf 'pil: herdr rename failed (agent not detected yet?)\n' >&2
+    fi
+    exit 0
+    ;;
+  -h|--help)
+    usage
+    exit 0
+    ;;
+esac
+
+# Restore or record the lane's role contract (PI_MODE, PI_PROFILE, PI_MODE_CONFIRM_PROJECT).
+# Key by lane name so workers are not promoted to leaders on restore.
+ROLE_STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/pil/roles"
+
+restore_role() {
+  # Two statements on purpose. Bash expands EVERY word of a `local` before assigning any
+  # of them, so `local name="$1" role_file="...$name..."` resolves $name from the CALLER's
+  # scope, not from the argument. Run as `name=overlord; restore_role rec-lane` it loaded
+  # overlord.env. Production only worked because pil's global variable was also `name`.
+  local name="$1"
+  local role_file="$ROLE_STATE_DIR/$name.env"
+
+  # A caller's explicit role variables win PER VARIABLE, not wholesale. The old
+  # `[ -n "${PI_MODE:-}" ] && return 0` meant a caller passing PI_PROFILE=custom still got
+  # `leader` restored underneath it (measured). Filling only what is unset keeps both
+  # promises: never override the caller, still complete a partial explicit env.
+  
+  # Try recorded role first.
+  if [ -f "$role_file" ]; then
+    while IFS='=' read -r key val; do
+      # Accept only the three role variables, and only safe values.
+      case "$key" in
+        PI_MODE|PI_PROFILE|PI_MODE_CONFIRM_PROJECT)
+          if [[ "$val" =~ ^[A-Za-z0-9_-]+$ ]]; then
+            [ -n "${!key:-}" ] || export "$key=$val"
+          fi
+          ;;
+      esac
+    # `; printf '\n'` is load-bearing: `read` returns non-zero at EOF when the last line
+    # has no trailing newline, so the loop body never runs for it and the LAST variable in
+    # the file is silently dropped. That is how assistant-leader and pi-rooms-leader lost
+    # PI_MODE_CONFIRM_PROJECT — their launch.env files end without a newline.
+    done < <(tr ' ' '\n' < "$role_file"; printf '\n')
+    return 0
+  fi
+  
+  # Fallback: use .pi/launch.env, but ONLY for leader names.
+  # Never promote a worker to leader.
+  case "$name" in
+    *-leader|overlord) ;;
+    *) return 0 ;;  # Not a leader name: no fallback
+  esac
+  
+  local launch_env cwd="$(pwd -P)"
+  # Walk up from cwd looking for .pi/launch.env (same logic as session_dir search).
+  while [ "$cwd" != "$HOME" ] && [ "$cwd" != "/" ]; do
+    if [ -f "$cwd/.pi/launch.env" ]; then
+      launch_env="$cwd/.pi/launch.env"
+      break
+    fi
+    cwd="$(dirname "$cwd")"
+  done
+  
+  [ -n "${launch_env:-}" ] || return 0
+  
+  # Parse launch.env safely: no sourcing, only whitelisted keys, only safe values.
+  while IFS='=' read -r key val; do
+    case "$key" in
+      PI_MODE|PI_PROFILE|PI_MODE_CONFIRM_PROJECT)
+        if [[ "$val" =~ ^[A-Za-z0-9_-]+$ ]]; then
+          [ -n "${!key:-}" ] || export "$key=$val"
+        fi
+        ;;
+    esac
+  done < <(tr ' ' '\n' < "$launch_env"; printf '\n')
+}
+
+record_role() {
+  local name="$1"
+  # Only record if all three are set in the environment.
+  [ -n "${PI_MODE:-}" ] && [ -n "${PI_PROFILE:-}" ] || return 0
+  
+  mkdir -p "$ROLE_STATE_DIR"
+  local role_file="$ROLE_STATE_DIR/$name.env"
+  printf 'PI_MODE=%s PI_PROFILE=%s' "$PI_MODE" "$PI_PROFILE" > "$role_file"
+  if [ -n "${PI_MODE_CONFIRM_PROJECT:-}" ]; then
+    printf ' PI_MODE_CONFIRM_PROJECT=%s' "$PI_MODE_CONFIRM_PROJECT" >> "$role_file"
+  fi
+  printf '\n' >> "$role_file"
+}
+
+# `--selftest` MUST NOT HAVE SIDE EFFECTS. This block writes a real role record for the
+# lane it runs in and starts the rename poller, so before this guard, running the suite
+# mutated the live lane — a test that changes the thing it is testing.
+if [ "${1:-}" != "--selftest" ]; then
+if name="$(derive_name)"; then
+  if [ -n "$name" ]; then
+    restore_role "$name"
+    export PI_ROOMS_NAME="$name"
+    record_role "$name"
+    rename_when_detected "$name"
+  fi
+fi
+fi
+
+# Resolve the real binary, not a shell function of the same name. This wrapper is
+# meant to be reachable as `pi` from an interactive shell, and bash inherits
+# exported functions through BASH_FUNC_* — resolving by PATH only (`type -P`)
+# keeps that from ever turning into self-recursion.
+PI_BIN="$(type -P pi 2>/dev/null)"
+if [ -z "$PI_BIN" ]; then
+  PI_BIN="$(command -v pi 2>/dev/null)"
+  case "$PI_BIN" in
+    ""|pi) echo "pil: cannot find the pi executable" >&2; exit 127 ;;
+  esac
+fi
+
+# ---------------------------------------------------------------------------
+# Never let a lane start on an instance-scoped session path.
+#
+# Every launch materializes its own `~/.pi-profile-switch/instances/launch-*` dir,
+# and `runtime-cleanup.ts` sweeps the dead ones at the *next* launch. `sessions` in
+# those dirs is a symlink to the shared store `~/.pi/agent/sessions`, so a path that
+# names the instance is only valid while that instance dir still exists. It does
+# not survive a reboot: herdr records the argv it launched a pane with and replays
+# it, `--session` included, so after a restart the same argument names a directory
+# the sweep has already deleted (or one pi later recreates, empty, and writes into).
+#
+# pi treats a `--session` path that does not exist as "new session, keep this path"
+# (core/session-manager.js `_setSessionFile`), so the failure is silent: the lane
+# looks fresh, and because the session dir resolves to that orphan path, /resume
+# lists nothing and `pi --continue` cannot find the conversation either.
+#
+# So: remap an instance-scoped `--session` onto the shared store, where the same
+# `<cwd-dir>/<file>` path is the durable copy. Pass it only when that file exists
+# (a real resume); otherwise drop the flag, so the lane starts a new session in the
+# directory /resume actually reads.
+SESSION_STORE="${PI_AGENT_DIR:-$HOME/.pi/agent}/sessions"
+
+# Canonical session dir (prevention, 2026-11-03).
+#
+# pi resolves sessionDir in this order: `--session-dir`, then the parent of a
+# `--session` file, then `<agentDir>/sessions` for this cwd. In a lane <agentDir> is
+# a per-launch instance dir that the sweep deletes, so the path pi reports to herdr
+# (`getSessionFile()`) is instance-scoped; herdr persists it and the next restore
+# replays it into a directory that no longer exists.
+#
+# Passing pi's OWN default path for this cwd makes `getSessionFile()` canonical from
+# birth, so herdr can only ever persist a path the sweep cannot invalidate. It is the
+# same physical directory the instance `sessions` symlink already resolves to, so the
+# layout is unchanged. Encoder is pi's, verbatim
+# (`dist/core/session-manager.js:290-295`): strip one leading slash, then map
+# `/`, `\` and `:` to `-`, wrapped in `--`.
+#
+# Cost, measured: with a non-default session dir, /resume's "all projects" tab lists
+# this cwd's dir instead of the whole store. Cross-project recovery still has
+# `pi --session <path>` and `pi-session-rescue`.
+session_dir_for_cwd() {
+  local d="${1:-$(pwd -P)}"
+  d="${d#/}"; d="${d//\//-}"; d="${d//\\/-}"; d="${d//:/-}"
+  printf '%s/--%s--' "$SESSION_STORE" "$d"
+}
+
+remap_session_args() {
+  local out=() a v rel have_dir=0 have_session=0
+  # Check if caller already provided --session or --session-dir
+  for a in "$@"; do
+    case "$a" in
+      --session-dir|--session-dir=*) have_dir=1 ;;
+      --session|--session=*) have_session=1 ;;
+    esac
+  done
+  
+  # Restore recorded session if no explicit --session was given.
+  # The session-tracker extension records the active session to
+  # ~/.local/state/pil/sessions/<lane>.path on every session_start.
+  # This lets pil resume the correct session after a reboot, even when
+  # herdr's pin is stale (e.g. after /resume or /new).
+  if [ "$have_session" -eq 0 ]; then
+    local name
+    if name="$(derive_name)" 2>/dev/null; then
+      local session_state="${XDG_STATE_HOME:-$HOME/.local/state}/pil/sessions/$name.path"
+      if [ -f "$session_state" ]; then
+        local recorded
+        recorded=$(cat "$session_state" 2>/dev/null | tr -d '\n')
+        if [ -n "$recorded" ] && [ -f "$recorded" ]; then
+          out+=(--session "$recorded")
+          have_session=1
+        fi
+      fi
+    fi
+  fi
+  
+  # Never override an explicit --session-dir; only supply the canonical one when the
+  # caller left it unset. This is what makes a bare `pil` produce a durable pin.
+  if [ "$have_dir" -eq 0 ]; then out+=(--session-dir "$(session_dir_for_cwd)"); fi
+  while [ "$#" -gt 0 ]; do
+    a="$1"; shift
+    case "$a" in
+      --session)
+        [ "$#" -gt 0 ] || { out+=("$a"); break; }
+        v="$1"; shift
+        case "$v" in
+          */instances/launch-*/sessions/*)
+            rel="${v#*/instances/launch-*/sessions/}"
+            if [ -f "$SESSION_STORE/$rel" ]; then
+              printf 'pil: session path repointed at the shared store: %s\n' "$SESSION_STORE/$rel" >&2
+              out+=(--session "$SESSION_STORE/$rel")
+            else
+              printf 'pil: dropped instance-scoped --session (%s); no store copy, starting a new session in the store\n' "$rel" >&2
+            fi
+            ;;
+          *) out+=(--session "$v") ;;
+        esac
+        ;;
+      --session=*/instances/launch-*/sessions/*)
+        v="${a#--session=}"; rel="${v#*/instances/launch-*/sessions/}"
+        if [ -f "$SESSION_STORE/$rel" ]; then
+          out+=(--session "$SESSION_STORE/$rel")
+        else
+          printf 'pil: dropped instance-scoped --session (%s)\n' "$rel" >&2
+        fi
+        ;;
+      *) out+=("$a") ;;
+    esac
+  done
+  # An empty array must emit NOTHING. `printf '%s\0'` still writes one NUL record
+  # for an empty expansion, which mapfile turns into a single empty argument ("");
+  # bare `pil` then execs `pi-profile ""` and dies with "invalid profile name".
+  # Bare `pil` is the standard launch, so this guard is load-bearing.
+  if [ "${#out[@]}" -gt 0 ]; then printf '%s\0' "${out[@]}"; fi
+}
+
+mapfile -d '' -t PI_ARGS < <(remap_session_args "$@")
+
+# Self-test for the argument builder. The case that broke every lane launch on
+# 2026-11-03 was the EMPTY argument list: it was never exercised, and an empty
+# expansion through `printf '%s\0'` still emits one NUL record, which mapfile
+# turns into a single empty argument (`pi-profile ""` → invalid profile name).
+# This runs the builder directly and never execs pi.
+selftest_args() {
+  local fails=0 got got_n a
+  _check() {
+    local name="$1" want_n="$2" want="$3"; shift 3
+    got=""; got_n=0
+    while IFS= read -r -d '' a; do
+      got_n=$((got_n + 1)); got+="[$a]"
+    done < <(remap_session_args "$@" 2>/dev/null)
+    if [ "$got_n" = "$want_n" ] && [ "$got" = "$want" ]; then
+      printf 'ok   %-26s n=%s %s\n' "$name" "$got_n" "$got"
+    else
+      printf 'FAIL %-26s got n=%s %s | want n=%s %s\n' "$name" "$got_n" "$got" "$want_n" "$want"
+      fails=$((fails + 1))
+    fi
+  }
+
+  # HERMETIC. remap_session_args now restores a lane's recorded session when the caller
+  # gave no --session, so these expectations read machine state. Run them against an empty
+  # store: otherwise the suite's verdict tracks whether the running lane happens to have a
+  # record — it passed all morning, then failed the moment one existed.
+  local _saved_state="${XDG_STATE_HOME-}" _tmp_state
+  _tmp_state="$(mktemp -d)"
+  export XDG_STATE_HOME="$_tmp_state"
+
+  local D; D="$(session_dir_for_cwd)"
+  _check "bare launch"             2 "[--session-dir][$D]"
+  _check "ordinary flags"          4 "[--session-dir][$D][--model][foo]" --model foo
+  _check "path outside instances"  4 "[--session-dir][$D][--session][/tmp/x.jsonl]" --session /tmp/x.jsonl
+  _check "explicit session-dir"    2 "[--session-dir][/x]" --session-dir /x
+  _check "dead instance pin"       2 "[--session-dir][$D]" \
+    --session /home/bitnom/.pi-profile-switch/instances/launch-zzzzzz/sessions/--a--/nope.jsonl
+
+  # Recorded-session restore: the bare-launch resume path, and the two ways it must yield.
+  local _rn _rsess
+  _rn="$(derive_name 2>/dev/null || true)"
+  if [ -n "$_rn" ]; then
+    mkdir -p "$_tmp_state/pil/sessions"
+    _rsess="$_tmp_state/sess.jsonl"; : > "$_rsess"
+    printf '%s\n' "$_rsess" > "$_tmp_state/pil/sessions/$_rn.path"
+    _check "recorded session resumes" 4 "[--session][$_rsess][--session-dir][$D]"
+    _check "explicit session beats it" 4 "[--session-dir][$D][--session][/tmp/y.jsonl]" \
+      --session /tmp/y.jsonl
+    printf '%s\n' "$_tmp_state/gone.jsonl" > "$_tmp_state/pil/sessions/$_rn.path"
+    _check "dangling record ignored"  2 "[--session-dir][$D]"
+  else
+    printf 'skip recorded-session cases (no derivable lane name)\n'
+  fi
+
+  # The encoder must reproduce pi's own directory name exactly, or sessions land
+  # somewhere /resume does not look. Compare against a real store directory.
+  local enc_ov; enc_ov="$(session_dir_for_cwd /home/bitnom/.overlord)"
+  if [ "$enc_ov" = "$SESSION_STORE/--home-bitnom-.overlord--" ]; then
+    printf 'ok   %-26s %s\n' "encoder matches pi" "--home-bitnom-.overlord--"
+  else
+    printf 'FAIL %-26s got %s\n' "encoder matches pi" "$enc_ov"; fails=$((fails + 1))
+  fi
+
+  local enc="--home-bitnom-Documents-Fleet--" fixture rel
+  fixture=$(ls -1 "$SESSION_STORE/$enc"/*.jsonl 2>/dev/null | head -1)
+  if [ -n "$fixture" ]; then
+    rel="${fixture#"$SESSION_STORE"/}"
+    _check "live pin repointed"    4 "[--session-dir][$D][--session][$fixture]" \
+      --session "/home/bitnom/.pi-profile-switch/instances/launch-zzzzzz/sessions/$rel"
+  else
+    printf 'skip live pin (no store fixture under %s)\n' "$SESSION_STORE/$enc"
+  fi
+
+  if [ -n "$_saved_state" ]; then export XDG_STATE_HOME="$_saved_state"; else unset XDG_STATE_HOME; fi
+  rm -rf "$_tmp_state"
+
+  if [ "$fails" -eq 0 ]; then printf '\nall cases passed\n'; return 0; fi
+  printf '\n%s case(s) failed\n' "$fails"; return 1
+}
+
+selftest_role() {
+  local fails=0 tmpdir="/tmp/pil-selftest-$$" name
+  mkdir -p "$tmpdir/roles" "$tmpdir/cwd/.pi" "$tmpdir/cwd2/.pi"
+  
+  _check_role() {
+    local label="$1" want_mode="$2" want_profile="$3" want_confirm="$4"
+    local got_mode="${PI_MODE:-}" got_profile="${PI_PROFILE:-}" got_confirm="${PI_MODE_CONFIRM_PROJECT:-}"
+    if [ "$got_mode" = "$want_mode" ] && [ "$got_profile" = "$want_profile" ] && [ "$got_confirm" = "$want_confirm" ]; then
+      printf 'ok   %-35s mode=%s profile=%s confirm=%s\n' "$label" "${got_mode:-(empty)}" "${got_profile:-(empty)}" "${got_confirm:-(empty)}"
+    else
+      printf 'FAIL %-35s got mode=%s profile=%s confirm=%s | want mode=%s profile=%s confirm=%s\n' \
+        "$label" "${got_mode:-(empty)}" "${got_profile:-(empty)}" "${got_confirm:-(empty)}" "${want_mode:-(empty)}" "${want_profile:-(empty)}" "${want_confirm:-(empty)}"
+      fails=$((fails + 1))
+    fi
+  }
+  
+  # Test 1: recorded role is restored
+  name="test-leader"
+  printf 'PI_MODE=leader PI_PROFILE=leader PI_MODE_CONFIRM_PROJECT=1\n' > "$tmpdir/roles/$name.env"
+  unset PI_MODE PI_PROFILE PI_MODE_CONFIRM_PROJECT
+  ROLE_STATE_DIR="$tmpdir/roles" restore_role "$name"
+  _check_role "recorded role restored" "leader" "leader" "1"
+  
+  # Test 2: explicit env is never overridden
+  export PI_MODE=worker PI_PROFILE=custom PI_MODE_CONFIRM_PROJECT=0
+  ROLE_STATE_DIR="$tmpdir/roles" restore_role "test-leader"
+  _check_role "explicit env preserved" "worker" "custom" "0"
+  
+  # Capture the effect of restore_role in a CHILD shell. The previous three cases could
+  # not fail: two asserted that a file the test itself had just written still existed, and
+  # one printed `ok` with no assertion at all. A green that cannot go red is not evidence,
+  # so each case below asserts the exported variables, which is the actual contract.
+  _role_env_in() {          # dir name -> "mode|profile|confirm"
+    local d="$1" n="$2"
+    ( cd "$d" || return 1
+      export -f restore_role
+      # CLEAR FIRST. Earlier cases export role vars in the parent shell, and because they
+      # are exported the child inherits them — so restore_role correctly short-circuits on
+      # "explicit env wins" and the case measures the previous case instead of the one it
+      # is named for. Unset in the child, which is the only state a fresh launch has.
+      ROLE_STATE_DIR="$tmpdir/roles" bash -c 'unset PI_MODE PI_PROFILE PI_MODE_CONFIRM_PROJECT; restore_role "$1"; printf "%s|%s|%s" "${PI_MODE:-}" "${PI_PROFILE:-}" "${PI_MODE_CONFIRM_PROJECT:-}"' _ "$n" )
+  }
+  _check_env() {            # label want dir name
+    local label="$1" want="$2" dir="$3" nm="$4" got
+    got="$(_role_env_in "$dir" "$nm" 2>/dev/null)"
+    if [ "$got" = "$want" ]; then
+      printf 'ok   %-35s got=%s\n' "$label" "${got//|/ }"
+    else
+      printf 'FAIL %-35s got=%s want=%s\n' "$label" "${got//|/ }" "${want//|/ }"
+      fails=$((fails + 1))
+    fi
+  }
+
+  # Test 3: a leader name with no record falls back to launch.env.
+  printf 'PI_MODE=leader PI_PROFILE=leader PI_MODE_CONFIRM_PROJECT=1\n' > "$tmpdir/cwd/.pi/launch.env"
+  _check_env "leader fallback to launch.env" "leader|leader|1" "$tmpdir/cwd" "space-leader"
+
+  # Test 4: a worker name is NEVER promoted, even though launch.env says leader.
+  _check_env "worker not promoted" "||" "$tmpdir/cwd" "worker-name"
+
+  # Test 5: a hostile value is rejected by the regex; the safe key beside it still lands.
+  printf 'PI_MODE=$(rm) PI_PROFILE=leader\n' > "$tmpdir/cwd2/.pi/launch.env"
+  _check_env "hostile value rejected" "|leader|" "$tmpdir/cwd2" "bad-leader"
+  
+  # Test 6: no launch.env, no record = no role
+  unset PI_MODE PI_PROFILE PI_MODE_CONFIRM_PROJECT
+  mkdir -p "$tmpdir/empty"
+  (cd "$tmpdir/empty" && ROLE_STATE_DIR="$tmpdir/roles" restore_role "norecord-leader")
+  # Check in current shell after clearing
+  unset PI_MODE PI_PROFILE PI_MODE_CONFIRM_PROJECT
+  _check_role "no fallback, no record" "" "" ""
+  
+  # Test 7: role recording
+  export PI_MODE=leader PI_PROFILE=leader PI_MODE_CONFIRM_PROJECT=1
+  ROLE_STATE_DIR="$tmpdir/roles" record_role "newlane-leader"
+  if [ -f "$tmpdir/roles/newlane-leader.env" ]; then
+    content=$(cat "$tmpdir/roles/newlane-leader.env")
+    if [[ "$content" =~ PI_MODE=leader.*PI_PROFILE=leader.*PI_MODE_CONFIRM_PROJECT=1 ]]; then
+      printf 'ok   %-35s\n' "role recorded"
+    else
+      printf 'FAIL %-35s content=%s\n' "role recorded" "$content"; fails=$((fails + 1))
+    fi
+  else
+    printf 'FAIL %-35s file not created\n' "role recorded"; fails=$((fails + 1))
+  fi
+  
+  rm -rf "$tmpdir"
+  unset PI_MODE PI_PROFILE PI_MODE_CONFIRM_PROJECT
+  return "$fails"
+}
+
+if [ "${1:-}" = "--selftest" ]; then
+  echo "=== Session argument tests ==="
+  selftest_args
+  arg_result=$?
+  echo
+  echo "=== Role restoration tests ==="
+  selftest_role
+  role_result=$?
+  if [ "$arg_result" -eq 0 ] && [ "$role_result" -eq 0 ]; then
+    printf '\nall tests passed\n'
+    exit 0
+  fi
+  exit 1
+fi
+
+# `-c` / `--continue` means "the newest session in this session dir". In a shared cwd
+# that dir holds every lane's sessions, so -c can silently resume a DIFFERENT lane's
+# conversation. Observed 2026-11-03: a scratch lane launched with `pil -c` in
+# ~/.overlord (19 sessions) picked the live overlord session and would have appended
+# to it -- two processes, one conversation. Refuse rather than guess: an explicit
+# `--session <path>` is the fleet's route, and the message lists the candidates.
+guard_continue() {
+  local a want=0 dir n
+  for a in "$@"; do case "$a" in -c|--continue) want=1 ;; esac; done
+  [ "$want" -eq 1 ] || return 0
+  dir="$(session_dir_for_cwd)"
+  n=$(find "$dir" -maxdepth 1 -name '*.jsonl' 2>/dev/null | wc -l)
+  [ "$n" -le 1 ] && return 0
+  printf 'pil: refusing --continue: %s holds %s sessions, so "the newest" may belong to\n' "$dir" "$n" >&2
+  printf 'pil: another lane. Name the conversation instead:  pil --session <path>\n' >&2
+  find "$dir" -maxdepth 1 -name '*.jsonl' -printf '    %TY-%Tm-%Td %TH:%TM  %f\n' 2>/dev/null | sort -r | head -8 >&2
+  return 2
+}
+if ! guard_continue "$@"; then exit 2; fi
+
+
+# Profiles exist only on the pi-profile launcher path, which spawns pi with a
+# relocated PI_CODING_AGENT_DIR. Prefer it; fall back to bare pi so a missing or
+# broken launcher can never stop a lane from starting.
+PROFILE_BIN="$(type -P pi-profile 2>/dev/null)"
+if [ -n "$PROFILE_BIN" ] && [ -x "$PROFILE_BIN" ]; then
+  exec "$PROFILE_BIN" "${PI_ARGS[@]}"
+fi
+
+exec "$PI_BIN" "${PI_ARGS[@]}"

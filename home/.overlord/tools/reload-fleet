@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# reload-fleet — send /reload to every herdr Pi agent (thin wrapper).
+# Includes the initiating lane automatically; that self-reload is deferred until
+# this command's Pi turn returns, so the coordinator cannot kill itself.
+# By default skips other working lanes. Use --interrupt-working to send Esc, wait
+# for idle, then reload and nudge those lanes to resume without repeating work.
+# Use --working-only to apply that sequence only to currently working lanes.
+exec "$(dirname "$0")/broadcast-to-fleet.py" --message /reload --include-self "$@"

@@ -1,0 +1,365 @@
+#!/usr/bin/env python3
+"""swarm-topology — a derived, read-only view of the leader/worker swarm.
+
+Joins three authoritative sources and invents no state of its own:
+
+  herdr   live spaces, tabs, agents, status            (where things are)
+  dagr    .dagr/run.json files                         (what is declared)
+  rooms   registry + pins + intent map                 (who is addressable)
+
+The join key is the lane name. The correlation key is HERDR_PANE_ID read out of
+/proc/<pid>/environ for each registered rooms session, which is the only link
+between a rooms identity and a herdr pane that survives a restart.
+
+Usage: swarm-topology.py [--json] [--no-color] [--stale-mins N]
+"""
+from __future__ import annotations
+
+import calendar
+import json
+import re
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+HOME = Path.home()
+ROOMS = HOME / ".pi/agent/rooms"
+PINS = ROOMS / "names.json"
+INTENT = HOME / ".overlord/tools/rooms-names.json"
+LEADER_RE = re.compile(r"(^|-)leader$", re.I)
+
+C = {
+    "reset": "\033[0m", "dim": "\033[2m", "bold": "\033[1m",
+    "red": "\033[31m", "grn": "\033[32m", "yel": "\033[33m",
+    "blu": "\033[34m", "mag": "\033[35m", "cyn": "\033[36m",
+}
+USE_COLOR = True
+
+
+def c(tag: str, s: str) -> str:
+    return f"{C[tag]}{s}{C['reset']}" if USE_COLOR else s
+
+
+def sh_json(args: list[str]) -> dict:
+    out = subprocess.run(args, capture_output=True, text=True)
+    if out.returncode != 0 or not out.stdout.strip():
+        return {}
+    try:
+        return json.loads(out.stdout).get("result", {})
+    except json.JSONDecodeError:
+        return {}
+
+
+def pane_from_pid(pid: int) -> str | None:
+    """The free correlation key: HERDR_PANE_ID in the process environment."""
+    try:
+        raw = Path(f"/proc/{pid}/environ").read_bytes()
+    except OSError:
+        return None
+    for kv in raw.split(b"\0"):
+        if kv.startswith(b"HERDR_PANE_ID="):
+            return kv.split(b"=", 1)[1].decode(errors="replace")
+    return None
+
+
+def session_from_pid(pid: int) -> str | None:
+    try:
+        raw = Path(f"/proc/{pid}/environ").read_bytes()
+    except OSError:
+        return None
+    for kv in raw.split(b"\0"):
+        if kv.startswith(b"PI_SESSION_ID="):
+            return kv.split(b"=", 1)[1].decode(errors="replace")
+    return None
+
+
+def alive(pid: int) -> bool:
+    return Path(f"/proc/{pid}").exists()
+
+
+def load_rooms() -> dict:
+    reg: dict[str, dict] = {}
+    for f in (ROOMS / "registry").glob("*.json"):
+        try:
+            d = json.loads(f.read_text())
+        except (OSError, json.JSONDecodeError):
+            continue
+        d["_alive"] = alive(d.get("pid", -1))
+        pid = d.get("pid")
+        d["_pane"] = pane_from_pid(pid) if pid and d["_alive"] else None
+        d["_session"] = session_from_pid(pid) if pid and d["_alive"] else None
+        reg[d.get("name", f.stem)] = d
+    pins = {}
+    if PINS.exists():
+        try:
+            pins = json.loads(PINS.read_text())
+        except json.JSONDecodeError:
+            pins = {}
+    intent = {}
+    intent_cwd: dict[str, str] = {}
+    if INTENT.exists():
+        try:
+            raw = json.loads(INTENT.read_text())
+        except json.JSONDecodeError:
+            raw = {}
+        for k, v in raw.items():
+            if isinstance(v, str):
+                intent[k] = v
+            elif isinstance(v, dict) and isinstance(v.get("name"), str):
+                intent[k] = v["name"]
+                if isinstance(v.get("cwd"), str):
+                    intent_cwd[v["name"]] = v["cwd"]
+    return {"registry": reg, "pins": pins, "intent": intent, "intent_cwd": intent_cwd}
+
+
+def load_runs() -> list[dict]:
+    runs = []
+    for f in HOME.rglob(".dagr/run.json"):
+        try:
+            if f.stat().st_size < 40:
+                continue
+        except OSError:
+            continue
+        try:
+            d = json.loads(f.read_text())
+        except (OSError, json.JSONDecodeError):
+            continue
+        tasks = d.get("tasks") or []
+        done = sum(1 for t in tasks if (t.get("state") or t.get("status")) in ("done", "closed", "verified"))
+        runs.append({
+            "path": f,
+            "root": str(f.parent.parent),
+            "run": d.get("run") or {},
+            "generated_at": d.get("generated_at"),
+            "tasks": tasks,
+            "total": len(tasks),
+            "done": done,
+            "owners": sorted({t.get("owner") for t in tasks if t.get("owner")}),
+        })
+    return runs
+
+
+def age_secs(iso: str | None) -> int | None:
+    """Age of a dagr `generated_at`. dagr writes UTC with a Z suffix, so parse
+    it as UTC — mktime() would read it as local and report a future timestamp."""
+    if not iso:
+        return None
+    try:
+        t = calendar.timegm(time.strptime(iso.rstrip("Z")[:19], "%Y-%m-%dT%H:%M:%S"))
+        return int(time.time() - t)
+    except ValueError:
+        return None
+
+
+def human(secs: int | None) -> str:
+    if secs is None:
+        return "?"
+    if secs < 3600:
+        return f"{secs // 60}m"
+    if secs < 86400:
+        return f"{secs // 3600}h{(secs % 3600) // 60:02d}m"
+    return f"{secs // 86400}d{(secs % 86400) // 3600:02d}h"
+
+
+STATUS_COLOUR = {"working": "yel", "blocked": "red", "done": "grn", "idle": "dim", "unknown": "mag"}
+
+
+def status_txt(s: str | None) -> str:
+    s = (s or "unknown").lower()
+    return c(STATUS_COLOUR.get(s, "dim"), s)
+
+
+def main() -> int:
+    global USE_COLOR
+    argv = sys.argv[1:]
+    as_json = "--json" in argv
+    if "--no-color" in argv:
+        USE_COLOR = False
+    stale_mins = 90
+    if "--stale-mins" in argv:
+        try:
+            stale_mins = int(argv[argv.index("--stale-mins") + 1])
+        except (IndexError, ValueError):
+            pass
+
+    ws = sh_json(["herdr", "workspace", "list"]).get("workspaces", [])
+    tabs = sh_json(["herdr", "tab", "list"]).get("tabs", [])
+    ags = sh_json(["herdr", "agent", "list"]).get("agents", [])
+    rooms = load_rooms()
+    runs = load_runs()
+
+    # pane -> rooms name (live only, via /proc)
+    pane_to_rooms = {v["_pane"]: k for k, v in rooms["registry"].items() if v.get("_pane")}
+    tab_by_id = {t["tab_id"]: t for t in tabs}
+
+    findings: list[tuple[str, str, str]] = []  # (severity, code, detail)
+    agents_by_ws: dict[str, list] = {}
+    for a in ags:
+        agents_by_ws.setdefault(a.get("workspace_id"), []).append(a)
+
+    spaces = []
+    for w in sorted(ws, key=lambda x: x.get("number", 0)):
+        wid = w["workspace_id"]
+        label = w.get("label") or "(unlabelled)"
+        wags = sorted(agents_by_ws.get(wid, []), key=lambda z: (z.get("tab_id") or ""))
+
+        leader = None
+        for a in wags:
+            t = tab_by_id.get(a.get("tab_id") or "")
+            tablabel = (t or {}).get("label") or ""
+            if LEADER_RE.search(tablabel):
+                leader = {"agent": a, "tab": t, "tablabel": tablabel}
+                break
+        if leader is None:
+            ltabs = [t for t in tabs if t["workspace_id"] == wid and LEADER_RE.search(t.get("label") or "")]
+            if ltabs:
+                leader = {"agent": None, "tab": ltabs[0], "tablabel": ltabs[0].get("label")}
+                findings.append(("high", "LEADER-NO-AGENT",
+                                 f"{wid} `{ltabs[0].get('label')}` has no live agent"))
+
+        lanes = []
+        for a in wags:
+            pane = a.get("pane_id")
+            heir = a.get("name") or ""
+            cwd = (a.get("cwd") or "").rstrip("/")
+            # A pane-keyed intent entry is only trusted when a second, independent
+            # attribute agrees. herdr recycles pane ids, so a bare pane match can
+            # attach a dead lane's intended name to whatever occupies that pane now.
+            intended = None
+            raw_intent = rooms["intent"].get(pane)
+            if raw_intent:
+                intent_cwd = rooms["intent_cwd"].get(raw_intent)
+                if intent_cwd is None or intent_cwd.rstrip("/") == cwd:
+                    intended = raw_intent
+                else:
+                    findings.append(("low", "INTENT-PANE-RECYCLED",
+                                     f"{pane} intent `{raw_intent}` belongs to another cwd "
+                                     f"({intent_cwd.replace(str(HOME), '~')}) — ignored"))
+            registered = pane_to_rooms.get(pane)
+            if intended and registered and intended != registered:
+                findings.append(("high", "ROOMS-NAME-DRIFT",
+                                 f"{pane} intended `{intended}` answers as `{registered}`"))
+            elif intended and not registered:
+                findings.append(("med", "ROOMS-UNREGISTERED",
+                                 f"{pane} intended `{intended}` not registered"))
+            if not heir:
+                findings.append(("med", "UNNAMED", f"{pane} ({wid}) agent has no herdr name"))
+            lanes.append({
+                "pane": pane, "tab": a.get("tab_id"), "herdr_name": heir or None,
+                "status": a.get("agent_status"), "cwd": a.get("cwd"),
+                "intended": intended, "rooms": registered,
+                "lane": heir or intended or registered or f"({pane})",
+            })
+
+        if wags and leader is None:
+            findings.append(("med", "SPACE-NO-LEADER", f"{wid} `{label}` has agents but no *-leader tab"))
+
+        # attach a dagr run: leader cwd is inside the run root (or vice versa)
+        run = None
+        lead_cwd = (leader or {}).get("agent", {}) or {}
+        lead_cwd = lead_cwd.get("cwd") or ""
+        for r in runs:
+            if lead_cwd and (lead_cwd.startswith(r["root"]) or r["root"].startswith(lead_cwd)):
+                run = r
+                break
+        if run and run["generated_at"]:
+            a_secs = age_secs(run["generated_at"])
+            if a_secs and a_secs > stale_mins * 60:
+                findings.append(("med", "RUN-STALE",
+                                 f"{run['path']} generated {human(a_secs)} ago"))
+
+        spaces.append({"ws": wid, "label": label, "leader": leader, "lanes": lanes, "run": run})
+
+    # dagr owner resolution
+    live_names = {l["lane"] for s in spaces for l in s["lanes"]}
+    live_names |= {l["herdr_name"] for s in spaces for l in s["lanes"] if l["herdr_name"]}
+    for r in runs:
+        for o in r["owners"]:
+            if o not in live_names:
+                findings.append(("med", "OWNER-UNRESOLVED",
+                                 f"{r['path'].relative_to(HOME)} owner `{o}` names no live lane"))
+
+    # dead rooms registrations
+    for name, ent in rooms["registry"].items():
+        if not ent["_alive"]:
+            findings.append(("low", "ROOMS-GHOST", f"`{name}` pid {ent.get('pid')} is dead"))
+
+    if as_json:
+        print(json.dumps({
+            "spaces": [{k: v for k, v in s.items() if k != "run"} |
+                       ({"run": {"path": str(s["run"]["path"]), "done": s["run"]["done"],
+                                 "total": s["run"]["total"], "generated_at": s["run"]["generated_at"]}}
+                        if s["run"] else {"run": None}) for s in spaces],
+            "findings": [{"severity": a, "code": b, "detail": d} for a, b, d in findings],
+        }, indent=1, default=str))
+        return 0
+
+    total = sum(len(s["lanes"]) for s in spaces)
+    named = sum(1 for s in spaces for l in s["lanes"] if l["herdr_name"])
+    print()
+    print(c("bold", "SWARM TOPOLOGY") + c("dim", f"  {len(spaces)} spaces · {total} agents · "
+                                                f"{named} named ({100 * named // max(total, 1)}%) · "
+                                                f"{len(rooms['registry'])} rooms-registered"))
+    print(c("dim", "  sources: herdr live · dagr runs · pi-rooms   |   join key: lane name, "
+                   "correlated by HERDR_PANE_ID via /proc"))
+    print()
+
+    for s in spaces:
+        run = s["run"]
+        rt = ""
+        if run:
+            a_secs = age_secs(run["generated_at"])
+            rt = c("dim", f"  run {run['done']}/{run['total']} · {human(a_secs)} old")
+        print(f" {c('cyn', s['ws']):<10} {c('bold', s['label'][:22]):<24}{rt}")
+
+        lead = s["leader"]
+        if lead is None:
+            print(c("dim", "          (no leader tab)"))
+        else:
+            a = lead["agent"]
+            if a is None:
+                print(f"          {c('red', '✗ leader tab with no agent')}  {c('dim', lead['tablabel'])}")
+            else:
+                ln = next(l for l in s["lanes"] if l["pane"] == a.get("pane_id"))
+                nm = ln["herdr_name"] or c("red", "unnamed")
+                extra = []
+                if ln["intended"] and ln["intended"] != ln["herdr_name"]:
+                    extra.append(c("yel", f"→{ln['intended']}"))
+                if ln["rooms"]:
+                    extra.append(c("dim", f"rooms:{ln['rooms']}"))
+                print(f"          {c('grn', '●')} {nm:<22} {status_txt(ln['status']):<16} "
+                      f"{ln['pane']:<10} {' '.join(extra)}")
+
+        workers = [l for l in s["lanes"] if not (lead and l["pane"] == (lead.get("agent") or {}).get("pane_id"))]
+        for l in workers:
+            nm = l["herdr_name"] or c("red", "unnamed")
+            extra = []
+            if l["intended"] and l["intended"] != l["herdr_name"]:
+                extra.append(c("yel", f"→{l['intended']}"))
+            if l["rooms"]:
+                extra.append(c("dim", f"rooms:{l['rooms']}"))
+            print(f"            {c('dim', '└')} {nm:<20} {status_txt(l['status']):<16} "
+                  f"{l['pane']:<10} {' '.join(extra)}")
+        print()
+
+    if findings:
+        order = {"high": 0, "med": 1, "low": 2}
+        findings.sort(key=lambda f: order.get(f[0], 3))
+        print(c("bold", f"FINDINGS ({len(findings)})"))
+        seen = set()
+        for sev, code, detail in findings:
+            key = (code, detail)
+            if key in seen:
+                continue
+            seen.add(key)
+            col = {"high": "red", "med": "yel", "low": "dim"}[sev]
+            print(f"  {c(col, sev.upper()[:4]):<12} {c('bold', code):<20} {detail}")
+        print()
+    else:
+        print(c("grn", "  no integrity findings") + "\n")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

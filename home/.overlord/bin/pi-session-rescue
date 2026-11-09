@@ -1,0 +1,170 @@
+#!/usr/bin/env python3
+"""pi-session-rescue — move sessions out of throwaway instance dirs into the store.
+
+Why this exists
+---------------
+Every pi lane runs with `PI_CODING_AGENT_DIR=~/.pi-profile-switch/instances/launch-*`,
+a per-launch directory that `pi-profile-switch` sweeps away at the next launch
+(`src/launcher/runtime-cleanup.ts`). Inside it, `sessions` is normally a symlink to
+the shared store `~/.pi/agent/sessions`, so a session path written through it is
+durable.
+
+When a lane is started with `--session <path under an instance dir>` and that path
+does not exist, pi keeps the explicit path and starts a new session there
+(`core/session-manager.js`, `_setSessionFile`: "preserve explicit path from
+--session flag"). The file is then a REAL file inside a throwaway directory: it is
+invisible to `/resume`, invisible to `pi --continue`, and deleted — with the
+instance dir — by the next launch's sweep.
+
+herdr records the argv it launched a pane with and replays it after a reboot, so
+this recurs on every restart unless the path is repaired. This tool repairs it:
+
+  * a session file found inside an instance dir is moved into the shared store
+    under its own header identity (`<timestamp>_<id>.jsonl`), and
+  * the old path is replaced with a symlink to the moved file, so the live pi
+    process keeps appending into the store, and
+  * the instance dir gets a `pid` file naming the live process, which is the
+    documented liveness token the sweep honours, so the directory and its symlink
+    survive until that lane exits.
+
+Nothing is overwritten: if the destination already exists the file is left alone
+and reported. Safe to re-run at any time.
+"""
+from __future__ import annotations
+
+import json
+import os
+import re
+import shutil
+import sys
+
+STORE = os.path.expanduser("~/.pi/agent/sessions")
+ROOT = os.path.expanduser("~/.pi-profile-switch/instances")
+ENC_RE = re.compile(r"^--.*--$")
+
+
+def encode_cwd(cwd: str) -> str:
+    """Same encoding pi uses: leading slash dropped, / and : become -."""
+    return "--" + re.sub(r"[/:]", "-", cwd.lstrip("/")) + "--"
+
+
+def header_of(path: str) -> dict | None:
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            return json.loads(f.readline())
+    except Exception:
+        return None
+
+
+def session_name(hdr: dict) -> str | None:
+    ts, sid = hdr.get("timestamp"), hdr.get("id")
+    if not ts or not sid:
+        return None
+    return re.sub(r"[:.]", "-", ts) + "_" + sid + ".jsonl"
+
+
+def cwd_dir_for(hdr: dict, fallback: str) -> str:
+    cwd = hdr.get("cwd")
+    if cwd:
+        return encode_cwd(cwd)
+    return fallback
+
+
+def rescue_file(path: str, enc_dir: str, apply: bool) -> tuple[str, str]:
+    hdr = header_of(path)
+    if not hdr or hdr.get("type") != "session":
+        return ("skip", f"not a pi session header: {path}")
+    name = session_name(hdr)
+    if not name:
+        return ("skip", f"header without timestamp/id: {path}")
+    dst_dir = os.path.join(STORE, cwd_dir_for(hdr, enc_dir))
+    dst = os.path.join(dst_dir, name)
+    if os.path.exists(dst):
+        same = os.path.getsize(dst) == os.path.getsize(path)
+        return ("exists", f"{path} -> {dst} ({'same size' if same else 'DIFFERENT SIZE'})")
+    if not apply:
+        return ("would", f"{path} -> {dst}")
+    os.makedirs(dst_dir, exist_ok=True)
+    shutil.move(path, dst)
+    os.symlink(dst, path)
+    return ("moved", f"{path} -> {dst}")
+
+
+def live_pid_for_instance(inst_dir: str) -> int | None:
+    """The pi/wrapper process whose --session names this instance dir, if any."""
+    want = os.path.basename(inst_dir)
+    for pid in os.listdir("/proc"):
+        if not pid.isdigit():
+            continue
+        try:
+            with open(f"/proc/{pid}/cmdline", "rb") as f:
+                argv = f.read().split(b"\0")
+        except Exception:
+            continue
+        for a in argv:
+            s = a.decode("utf-8", "replace")
+            if f"/instances/{want}/sessions/" in s:
+                return int(pid)
+    return None
+
+
+def main() -> int:
+    apply = "--dry-run" not in sys.argv
+    counts = {"moved": 0, "would": 0, "exists": 0, "skip": 0, "pinned": 0}
+    if not os.path.isdir(ROOT):
+        print(f"no instances root at {ROOT}", file=sys.stderr)
+        return 1
+
+    for inst in sorted(os.listdir(ROOT)):
+        inst_dir = os.path.join(ROOT, inst)
+        sessions = os.path.join(inst_dir, "sessions")
+        if not os.path.isdir(inst_dir) or os.path.islink(sessions) or not os.path.isdir(sessions):
+            continue
+
+        # 1. rescue any real session file written into this throwaway dir
+        has_link = False
+        for entry in sorted(os.listdir(sessions)):
+            if not ENC_RE.match(entry):
+                continue
+            enc_dir = os.path.join(sessions, entry)
+            if not os.path.isdir(enc_dir):
+                continue
+            for f in sorted(os.listdir(enc_dir)):
+                if not f.endswith(".jsonl"):
+                    continue
+                p = os.path.join(enc_dir, f)
+                if os.path.islink(p):
+                    has_link = True
+                    continue
+                kind, msg = rescue_file(p, entry, apply)
+                counts[kind] = counts.get(kind, 0) + 1
+                print(f"{kind:6s} {msg}")
+
+        # 2. mark the dir live while a lane still appends through it, so the
+        #    startup sweep that honours `pid` does not delete the symlink.
+        if has_link:
+            pid = live_pid_for_instance(inst_dir)
+            if pid:
+                pidfile = os.path.join(inst_dir, "pid")
+                cur = None
+                try:
+                    cur = open(pidfile).read().strip()
+                except Exception:
+                    pass
+                if cur != str(pid):
+                    if apply:
+                        with open(pidfile, "w") as f:
+                            f.write(str(pid))
+                    counts["pinned"] += 1
+                    print(f"pin    {inst}: pid {pid} (keeps the dir alive; removed by the next sweep after exit)")
+
+    print(
+        "\nsummary: "
+        + ", ".join(f"{k}={v}" for k, v in counts.items())
+        + ("" if apply else "  [dry run]")
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

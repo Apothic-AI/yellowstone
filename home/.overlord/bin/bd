@@ -1,0 +1,183 @@
+#!/usr/bin/env bash
+# bd — shim that keeps bdi's bead↔pane join true at the moment of a claim.
+#
+# Why: a claim made with plain `bd update <id> --claim` writes no join at all, so
+# bdi shows the bead as `orphan-claim` ("claimed · no live pane") until something
+# notices. Waiting for the reconciler leaves a gap of up to one timer period; this
+# closes it at the moment it matters, and clears the join at stop so the pane is
+# free for the next claim (bdi's rule: one pane joins one bead).
+#
+# Everything not a claim or a stop passes through untouched, and the real binary's
+# exit status is always what the caller sees: a join write that fails warns on
+# stderr and never fails a bd call the real bd would have succeeded at.
+
+REAL_BD=/home/bitnom/.local/bin/bd-real
+LOG=${BDI_SHIM_LOG:-$HOME/.local/state/overlord/bd-shim.log}
+
+if [ ! -x "$REAL_BD" ]; then
+  printf 'bd shim: real bd not executable at %s\n' "$REAL_BD" >&2
+  exit 127
+fi
+
+say() {
+  printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >&2
+  mkdir -p "$(dirname "$LOG")" 2>/dev/null &&
+    printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >> "$LOG" 2>/dev/null
+}
+
+agent_session() {
+  [ -n "${PI_ROOMS_NAME:-}" ] || return 1
+  herdr agent get "$PI_ROOMS_NAME" 2>/dev/null | python3 -c '
+import json,sys
+try:
+    a=json.load(sys.stdin)["result"]["agent"]
+    v=(a.get("agent_session") or {}).get("value") or ""
+except Exception:
+    v=""
+print(v)' 2>/dev/null
+}
+
+join_write() { # $1 = bead id
+  local bead="$1" sess pane="${HERDR_PANE_ID:-}"
+  [ -n "$pane" ] || { say "join skip $bead: no HERDR_PANE_ID"; return 0; }
+  sess=$(agent_session) || sess=""
+  local args=(update "$bead" --set-metadata "agent_pane=$pane")
+  [ -n "$sess" ] && args+=(--set-metadata "agent_session=$sess")
+  if "$REAL_BD" "${args[@]}" >/dev/null 2>&1; then
+    say "join   $bead -> pane=$pane session=${sess##*/}"
+  else
+    say "join FAILED $bead (continuing)"
+  fi
+  # bdi's session-independent fallback: the pane's display agent survives /new.
+  herdr pane report-metadata "$pane" --source herdr:pi --display-agent "$bead" >/dev/null 2>&1 || true
+}
+
+join_clear() { # $1 = bead id
+  local bead="$1" pane="${HERDR_PANE_ID:-}"
+  if "$REAL_BD" update "$bead" --unset-metadata agent_pane --unset-metadata agent_session >/dev/null 2>&1; then
+    say "clear  $bead"
+  else
+    say "clear FAILED $bead (continuing)"
+  fi
+  [ -n "$pane" ] && herdr pane report-metadata "$pane" --source herdr:pi --clear-display-agent >/dev/null 2>&1 || true
+}
+
+# Classify before delegating, so the join is written even if the caller passes the
+# flags in an order we did not anticipate.
+sub=""; bead=""; claim=0; stop=0; explicit_unset=0
+for a in "$@"; do
+  case "$a" in
+    update|create|list|show|close|comment|note|dep|export|sql|query) [ -z "$sub" ] && sub="$a" ;;
+  esac
+done
+case "$sub" in
+  update|close)
+    for a in "$@"; do
+      case "$a" in
+        --claim) claim=1 ;;
+        --status|--status=*|-s) ;;
+        --unset-metadata) explicit_unset=1 ;;
+      esac
+    done
+    # first argument after the subcommand that is not a flag is the bead id
+    seen=0
+    for a in "$@"; do
+      if [ "$seen" = 1 ]; then case "$a" in -*) ;; *) bead="$a"; break ;; esac; fi
+      [ "$a" = "$sub" ] && seen=1
+    done
+    for a in "$@"; do
+      case "$a" in
+        --status=open|--status=closed) stop=1 ;;
+        closed|open) [ "$sub" = close ] && stop=1 ;;
+      esac
+    done
+    [ "$sub" = close ] && stop=1
+    # --status in_progress is a claim even without --claim
+    prev=""
+    for a in "$@"; do
+      [ "$prev" = "--status" ] && [ "$a" = "in_progress" ] && claim=1
+      [ "$prev" = "-s" ] && [ "$a" = "in_progress" ] && claim=1
+      prev="$a"
+    done
+    ;;
+esac
+
+# --- destructive-verb guard -------------------------------------------------------
+# `bd prune`, `bd purge`, `bd dolt clean-databases`, `bd flatten`, `bd admin compact`
+# operate on the DATABASE, not on one project's beads — and this fleet shares one database
+# across every space. Reference protection does not save a closed-but-cited bead from any of
+# them, so the blast radius of one lane's hygiene is every other space's record.
+#
+# The scan is deliberately independent of $sub above. That classifier exists to decide
+# claim-vs-stop and therefore drives the join write; coupling a safety rail to it would both
+# risk the join and miss the verbs (none of them are in its whitelist). A separate scan of
+# the whole argv also survives argument order: `bd -C <path> prune` puts the verb at argv[3]
+# and `--json` arrives after it, so no positional guess is needed.
+#
+# Matching is by EXACT whole-token equality, never substring: a comment reading
+# "we should run bd prune" is one token and does not match, while a flag value that is
+# literally `prune` does — an accepted false positive, closed by the override below. Skipping
+# value-taking flags was considered and refused: an off-by-one there (`-C <path> prune`,
+# value and verb adjacent) would skip the verb itself, a false negative in the one guard that
+# must not have any.
+BLAST_VERBS="prune purge flatten"
+BLAST_PAIRS="dolt:clean-databases admin:compact"
+guard_hit=""
+prev=""
+for a in "$@"; do
+  for v in $BLAST_VERBS; do
+    [ "$a" = "$v" ] && guard_hit="$v"
+  done
+  if [ -n "$prev" ]; then
+    for pr in $BLAST_PAIRS; do
+      [ "$prev:$a" = "$pr" ] && guard_hit="${pr/:/ }"
+    done
+  fi
+  prev="$a"
+done
+
+if [ -n "$guard_hit" ]; then
+  allow="${BD_ALLOW_DESTRUCTIVE:-}"
+  if [ -z "$allow" ]; then
+    say "REFUSED destructive verb '$guard_hit' — this touches the shared beads database."
+    {
+      printf 'bd shim: refused `bd %s`.\n' "$guard_hit"
+      printf 'This fleet shares ONE beads database across every space, so this verb reaches\n'
+      printf 'every space'"'"'s beads, not just yours.\n\n'
+      printf 'To proceed deliberately, take a backup and re-run with the override:\n'
+      printf '  bd backup init ~/.beads/backup   # once, if you have not\n'
+      printf '  BD_ALLOW_DESTRUCTIVE=1 bd %s ...\n' "$guard_hit"
+    } >&2
+    exit 3
+  fi
+  # Override taken: push a backup first, every time — and prove it landed.
+  # `bd backup` with no argument only prints help and exits 0, which would let this claim a
+  # backup it never took; the real push is `bd backup sync`, and the destination must be
+  # non-empty afterwards or we refuse. A guard that lies about its own safety net is worse
+  # than no guard at all.
+  BK="${BD_BACKUP_DIR:-$HOME/.beads/backup}"
+  if [ ! -d "$BK" ]; then
+    "$REAL_BD" backup init "$BK" >/dev/null 2>&1 || true
+  fi
+  if "$REAL_BD" backup sync >/dev/null 2>&1 && [ -n "$(ls -A "$BK" 2>/dev/null)" ]; then
+    say "ALLOWED destructive verb '$guard_hit' with BD_ALLOW_DESTRUCTIVE=1 — backup synced to $BK"
+  else
+    say "REFUSED destructive verb '$guard_hit' — backup did not land in $BK"
+    printf 'bd shim: refused `bd %s` — the pre-destructive backup did not land in %s.\n' "$guard_hit" "$BK" >&2
+    printf 'Refusing to run a database-wide verb without a verified backup.\n' >&2
+    exit 3
+  fi
+fi
+
+"$REAL_BD" "$@"
+rc=$?
+[ "$rc" -ne 0 ] && exit "$rc"
+
+if [ -n "$bead" ]; then
+  if [ "$claim" = 1 ] && [ "$stop" = 0 ]; then
+    join_write "$bead"
+  elif [ "$stop" = 1 ] || [ "$explicit_unset" = 1 ]; then
+    join_clear "$bead"
+  fi
+fi
+exit "$rc"

@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# restart-fleet — replace every stale pi lane's process so a new bundle or launch env
+# takes effect. `/reload` cannot do this: the bundle is resolved at exec.
+# Skips working lanes unless --interrupt-working; this lane is always deferred.
+exec "$(dirname "$0")/restart-fleet.py" "$@"
