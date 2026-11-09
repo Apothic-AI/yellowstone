@@ -628,10 +628,17 @@ suite_mirror() {
         PI_CODING_AGENT_DIR="$probe_home/.pi/agent" AGENTS_SKILLS_DIR="$probe_home/.agents/skills" \
         LOCAL_BIN_DIR="$probe_home/.local/bin" OVERLORD_DIR="$probe_home/.overlord" \
         SYSOPS_DIR="$probe_home/.sysops" \
-        "$REPO/install.sh" --dry-run 2>/dev/null | grep -oE -- '-> [^ ]+$' | sed 's/^-> //')"
+        "$REPO/install.sh" --dry-run 2>/dev/null \
+          | sed -n -e 's/^ *would: [a-z]* .*-> //p' -e 's/^ *would: [a-z]* \(~\/[^ ]*\).*/\1/p' \
+          | sed 's/ .*//')"
     while IFS= read -r retired; do
       case "$retired" in ''|'#'*) continue ;; esac
-      printf '%s\n' "$plan_destinations" | grep -qxF -- "$retired" && hit_plan="$hit_plan $retired"
+      # `grep -q` exits at the first match, which SIGPIPEs the upstream writer; under
+      # `set -o pipefail` that can report failure for a pipeline that matched. The
+      # match is the question here, so ask it without a pipeline at all.
+      case "$(printf '\n%s\n' "$plan_destinations")" in
+        *"$retired"*) hit_plan="$hit_plan $retired" ;;
+      esac
       [ -e "$probe_home/${retired#\~/}" ] && hit_tree="$hit_tree $retired"
     done < "$REPO/test/retired-paths.txt"
     check_eq "no retired path is back in the installer's plan" "" "$hit_plan"
