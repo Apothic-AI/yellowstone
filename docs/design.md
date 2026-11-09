@@ -250,6 +250,16 @@ This is the same failure as *a name is not a property*, one level up: there a
 string stood in for a resolved path, and here a self-referential test stands in
 for an external fact. Both are truthful answers to the wrong question.
 
+The general form is worth stating once, because every incident in this file is an
+instance of it: **the measurement and the thing measured shared a source.** When a
+check's two inputs both come from the artefact under test, it can tell you the
+artefact is consistent, never that it is correct. Correctness needs one input
+from outside — the live machine, the upstream remote, the operator's sentence —
+and that input is usually unavailable in CI, which is why such a check must be
+named as uncovered rather than assumed covered. Five count disputes, four
+`plugins.toml` flips, and a guard that passed while the bug sat behind it are all
+the same shape.
+
 ### Plugin refs are pinned commits
 
 `herdr/plugins.toml` records a `ref` per plugin. Installing therefore produces
