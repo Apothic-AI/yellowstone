@@ -71,6 +71,31 @@ over uncommitted work is not describing what ships.
 
 Run one at a time while iterating; `all` before committing.
 
+### What the gates cannot see: the machine
+
+Every suite above runs in a container against a **copy** of this repository, so
+every one of them tests the tree against the tree. That is what makes them
+reproducible, and it is also their blind spot: **a mirror that has silently
+reverted a fix which is live on the machine will pass all of them.** The
+container installs `home/.overlord/tools/overlord-wake.sh` as the tree carries
+it and then compares that install to that same tree — self-consistent, and
+wrong about the machine.
+
+The only check that compares mirror to live is `doctor.sh`'s **Installed mirror**
+section, which requires every `copy`/`copy-exec` file to be byte-identical to its
+destination (`cmp -s`, `record fail` naming both paths). `.overlord/tools/*` and
+`.overlord/bin/*` are `copy-exec`, so the fleet's own tooling is covered. The
+`mirror` suite exercises that mechanism with a tampered file in a probe `HOME`,
+so the code path is tested — but the **live** invocation is not something
+`./test/run.sh` can perform, because a fresh clone has no live directory to
+compare against.
+
+Run `./scripts/doctor.sh` after any merge that touches `home/`, and treat a green
+gate as saying nothing about this direction. When a conflict is resolved inside
+`home/`, the question to ask is not "does the suite pass" but **"is the copy in
+the tree still the copy running on this machine"** — compare it from outside with
+`cmp`, because nothing in the tree can answer it.
+
 ## What the tests already caught
 
 These are real defects the suite found, not hypotheticals:
