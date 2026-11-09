@@ -10,6 +10,26 @@ scaffolding pi reads from the working directory — this file, and `.pi/launch.e
 ~/Code/yellowstone-wt/<space>/../../src/skills/mycord   <- the code it edits
 ```
 
+## What a space is for — and what it is not for
+
+**A space exists for one thing: a lane developing a fleet component** — a pi extension, a herdr plugin,
+or herdr itself. If the lane's subject is documents, coordination, personal data, or the fleet's own
+working state, it does not live here.
+
+| space | where a lane runs | in this tree? |
+|---|---|---|
+| `pi-rooms`, `pi-pretty-tui`, `pi-modes`, `unblock`, `mycord`, `herdr-voice` | `spaces/<component>` in a worktree | **yes** |
+| `assistant`, `comms`, `overlord`, `self-improvement`, `sysops`, `personal` | `~/Documents/*`, `~/.overlord`, `~/.sysops` | **no, permanently** |
+
+The reason is not tidiness. Those spaces carry **fleet-specific data we do not want in git** — continuity
+files, coordination logs, personal notes, lane history — and a lane that keeps working state inside a
+repo eventually commits it. They share *code* with the monorepo through `git subrepo pull` / `push`,
+which is the whole point of carrying components as subrepos: the code syncs, the data stays put.
+
+So do not add a `spaces/<name>` for a non-component lane, and do not move fleet state into `home/`
+because it is fleet-related. **The mirror carries content that lands on a machine; it does not carry the
+fleet's working data.**
+
 ## Why the space is not the component directory
 
 pi finds `AGENTS.md` by walking **up** from the working directory, so a lane whose cwd were
