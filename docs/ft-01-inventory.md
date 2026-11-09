@@ -120,7 +120,7 @@ package. `readlink ~/.agents/skills/mycord-skill` pointed at a checkout no packa
 | `dagr` | 1 | generated at install time by a pinned plugin's binary, so the text cannot drift from the validator |
 
 The nine `repo` rows resolve against two repositories, and **both are now subrepos**: `unblock`
-(`src/herdr-plugins/unblock`) and `mycord` (`src/apps/mycord`, eight rows). Before that,
+(`src/herdr-plugins/unblock`) and `mycord` (`src/skills/mycord`, eight rows). Before that,
 `mycord` was carried nowhere and its eight skills resolved only because a loose checkout existed
 under `tooling/`.
 
@@ -129,10 +129,10 @@ under `tooling/`.
 then the thirteen subrepos are carried and never used. It now matches `src/**/.gitrepo` — the
 recorded `subrepo.remote` — before any loose checkout, which pins each skill to the same commit
 as the component it documents. Measured after the change: `unblock` →
-`src/herdr-plugins/unblock`, `mycord-skill` → `src/apps/mycord`.
+`src/herdr-plugins/unblock`, `mycord-skill` → `src/skills/mycord`.
 
 **Why it must read `.gitrepo` and not ask git:** a subrepo directory has no `.git` of its own, so
-`git -C src/apps/mycord remote get-url origin` walks up to the *parent* repository and answers
+`git -C src/skills/mycord remote get-url origin` walks up to the *parent* repository and answers
 `Apothic-AI/yellowstone`. A resolver that asked git would match every subrepo against yellowstone
 and none of them against the repository actually wanted — a plausible-looking, uniformly wrong
 answer. `.gitrepo` is the only file in that directory that knows what it is a copy of.

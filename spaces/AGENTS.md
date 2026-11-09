@@ -7,13 +7,13 @@ scaffolding pi reads from the working directory — this file, and `.pi/launch.e
 ```
 ~/Code/yellowstone-wt/<space>/           <- lane cwd
     └── .pi/launch.env                   <- the space's launch line
-~/Code/yellowstone-wt/<space>/../../src/apps/mycord   <- the code it edits
+~/Code/yellowstone-wt/<space>/../../src/skills/mycord   <- the code it edits
 ```
 
 ## Why the space is not the component directory
 
 pi finds `AGENTS.md` by walking **up** from the working directory, so a lane whose cwd were
-`src/apps/mycord` would load `src/apps/mycord/AGENTS.md` — and that file would be committed to
+`src/skills/mycord` would load `src/skills/mycord/AGENTS.md` — and that file would be committed to
 **mycord's published repository**. `git subrepo push` would then publish a fleet-internal role
 contract to every fleet that installs mycord. Keeping the space beside the code rather than inside it
 is the whole reason this layer exists.
@@ -27,7 +27,7 @@ A lane for a component runs here — `spaces/<component>/` — not in `src/<comp
 
 This is a rule, not a preference, and the reason is a hazard that is currently **latent rather than
 live**. There is no `AGENTS.md` beside the code today, and no `.git` in a subrepo directory (a subrepo
-is plain files inside the parent repo), so a lane started in `src/apps/mycord` would find no component
+is plain files inside the parent repo), so a lane started in `src/skills/mycord` would find no component
 `AGENTS.md` to leak. The day someone writes one, the same cwd publishes a fleet-internal role contract
 through `git subrepo push` to every fleet that installs that component.
 
