@@ -31,16 +31,17 @@
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 OVERLORD_LABEL="${OVERLORD_WORKSPACE_LABEL:-overlord}"
-OVERLORD_DIR="${OVERLORD_DIR:-$HOME/.overlord}"
 
 # The second default space. `sysops` is deliberately separate from `overlord`:
 # machine operations (host config, disks, services, network) are a different job
 # from coordinating project agents, and mixing them puts ops noise in the
 # orchestrator's context.
 SYSOPS_LABEL="${SYSOPS_WORKSPACE_LABEL:-sysops}"
-SYSOPS_DIR="${SYSOPS_DIR:-$HOME/.sysops}"
 SYSOPS_TAB="${SYSOPS_TAB_LABEL:-sysop-leader}"
-SRC="$REPO_ROOT/overlord"
+
+# $OVERLORD_DIR and $SYSOPS_DIR are the destinations of home/.overlord and of an
+# empty directory respectively; both are declared in scripts/lib.sh beside every
+# other destination, so this script does not re-derive them.
 
 # workspace ids + labels, one "id<TAB>label" per line
 workspaces() {
@@ -238,35 +239,24 @@ install_tabs() {
 install_dir() {
   step "Overlord context directory"
 
+  # ~/.sysops is created and left empty: nothing is shipped for it, which is why
+  # it appears in home_generated_dirs() rather than under home/.
   if [ "${DRY_RUN:-0}" = 1 ]; then
-    dryrun "mkdir -p $OVERLORD_DIR $SYSOPS_DIR and install AGENTS.md, README.md"
-    return 0
+    dryrun "mkdir -p $(short "$OVERLORD_DIR") $(short "$SYSOPS_DIR")"
+  else
+    mkdir -p -- "$OVERLORD_DIR" "$SYSOPS_DIR"
   fi
 
-  mkdir -p -- "$OVERLORD_DIR" "$SYSOPS_DIR"
-
-  # The shipped AGENTS.md is a *template* of the role. An operator's live copy
-  # accretes state that must not be lost: reservations keyed to tab ids, tool
-  # paths, per-lane history. So install it once, and after that never overwrite
-  # it silently — report the drift and let the operator decide.
-  if [ -e "$OVERLORD_DIR/AGENTS.md" ]; then
-    if cmp -s "$SRC/AGENTS.md" "$OVERLORD_DIR/AGENTS.md"; then
-      info "unchanged $(short "$OVERLORD_DIR/AGENTS.md")"
-    else
-      info "kept $(short "$OVERLORD_DIR/AGENTS.md") — it has local edits the template does not"
-      info "  compare: diff $(short "$SRC/AGENTS.md") $(short "$OVERLORD_DIR/AGENTS.md")"
-      info "  replace it deliberately with: cp $SRC/AGENTS.md $OVERLORD_DIR/AGENTS.md"
-    fi
-  else
-    install_file "$SRC/AGENTS.md" "$OVERLORD_DIR/AGENTS.md"
-  fi
-  # README.md holds the live workspace index, which the operator updates as
-  # spaces come and go. Never overwrite an existing one: it is the only map.
-  if [ -e "$OVERLORD_DIR/README.md" ]; then
-    info "kept $(short "$OVERLORD_DIR/README.md") (it holds the live workspace index)"
-  else
-    install_file "$SRC/README.md" "$OVERLORD_DIR/README.md"
-  fi
+  # home/.overlord is the literal mirror of $OVERLORD_DIR, and both files are
+  # policy-bound in scripts/lib.sh rather than special-cased here:
+  #
+  #   AGENTS.md  a *template* of the role. An operator's live copy accretes state
+  #              that must not be lost — reservations keyed to tab ids, tool
+  #              paths, per-lane history — so it is installed once and drift is
+  #              reported rather than replaced.
+  #   README.md  the live workspace index, which the operator updates as spaces
+  #              come and go. Never overwritten: it is the only map.
+  install_home_tree .overlord
 }
 
 # ensure_workspace <label> <cwd> — create the workspace only when the label is

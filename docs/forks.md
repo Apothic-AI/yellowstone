@@ -19,7 +19,7 @@ Two rules apply to all of them:
 | Upstream | [`ykn0309/pi-pretty-tui`](https://github.com/ykn0309/pi-pretty-tui) 0.3.0 |
 | Our fork | `Apothic-AI/pi-pretty-tui` |
 | License | MIT, © 2026 Kainan Yang (kept in the fork's `LICENSE`) |
-| Installed as | `git:github.com/Apothic-AI/pi-pretty-tui@apothic` in `pi/settings.json` |
+| Installed as | `git:github.com/Apothic-AI/pi-pretty-tui@apothic` in `home/.pi/agent/settings.json` |
 | Delta notes | the fork's `LOCAL-PATCHES.md` |
 
 **Why a fork.** pi allows exactly one owner per tool name, and the check runs
@@ -65,7 +65,7 @@ npm release. That is the retirement condition.
 |---|---|
 | Upstream | [`jiangge/pi-cache-optimizer`](https://github.com/jiangge/pi-cache-optimizer) |
 | Our fork | [`bitnom/pi-cache-optimizer`](https://github.com/bitnom/pi-cache-optimizer) |
-| Installed as | `git:github.com/bitnom/pi-cache-optimizer` in `pi/settings.json` |
+| Installed as | `git:github.com/bitnom/pi-cache-optimizer` in `home/.pi/agent/settings.json` |
 | Base | upstream 2.10.4, merged forward |
 
 **Why a fork.** It adds provider adapters and cache-key handling for routes that
@@ -84,7 +84,7 @@ dirty.
 |---|---|
 | Upstream | [`patty-io/pi-patty-bg-tasks`](https://github.com/patty-io/pi-patty-bg-tasks) |
 | Our fork | [`Apothic-AI/bizzy`](https://github.com/Apothic-AI/bizzy) |
-| Installed as | `git:github.com/Apothic-AI/bizzy` in `pi/settings.json` |
+| Installed as | `git:github.com/Apothic-AI/bizzy` in `home/.pi/agent/settings.json` |
 | Package name | `pi-bizzy-bg-tasks` |
 
 **Why a fork.** Background tasks are the mechanism this whole setup leans on:
@@ -104,7 +104,7 @@ pi-pretty-tui is a git package.
 |---|---|
 | Upstream | [`aneym/unblock`](https://github.com/aneym/unblock) |
 | Our fork | [`Apothic-AI/unblock`](https://github.com/Apothic-AI/unblock) |
-| Herdr plugin | `herdr/plugins.toml` → `link_path` |
+| Herdr plugin | `home/.config/herdr/plugins.toml` → `link_path` |
 | CLI | `npm link` from the same checkout |
 
 **Why a fork.** The queue is where every "only a human can do this" leaves the
@@ -123,7 +123,7 @@ checkout supplies the binary.
 | Upstream | [`signalridge/pi-extensions`](https://github.com/signalridge/pi-extensions), `packages/pi-goal` |
 | Our fork | `Apothic-AI/pi-extensions`, branch `apothic` |
 | Upstream PR | [signalridge/pi-extensions#77](https://github.com/signalridge/pi-extensions/pull/77) |
-| Installed as | a local path: `$PI_EXTENSIONS_APOTHIC/packages/pi-goal` (default `~/Code/pi-extensions-apothic/packages/pi-goal`). `pi/settings.json` carries the `@PI_EXTENSIONS_APOTHIC@` placeholder and `install.sh` resolves it. |
+| Installed as | a local path: `$PI_EXTENSIONS_APOTHIC/packages/pi-goal` (default `~/Code/pi-extensions-apothic/packages/pi-goal`). `home/.pi/agent/settings.json` carries the `@PI_EXTENSIONS_APOTHIC@` placeholder and `install.sh` resolves it. |
 | Delta | one setting, `experimental.notices` |
 
 **Why a fork.** Enabling the experimental ordered-goal queue emits a warning on
@@ -150,7 +150,7 @@ dependencies (`@narumitw/pi-tui-kit`, `@signalridge/pi-ui`).
 
 **Retirement condition.** Upstream merges #77 and publishes `pi-goal` with
 `experimental.notices`. Then delete the fork, drop the local path from
-`pi/settings.json`, and pin `npm:@signalridge/pi-goal`. The setting is the only
+`home/.pi/agent/settings.json`, and pin `npm:@signalridge/pi-goal`. The setting is the only
 thing to preserve: `{"experimental": {"goals": true, "notices": false}}` is
 valid in the unmodified package once the release lands.
 
@@ -189,7 +189,7 @@ survive a restart under the same name.
 | Upstream | `signalridge/pi-extensions`, `packages/pi-persist` |
 | Our fork | `Apothic-AI/pi-persist`, branch `main` |
 | Installed as | `git:github.com/Apothic-AI/pi-persist@main` |
-| Config | `pi/pi-persist.json` — the trailing reminders it appends to every request |
+| Config | `home/.pi/agent/pi-persist.json` — the trailing reminders it appends to every request |
 
 A cached prompt section plus a per-request trailing message that other extensions
 append to. This is how a reminder reaches the model without editing `AGENTS.md`:
@@ -198,7 +198,7 @@ the file is installed only when absent, because it accumulates the operator's ow
 ## herdr plugins — pinned upstream, not forked
 
 Everything else is an upstream plugin installed at a pinned commit. We do not
-patch them; `herdr/plugins.toml` records the ref so an install is reproducible
+patch them; `home/.config/herdr/plugins.toml` records the ref so an install is reproducible
 and an upgrade is a reviewable one-line change.
 
 | Plugin | Why pinned |

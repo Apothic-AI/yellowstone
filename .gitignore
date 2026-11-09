@@ -8,7 +8,7 @@
 secrets/
 *.secret
 *.key
-!herdr/scripts/herdr-agy.sh
+!home/.local/bin/herdr-agy.sh
 
 # Installer output and backups, in case someone runs the scripts from the repo.
 *.bak-yellowstone-*

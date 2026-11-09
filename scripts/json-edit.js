@@ -10,6 +10,11 @@
 //       Union `packages` from template into settings. Template entries that
 //       contain the @YELLOWSTONE_REPO@ placeholder are rewritten to
 //       <repo-root>/<suffix>. Existing order is preserved; new entries append.
+//   render-settings <template.json> <settings.json> <repo-root> [<external-root>]
+//       Write the template as the first-install settings.json, with every
+//       placeholder source rendered to the checkout it names. A copied
+//       placeholder is a package entry pi cannot load, so rendering is not
+//       cosmetic: it is the difference between the fork loading and not.
 //   merge-models <models.json> <template.json>
 //       Union providers; template provider wins only when the target is absent.
 //   ensure-keys <settings.json> <template.json> <key>...
@@ -179,8 +184,7 @@ function mergePackages(settingsPath, templatePath, repoRoot, externalRoot) {
   process.stdout.write(`packages: added ${added.join(', ')}\n`);
 }
 
-function mergeModels(modelsPath, templatePath) {
-  const target = readJson(modelsPath, { tolerateCorrupt: true });
+function mergeModels(modelsPath, templatePath) {  const target = readJson(modelsPath, { tolerateCorrupt: true });
   const template = readJson(templatePath).value;
   target.value.providers = target.value.providers || {};
   const added = [];
@@ -202,6 +206,34 @@ function mergeModels(modelsPath, templatePath) {
   if (target.existed) { const b = backup(modelsPath); process.stdout.write(`backed up ${path.basename(modelsPath)} -> ${path.basename(b)}\n`); }
   writeJson(modelsPath, target.value);
   process.stdout.write(`models: added ${added.join(', ')}\n`);
+}
+
+// A first install is the template itself, so a fresh machine gets the keys the
+// merge deliberately does not own (defaultProvider, defaultModel, $schema, ...).
+// The one thing that must not survive that copy is a placeholder: pi would try
+// to load `@PI_EXTENSIONS_APOTHIC@/packages/pi-goal` as a path. An entry whose
+// checkout is not configured is dropped rather than written broken — better a
+// missing fork, reported, than a package entry pointing nowhere.
+function renderSettings(templatePath, destPath, repoRoot, externalRoot) {
+  const template = readJson(templatePath).value;
+  const out = { ...template };
+  if (Array.isArray(template.packages)) {
+    const packages = [];
+    for (const entry of template.packages) {
+      const named = typeof entry === 'string' ? entry : entry.source;
+      const rendered = typeof entry === 'string'
+        ? renderSource(entry, repoRoot, externalRoot)
+        : { ...entry, source: renderSource(entry.source, repoRoot, externalRoot) };
+      if (rendered === undefined || (typeof rendered === 'object' && rendered.source === undefined)) {
+        process.stdout.write(`packages: skipped ${named} (its checkout is not configured)\n`);
+        continue;
+      }
+      packages.push(rendered);
+    }
+    out.packages = packages;
+  }
+  writeJson(destPath, out);
+  process.stdout.write(`settings: wrote ${destPath} from the template (${(out.packages || []).length} packages)\n`);
 }
 
 function ensureKeys(settingsPath, templatePath, keys) {
@@ -230,6 +262,11 @@ function main(argv) {
       const [settings, template, repoRoot, externalRoot] = rest;
       if (!settings || !template || !repoRoot) throw new Error('merge-packages needs <settings> <template> <repo-root> [<external-root>]');
       return mergePackages(settings, template, repoRoot, externalRoot);
+    }
+    case 'render-settings': {
+      const [template, dest, repoRoot, externalRoot] = rest;
+      if (!template || !dest || !repoRoot) throw new Error('render-settings needs <template> <settings> <repo-root> [<external-root>]');
+      return renderSettings(template, dest, repoRoot, externalRoot);
     }
     case 'merge-models': {
       const [models, template] = rest;

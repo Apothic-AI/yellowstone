@@ -93,23 +93,21 @@ else
   fi
 
   # config.toml
+  #
+  # Validity only: whether the installed file matches the mirror is checked
+  # once, for every file, in the "Installed mirror" section below, so a drift is
+  # named as a path in one place instead of two.
   if [ -e "$HERDR_DIR/config.toml" ]; then
     if herdr config check >/dev/null 2>&1; then
-      if cmp -s "$REPO_ROOT/herdr/config.toml" "$HERDR_DIR/config.toml"; then
-        record ok herdr-config "in sync with repo"
-      else
-        record warn herdr-config "differs from repo — review: diff $(short "$REPO_ROOT/herdr/config.toml") $(short "$HERDR_DIR/config.toml")"
-      fi
+      record ok herdr-config "config.toml passes 'herdr config check'"
     else
       record fail herdr-config "config.toml fails 'herdr config check'"
     fi
-  else
-    record fail herdr-config "missing $(short "$HERDR_DIR/config.toml")"
   fi
 
   # plugins declared in the manifest
   if command -v "$REPO_ROOT/scripts/herdr-plugins.sh" >/dev/null 2>&1 || [ -x "$REPO_ROOT/scripts/herdr-plugins.sh" ]; then
-    local_rows="$(node "$REPO_ROOT/scripts/plugins-manifest.js" rows "$REPO_ROOT/herdr/plugins.toml")"
+    local_rows="$(node "$REPO_ROOT/scripts/plugins-manifest.js" rows "$HOME_SRC/.config/herdr/plugins.toml")"
     present="$(herdr plugin list --json 2>/dev/null | node -e '
       let s = "";
       process.stdin.on("data", (d) => (s += d)).on("end", () => {
@@ -308,12 +306,12 @@ else
 fi
 
 # The fleet instruction core at $HOME. Compared against the shipped artifact,
-# fleet/AGENTS.md — never against the repo's own AGENTS.md, which is instructions
+# home/AGENTS.md — never against the repo's own AGENTS.md, which is instructions
 # for working in this tree and would report drift on a machine that is correct.
 if [ -f "$FLEET_AGENTS" ] && [ ! -f "$HOME/AGENTS.md" ]; then
   record warn agents-md "missing ~/AGENTS.md — run ./install.sh agents"
 elif [ ! -f "$FLEET_AGENTS" ]; then
-  record warn agents-md "fleet/AGENTS.md is missing from the repo — cannot compare ~/AGENTS.md"
+  record warn agents-md "home/AGENTS.md is missing from the repo — cannot compare ~/AGENTS.md"
 elif cmp -s "$FLEET_AGENTS" "$HOME/AGENTS.md"; then
   record ok agents-md "in sync with the shipped core"
 else
@@ -346,6 +344,67 @@ if [ -x "$LOCAL_BIN/herdr-agy.sh" ]; then
 else
   record info herdr-agy "not installed (optional; needed for agy/grok wait reliability)"
 fi
+
+# ------------------------------------------------------------ installed mirror
+section "Installed mirror"
+
+# home/ is the literal mirror of $HOME, so this is one mechanical check for
+# every file the installer owns: is it at the path its mirror path names, and is
+# it the file the mirror carries?
+#
+# Copy-policy files must be byte-identical. The merged, keep-if-absent and
+# template files only have to be present, because the installer is forbidden to
+# overwrite what an operator put in them — calling that drift would fail every
+# correctly installed machine.
+#
+# ~/.sysops is skipped: it is an empty directory with nothing to compare (the
+# overlord section reports whether it exists).
+while IFS='|' read -r root dest; do
+  [ -n "$root" ] || continue
+  [ "$root" = ".sysops" ] && continue
+
+  files="$(home_files "$root")"
+  if [ -z "$files" ]; then
+    record warn "home/$root" "no files in the mirror — nothing to verify"
+    continue
+  fi
+
+  total=0; bad=0
+  while IFS= read -r rel; do
+    [ -n "$rel" ] || continue
+    total=$((total + 1))
+    policy="$(home_policy "$rel")"
+    if ! target="$(home_dest "$rel")"; then
+      bad=$((bad + 1))
+      record fail "home/$rel" "no destination — see home_dest() in scripts/lib.sh"
+      continue
+    fi
+    if [ ! -e "$target" ]; then
+      bad=$((bad + 1))
+      record fail "home/$rel" "missing $(short "$target") — run ./install.sh"
+      continue
+    fi
+    case "$policy" in
+      copy|copy-exec)
+        if ! cmp -s -- "$HOME_SRC/$rel" "$target"; then
+          bad=$((bad + 1))
+          record fail "home/$rel" "differs from $(short "$target") — re-run ./install.sh, or diff $(short "$HOME_SRC/$rel") $(short "$target")"
+        fi
+        ;;
+      skill)
+        # Presence only: scripts/skills-sync.sh decides whether it should be a
+        # link or a real directory, and reports that above.
+        ;;
+      *)
+        : # merged / kept / template: presence is the whole contract
+        ;;
+    esac
+  done <<< "$files"
+
+  if [ "$bad" = 0 ]; then
+    record ok "home/$root" "$total file(s) in place under $(short "$dest")"
+  fi
+done < <(home_dest_roots)
 
 # --------------------------------------------------------------- updates
 section "Updates available"

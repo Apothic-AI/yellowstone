@@ -10,7 +10,7 @@
 # Order matters and is deliberate:
 #   1. herdr binary  — plugins declare min_herdr_version, so the host comes first
 #   2. herdr server  — a restarted server picks up the new binary
-#   3. plugins       — re-fetched at the refs pinned in herdr/plugins.toml
+#   3. plugins       — re-fetched at the refs pinned in home/.config/herdr/plugins.toml
 #   4. pi            — the agent itself
 #   5. pi packages   — third-party and forked extensions
 #   6. skills        — our own symlinked skills need no update; this reports them
@@ -124,32 +124,34 @@ upgrade_pi() {
 # ------------------------------------------------------------------ skills --
 upgrade_skills() {
   step "Agent skills"
-  # Our skills are symlinked into ~/.agents/skills from this repo, so updating
-  # them is `git pull` here, not a copy. Report drift instead of silently
-  # rewriting an operator's own copy: they may have edited it, or it may be a
-  # checkout of another project.
-  local skill src dest
-  for skill in herdr yellowstone hotshot dagr-producer unblock; do
-    src="$REPO_ROOT/skills/$skill"
-    [ -d "$src" ] || src="$REPO_ROOT/herdr/skills/$skill"
-    [ -d "$src" ] || src="$REPO_ROOT/yellowstone-skill"
-    [ -d "$src" ] || continue
-    dest="$AGENTS_SKILLS/$skill"
+  # The skills whose source is this repository are the `bundle` rows of the
+  # manifest: home/.agents/skills/<id> (or ./yellowstone-skill) symlinked into
+  # ~/.agents/skills. Updating them is `git pull` here, not a copy, so this
+  # reports drift instead of silently rewriting an operator's own copy: they may
+  # have edited it, or it may be a checkout of another project. The other kinds
+  # are owned by a repository or plugin, and their update is that owner's pull.
+  local id kind spec why src dest
+  while IFS=$'\t' read -r id kind spec why; do
+    [ -n "$id" ] || continue
+    [ "$kind" = bundle ] || continue
+    src="$REPO_ROOT/${spec#./}"
+    [ -d "$src" ] || { warn "$id: bundle path missing: $spec"; continue; }
+    dest="$AGENTS_SKILLS/$id"
     if [ ! -e "$dest" ]; then
-      warn "$skill: not installed — run ./install.sh skills"
+      warn "$id: not installed — run ./install.sh skills"
     elif [ -L "$dest" ]; then
       if [ "$(readlink -f -- "$dest")" = "$(readlink -f -- "$src")" ]; then
-        info "$skill: linked to this repo (updates with git pull)"
+        info "$id: linked to this repo (updates with git pull)"
       else
-        info "$skill: linked to $(short "$(readlink -f -- "$dest")") — not managed here"
+        info "$id: linked to $(short "$(readlink -f -- "$dest")") — not managed here"
       fi
     elif diff -rq -- "$src" "$dest" >/dev/null 2>&1; then
-      info "$skill: a copy identical to this repo — ./install.sh skills will link it"
+      info "$id: a copy identical to this repo — ./install.sh skills will link it"
     else
-      warn "$skill: a real directory that differs from this repo — left untouched"
+      warn "$id: a real directory that differs from this repo — left untouched"
       info "  compare: diff -r $(short "$src") $(short "$dest")"
     fi
-  done
+  done < <(grep -vE '^[[:space:]]*(#|$)' "$REPO_ROOT/skills/skills.tsv")
 }
 
 # --------------------------------------------------------- third-party forks --
@@ -206,7 +208,7 @@ report_forks() {
 
   # unblock: local checkout linked into herdr; the CLI is npm-linked from it.
   local unblock_path
-  unblock_path="$(node "$REPO_ROOT/scripts/plugins-manifest.js" get "$REPO_ROOT/herdr/plugins.toml" unblock link_path)"
+  unblock_path="$(node "$REPO_ROOT/scripts/plugins-manifest.js" get "$HOME_SRC/.config/herdr/plugins.toml" unblock link_path)"
   unblock_path="${unblock_path/#\~/$HOME}"
   if [ -d "$unblock_path/.git" ]; then
     local ub

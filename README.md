@@ -23,24 +23,37 @@ scripts/doctor.sh          # confirm it took
 
 ## What is in here
 
+`home/` is a literal mirror of `$HOME`: every file the installer writes is stored at
+the path it is installed to, so `home/.pi/agent/settings.json` *is*
+`~/.pi/agent/settings.json`. There is no second table mapping one to the other, and
+a new file needs only a path under `home/`.
+
 | Path | What it is |
 |---|---|
 | `yellowstone-skill/` | the install/configure/upgrade/repair guide, as an agent skill |
-| `fleet/AGENTS.md` | the fleet instruction core, installed to `~/AGENTS.md` |
+| `home/AGENTS.md` | the fleet instruction core, installed to `~/AGENTS.md` |
 | `AGENTS.md` | this repo's own instructions — a pointer to the global core, plus where role deltas go |
-| `herdr/config.toml` | theme, sidebar rows, keybindings (dictate, voice, bar, plugin manager, dagr, unblock, stash, beady-eye) |
-| `herdr/plugins.toml` | the plugin manifest, with pinned refs |
-| `herdr/skills/herdr/` | skill: how an agent drives herdr panes |
-| `herdr/scripts/herdr-agy.sh` | reliable agent waits for `agy`/`grok` panes |
-| `pi/settings.json` | pi settings and the package list |
-| `pi/models.json` | provider routing — commands that read keys, never the keys |
-| `pi/extensions/` | hand-written pi extensions (`transient-error-retry`, `nonblock`) |
-| `pi/*.json` | extension configs: goal, pretty-tui, persist, auto-compact |
-| `overlord/` | instructions + index for the `overlord` orchestrator space |
-| `skills/` | agent skills, plus `skills.tsv` recording which tree owns each |
+| `home/.config/herdr/config.toml` | theme, sidebar rows, keybindings (dictate, voice, bar, plugin manager, dagr, unblock, stash, beady-eye) |
+| `home/.config/herdr/plugins.toml` | the plugin manifest, with pinned refs |
+| `home/.agents/skills/herdr/` | skill: how an agent drives herdr panes |
+| `home/.local/bin/herdr-agy.sh` | reliable agent waits for `agy`/`grok` panes |
+| `home/.pi/agent/settings.json` | pi settings and the package list |
+| `home/.pi/agent/models.json` | provider routing — commands that read keys, never the keys |
+| `home/.pi/agent/extensions/` | hand-written pi extensions (`transient-error-retry`, `nonblock`) |
+| `home/.pi/agent/*.json` | extension configs: goal, pretty-tui, persist, auto-compact |
+| `home/.overlord/` | instructions + index for the `overlord` orchestrator space |
+| `home/.agents/skills/` | the skills this repo is the source of truth for |
+| `skills/skills.tsv` | which tree owns each agent skill |
 | `scripts/` | `install` helpers, plugin sync, `doctor`, `upgrade`, `overlord` |
 | `test/` | Docker test environment for the installer |
 | `docs/` | longer notes on the forks and the decisions behind them |
+
+Two `$HOME` paths are deliberately **not** mirrored, and the installer says so:
+`~/.pi/agent/secrets/` (empty credential files for you to fill in — a credential must
+never be a checked-in file) and `~/.pi-profile-switch/instances/<id>`, the generated
+profile instance tree. `home/.pi/agent/` is therefore the path pi uses **when no
+profile is selected**, not a copy of what a profile-selected machine runs; on this
+fleet the two differ today, and recording that is the point.
 
 ## The short version of how it fits together
 
@@ -76,7 +89,7 @@ source; `jj` only if you use the jj plugins. Full matrix in
 
 ## Safety
 
-- Nothing in this repo contains a credential. `pi/models.json` stores shell
+- Nothing in this repo contains a credential. `home/.pi/agent/models.json` stores shell
   commands that read key files from `~/.pi/agent/secrets/`.
 - `install.sh` backs up every file it replaces (`.bak-yellowstone-<stamp>`) and
   never deletes anything.

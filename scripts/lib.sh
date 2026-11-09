@@ -25,16 +25,38 @@ dryrun() { printf '%s  would:%s %s\n' "$C_DIM" "$C_RESET" "$*"; }
 
 # ------------------------------------------------------------------- layout --
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# Everything the installer puts in $HOME is mirrored in home/, one for one: a
+# file's path under home/ *is* its path under $HOME. The five documented roots
+# keep their environment overrides — that is how a test harness installs
+# somewhere harmless — but the path below a root is never remapped, so the
+# destination of a new file is derived rather than decided.
+HOME_SRC="$REPO_ROOT/home"
 HERDR_DIR="${HERDR_CONFIG_DIR:-$HOME/.config/herdr}"
 PI_DIR="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
 AGENTS_SKILLS="${AGENTS_SKILLS_DIR:-$HOME/.agents/skills}"
 LOCAL_BIN="${LOCAL_BIN_DIR:-$HOME/.local/bin}"
+OVERLORD_DIR="${OVERLORD_DIR:-$HOME/.overlord}"
+SYSOPS_DIR="${SYSOPS_DIR:-$HOME/.sysops}"
+
 # The fleet instruction core, shipped to $HOME/AGENTS.md. Deliberately NOT this
 # repository's own AGENTS.md: that file is instructions for working *here*, and
 # serving one file in both roles is how it became a copy of the global core and
 # then silently stopped matching it. The install destination is the same; the
 # source is not.
-FLEET_AGENTS="$REPO_ROOT/fleet/AGENTS.md"
+FLEET_AGENTS="$HOME_SRC/AGENTS.md"
+
+# Where the pi-goal fork lives. It must be a checkout because the fork is a
+# package inside a Bun workspace with no Pi manifest at its root, so `pi` cannot
+# load it as a git package. Overridable for a different checkout location.
+PI_EXTENSIONS_APOTHIC="${PI_EXTENSIONS_APOTHIC:-$HOME/Code/pi-extensions-apothic}"
+
+# The keys in home/.pi/agent/settings.json this repository owns. Everything else
+# in a user's file is theirs, and a merge never changes a value that is already
+# set — the model they picked survives a reinstall.
+SETTINGS_OWNED_KEYS=(defaultTools theme terminal steeringMode transport retry
+  collapseChangelog enableInstallTelemetry defaultProjectTrust enableSkillCommands
+  autocompleteMaxVisible defaultThinkingLevel)
 
 DRY_RUN=0
 ASSUME_YES=0
@@ -66,7 +88,11 @@ backup_path() {
   info "backed up $(short "$p") -> $(short "$dest")"
 }
 
-short() { printf '%s' "${1/#$HOME/~}"; }
+# Render a path relative to $HOME for display. The replacement is escaped: bash
+# tilde-expands an unescaped `~` inside ${var/…/~}, which expanded straight back
+# to $HOME and made this function silently return its argument unchanged — every
+# "installed ~/…" line in this repo's output was printing the absolute path.
+short() { printf '%s' "${1/#$HOME/\~}"; }
 
 have() { command -v -- "$1" >/dev/null 2>&1; }
 
@@ -150,4 +176,180 @@ node_required_message() {
 Node.js 22.19 or newer is required. Install it with your package manager,
 mise (`mise use -g node@22`), or nvm, then re-run this script.
 EOF
+}
+
+# ------------------------------------------------------------ home/ mirror --
+
+# home_dest <path relative to home/> — the absolute destination, or failure.
+#
+# A destination is derived from a path, never declared beside it: there is no
+# second table to keep in step, which is the point of the layout. `AGENTS.md`
+# lands at $HOME/AGENTS.md; any other file keeps its path below one of the
+# roots above, under that root's overridable destination.
+home_dest() {
+  local rel="${1#./}"
+  case "$rel" in
+    AGENTS.md)        printf '%s/AGENTS.md\n' "$HOME" ;;
+    .config/herdr/*)  printf '%s/%s\n' "$HERDR_DIR"     "${rel#.config/herdr/}" ;;
+    .pi/agent/*)      printf '%s/%s\n' "$PI_DIR"        "${rel#.pi/agent/}" ;;
+    .agents/skills/*) printf '%s/%s\n' "$AGENTS_SKILLS" "${rel#.agents/skills/}" ;;
+    .local/bin/*)     printf '%s/%s\n' "$LOCAL_BIN"     "${rel#.local/bin/}" ;;
+    .overlord/*)      printf '%s/%s\n' "$OVERLORD_DIR"  "${rel#.overlord/}" ;;
+    .sysops/*)        printf '%s/%s\n' "$SYSOPS_DIR"    "${rel#.sysops/}" ;;
+    *) return 1 ;;
+  esac
+}
+
+# Every destination the installer writes, as "<mirror root>|<destination>".
+# Read in both directions: each file under home/ must map through home_dest, and
+# each root here must carry content in home/ unless its contents are generated.
+home_dest_roots() {
+  printf '%s\n' \
+    "AGENTS.md|$HOME/AGENTS.md" \
+    ".config/herdr|$HERDR_DIR" \
+    ".pi/agent|$PI_DIR" \
+    ".agents/skills|$AGENTS_SKILLS" \
+    ".local/bin|$LOCAL_BIN" \
+    ".overlord|$OVERLORD_DIR" \
+    ".sysops|$SYSOPS_DIR"
+}
+
+# Destinations that exist on the machine and deliberately have no file under
+# home/, because what lands there is generated, not shipped:
+#
+#   $PI_DIR/secrets  empty <provider> files for the operator to fill in. A mirror
+#                    copy of a credential is the one thing that must never exist.
+#   $SYSOPS_DIR      an empty working directory for the sysops space.
+home_generated_dirs() {
+  printf '%s\n' "$PI_DIR/secrets" "$SYSOPS_DIR"
+}
+
+# Every file under home/<subtree>, as a path relative to home/.
+home_files() {
+  local subtree="${1#./}"
+  ( cd -- "$HOME_SRC" && find "$subtree" -type f 2>/dev/null | sed 's|^\./||' | LC_ALL=C sort )
+}
+
+# home_policy <path relative to home/> — how that file is installed.
+#
+# The default is a copy, so a file added to home/ is installed with no rule
+# written for it — that is what makes a sixth file easy to add. The exceptions
+# are all cases where overwriting would destroy something the file does not own:
+#
+#   merge-settings   union the keys and packages this repo owns into the user's
+#   merge-models     add providers, never replace one the user already has
+#   keep             install only when absent; the file holds personal state
+#   template         install once, then report drift and never replace it
+#   skill            linked by scripts/skills-sync.sh from skills/skills.tsv
+#   copy-exec        a plain copy that must stay executable
+home_policy() {
+  local rel="${1#./}"
+  case "$rel" in
+    .pi/agent/settings.json)     printf 'merge-settings\n' ;;
+    .pi/agent/models.json)       printf 'merge-models\n' ;;
+    .pi/agent/pi-persist.json)   printf 'keep\n' ;;
+    .pi/agent/model-picker.json) printf 'keep\n' ;;
+    .pi/agent/web-search.json)   printf 'keep\n' ;;
+    .overlord/AGENTS.md)         printf 'template\n' ;;
+    .overlord/README.md)         printf 'keep\n' ;;
+    .agents/skills/*)            printf 'skill\n' ;;
+    .local/bin/*)                printf 'copy-exec\n' ;;
+    *)                           printf 'copy\n' ;;
+  esac
+}
+
+# Why a `keep` file is kept, in the words the installer prints.
+home_keep_reason() {
+  case "${1#./}" in
+    .pi/agent/pi-persist.json)   printf 'holds your own trailing reminders' ;;
+    .pi/agent/model-picker.json) printf 'the MRU list is personal' ;;
+    .pi/agent/web-search.json)   printf 'it names a browser profile' ;;
+    .overlord/README.md)         printf 'it holds the live workspace index' ;;
+    *)                           printf 'it holds state this repo does not own' ;;
+  esac
+}
+
+# install_kept <src> <dest> <why> — install only when absent.
+install_kept() {
+  local src="$1" dest="$2" why="$3"
+  if [ -e "$dest" ]; then info "kept $(short "$dest") ($why)"; return 0; fi
+  install_file "$src" "$dest"
+}
+
+# install_template <src> <dest> — install once, then never replace.
+#
+# A live copy of a template accretes state that must not be lost: reservations
+# keyed to tab ids, tool paths, per-lane history. Silent replacement would
+# discard the operator's work, so drift is reported and left alone.
+install_template() {
+  local src="$1" dest="$2"
+  if [ -e "$dest" ]; then
+    if cmp -s -- "$src" "$dest"; then
+      info "unchanged $(short "$dest")"
+    else
+      info "kept $(short "$dest") — it has local edits the template does not"
+      info "  compare: diff $(short "$src") $(short "$dest")"
+      info "  replace it deliberately with: cp $src $dest"
+    fi
+    return 0
+  fi
+  install_file "$src" "$dest"
+}
+
+# install_settings <src> <dest> — the settings.json policy.
+#
+# First install renders the template's package placeholders to the checkouts
+# they name, because a copied `@PI_EXTENSIONS_APOTHIC@/packages/pi-goal` is a
+# package entry pi cannot load — and the template's own keys (defaultProvider,
+# $schema, ...) are what a fresh machine needs. After that it is a union: owned
+# keys are filled in when absent, and packages are matched by identity so a
+# second run is a no-op.
+install_settings() {
+  local src="$1" dest="$2"
+  if [ "$DRY_RUN" = 1 ]; then
+    if [ -e "$dest" ]; then
+      dryrun "merge owned keys + package union into $(short "$dest")"
+    else
+      dryrun "install $(short "$dest") (package placeholders rendered)"
+    fi
+    return 0
+  fi
+  if [ ! -e "$dest" ]; then
+    json_edit render-settings "$src" "$dest" "$REPO_ROOT" "$PI_EXTENSIONS_APOTHIC"
+    info "installed $(short "$dest")"
+    return 0
+  fi
+  json_edit ensure-keys "$dest" "$src" "${SETTINGS_OWNED_KEYS[@]}"
+  json_edit merge-packages "$dest" "$src" "$REPO_ROOT" "$PI_EXTENSIONS_APOTHIC"
+}
+
+# install_home_tree <subtree of home/> — install every file under that path.
+#
+# This walk is the only thing a stage needs to know about home/: the destination
+# comes from home_dest and the behaviour from home_policy, so a stage installs a
+# subtree rather than a hand-maintained file list.
+install_home_tree() {
+  local subtree="${1#./}" rel dest policy
+  [ -e "$HOME_SRC/$subtree" ] || die "home/$subtree: no such path in the mirror"
+  while IFS= read -r rel; do
+    [ -n "$rel" ] || continue
+    if ! dest="$(home_dest "$rel")"; then
+      die "home/$rel has no destination — add it to home_dest() in scripts/lib.sh"
+    fi
+    policy="$(home_policy "$rel")"
+    case "$policy" in
+      copy)           install_file "$HOME_SRC/$rel" "$dest" ;;
+      copy-exec)      install_file "$HOME_SRC/$rel" "$dest" 755 ;;
+      merge-settings) install_settings "$HOME_SRC/$rel" "$dest" ;;
+      merge-models)
+        if [ "$DRY_RUN" = 1 ]; then dryrun "merge providers into $(short "$dest")"
+        else json_edit merge-models "$dest" "$HOME_SRC/$rel"; fi ;;
+      keep)           install_kept "$HOME_SRC/$rel" "$dest" "$(home_keep_reason "$rel")" ;;
+      template)       install_template "$HOME_SRC/$rel" "$dest" ;;
+      # One membership test for every skill, whichever repository owns it, so a
+      # mirror file is never installed by two mechanisms at once.
+      skill)          info "$(short "$dest"): linked by the skills stage" ;;
+      *)              die "home/$rel: unknown policy '$policy'" ;;
+    esac
+  done < <(home_files "$subtree")
 }
