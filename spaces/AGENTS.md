@@ -36,6 +36,30 @@ guard is the cwd, and the cwd is one config edit away from being wrong. If a lan
 `AGENTS.md`, it does not: that file describes the component to its own developers, and the space
 describes the fleet lane.
 
+### …and a space lane never loads a component `AGENTS.md` at all
+
+That is the other half of the same fact, and it is structural rather than a policy. pi walks **up** from
+cwd; the walk from `spaces/<component>` is `spaces/` → worktree root → `~/`. **`src/` is beside that
+path, never above it**, so a component's own `AGENTS.md` is unreachable however the space is arranged.
+Adding one to a component that lacks it would not change a single lane's context.
+
+Four components in this tree do have one, and two of them sit above packages a lane may be editing:
+
+```
+src/pi-extensions/tryinget/AGENTS.md           repo-level: structure, package conventions,
+                                               live package activation — and `pi-modes` is at
+                                               tryinget/packages/pi-modes
+src/pi-extensions/signalridge/AGENTS.md
+src/pi-extensions/pi-cache-optimizer/AGENTS.md
+src/pi-extensions/pi-profile-switch/AGENTS.md
+```
+
+So a lane working in `src/pi-extensions/tryinget/…` is editing a package whose maintainers wrote 84
+lines of guidance that the lane's context cannot contain. The instruction stands as it always has:
+**read the component's `AGENTS.md` explicitly** — `src/<component>/AGENTS.md` — before changing that
+component. This file does not duplicate those instructions, deliberately: they belong where their
+maintainers put them, and a pointer is the cheap half of keeping them there.
+
 ## Verifying that a space composed correctly
 
 Do this from artifacts, never from the lane's own report and never from the footer — the footer reads
