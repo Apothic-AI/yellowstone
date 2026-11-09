@@ -45,7 +45,7 @@ committed file contains paths and no secrets. The installer creates empty files
 for each provider it finds referenced and tells you which ones to fill. If you
 ever find a literal key in this repo, treat it as a bug and rotate it.
 
-**3. Pins are commits, not branches.** Plugin refs live in `home/.config/herdr/plugins.toml`
+**3. Pins are commits, not branches.** Plugin refs live in `herdr/plugins.toml`
 and model/package sources in `home/.pi/agent/settings.json`. Moving a component forward is
 a commit that changes a ref, so a machine that has not pulled keeps working and
 a machine that has pulled can be diffed.
@@ -157,7 +157,7 @@ herdr server reload-config      # apply in the running server
 `herdr config reset-keys` exists if a keybinding fights your terminal; it backs
 up the file first.
 
-### herdr plugins — `home/.config/herdr/plugins.toml`
+### herdr plugins — `herdr/plugins.toml`
 
 One `[[plugin]]` table per plugin, with a pinned `ref` and a `why` line:
 
@@ -200,7 +200,7 @@ only one source of truth:
 | Surface | What it is | Where the record lives |
 |---|---|---|
 | the popup (`prefix+p`) | interactive discovery and one-off management | `~/.config/herdr/plugins.json`, per machine |
-| `home/.config/herdr/plugins.toml` | the declared set, with pinned refs | this repo |
+| `herdr/plugins.toml` | the declared set, with pinned refs | this repo |
 
 A plugin installed through the popup exists on that machine and nowhere else — a
 second machine provisioned from this repo will not have it, and `doctor.sh` will
@@ -754,7 +754,7 @@ matches its remote and that a further pull is a no-op. The `.gitrepo` file is th
 record of what each component is synced to.
 
 Upgrading a pinned plugin is a two-step decision, not a command: bump `ref` in
-`home/.config/herdr/plugins.toml`, run `upgrade.sh plugins`, run `doctor.sh`, then commit.
+`herdr/plugins.toml`, run `upgrade.sh plugins`, run `doctor.sh`, then commit.
 That way the version a machine runs is visible in the repo.
 
 ### Rolling back

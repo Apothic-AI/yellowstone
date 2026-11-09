@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# herdr-plugins.sh — apply home/.config/herdr/plugins.toml to this machine.
+# herdr-plugins.sh — apply herdr/plugins.toml to this machine.
 #
 #   herdr-plugins.sh install     install every plugin not present
 #   herdr-plugins.sh update      refresh GitHub-managed plugins in place
@@ -17,7 +17,7 @@
 
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-MANIFEST="$HOME_SRC/.config/herdr/plugins.toml"
+MANIFEST="$REPO_ROOT/herdr/plugins.toml"
 MANIFEST_JS="$REPO_ROOT/scripts/plugins-manifest.js"
 
 have herdr || die "herdr is not installed; install it first (curl -fsSL https://herdr.dev/install.sh | sh)"

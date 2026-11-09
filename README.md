@@ -34,7 +34,7 @@ a new file needs only a path under `home/`.
 | `home/AGENTS.md` | the fleet instruction core, installed to `~/AGENTS.md` |
 | `AGENTS.md` | this repo's own instructions — a pointer to the global core, plus where role deltas go |
 | `home/.config/herdr/config.toml` | theme, sidebar rows, keybindings (dictate, voice, bar, plugin manager, dagr, unblock, stash, beady-eye) |
-| `home/.config/herdr/plugins.toml` | the plugin manifest, with pinned refs |
+| `herdr/plugins.toml` | the plugin manifest, with pinned refs |
 | `home/.agents/skills/herdr/` | skill: how an agent drives herdr panes |
 | `home/.local/bin/herdr-agy.sh` | reliable agent waits for `agy`/`grok` panes |
 | `home/.pi/agent/settings.json` | pi settings and the package list |

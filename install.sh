@@ -19,7 +19,7 @@ usage() {
 Usage: ./install.sh [--yes] [--dry-run] [--help] [stage...]
 
 Stages (default: all, in this order):
-  herdr      home/.config/herdr (config.toml, plugins.toml), plugins, pi
+  herdr      home/.config/herdr (config.toml), plugins, pi
              integration, home/.local/bin
   pi         home/.pi/agent — settings, models, extensions, configs — then the
              packages those settings declare
@@ -91,7 +91,7 @@ fi
 info "node $(node --version)"
 
 for f in home/.pi/agent/settings.json home/.pi/agent/models.json \
-         home/.config/herdr/config.toml home/.config/herdr/plugins.toml \
+         home/.config/herdr/config.toml herdr/plugins.toml \
          home/AGENTS.md scripts/json-edit.js; do
   [ -e "$REPO_ROOT/$f" ] || die "repository is incomplete: missing $f"
 done
@@ -110,10 +110,13 @@ install_herdr() {
 
   info "herdr $(version_of herdr) (channel: $(herdr channel show 2>/dev/null || echo unknown))"
 
-  # config.toml and plugins.toml are the two files this stack owns in herdr's
-  # config directory, so home/.config/herdr/ installs them by path: config.toml
-  # replaces (the backup is the escape hatch), plugins.toml is the declaration
-  # this machine's plugin set is applied from, and doctor compares both.
+  # config.toml is the one file this stack owns in herdr's config directory, so
+  # home/.config/herdr/ installs it by path and replaces it (the backup is the
+  # escape hatch). The plugin *declaration* is deliberately NOT a $HOME file:
+  # herdr/plugins.toml lives at the repo root, because a manifest this installer
+  # reads to decide what to apply is not content that lands on a machine —
+  # writing a copy into ~/.config/herdr/ would invent a destination nothing
+  # reads, which is the same mistake as treating a lockfile as a config.
   install_home_tree .config/herdr
   if have herdr && [ "$DRY_RUN" = 0 ]; then
     if herdr config check >/dev/null 2>&1; then
@@ -137,7 +140,7 @@ install_herdr() {
   # still have work to do, and under `set -e` an unguarded failure here used to
   # end the run before pi, skills, agents or overlord were reached.
   if [ "$DRY_RUN" = 1 ]; then
-    dryrun "herdr plugin install/update for every entry in home/.config/herdr/plugins.toml"
+    dryrun "herdr plugin install/update for every entry in herdr/plugins.toml"
   else
     "$REPO_ROOT/scripts/herdr-plugins.sh" install || warn "some herdr plugins need attention (see above)"
   fi

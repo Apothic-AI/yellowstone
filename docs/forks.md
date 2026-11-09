@@ -104,7 +104,7 @@ pi-pretty-tui is a git package.
 |---|---|
 | Upstream | [`aneym/unblock`](https://github.com/aneym/unblock) |
 | Our fork | [`Apothic-AI/unblock`](https://github.com/Apothic-AI/unblock) |
-| Herdr plugin | `home/.config/herdr/plugins.toml` → `link_path` |
+| Herdr plugin | `herdr/plugins.toml` → `link_path` |
 | CLI | `npm link` from the same checkout |
 
 **Why a fork.** The queue is where every "only a human can do this" leaves the
@@ -223,7 +223,7 @@ the file is installed only when absent, because it accumulates the operator's ow
 ## herdr plugins — pinned upstream, not forked
 
 Everything else is an upstream plugin installed at a pinned commit. We do not
-patch them; `home/.config/herdr/plugins.toml` records the ref so an install is reproducible
+patch them; `herdr/plugins.toml` records the ref so an install is reproducible
 and an upgrade is a reviewable one-line change.
 
 | Plugin | Why pinned |
