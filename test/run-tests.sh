@@ -678,9 +678,17 @@ suite_mirror() {
   # directory would be a skill the repo no longer owns, which is the drift
   # 2df88aee removed for profile-config. And the link must resolve, or a fresh
   # machine gets a dangling skill and no diagnostic.
+  #
+  # The target is the INSTALLED copy under $HOME, not the repo's home/.overlord
+  # copy, and the wording here previously said "mirrored" for both — which is how
+  # a link direction gets argued about when the code already agrees. Pointing at
+  # the repo copy would make the installed file write-only: the installer writes
+  # it and nothing reads it. Pointing here means the installer writes it and the
+  # skill system reads it through the link, and a link into $HOME survives the
+  # checkout moving, which the retirement project will do.
   check "overlord skill is linked, not copied" \
     test -L "$home/.agents/skills/overlord-operations"
-  check_eq "overlord skill links to the mirrored copy" \
+  check_eq "overlord skill links to the installed copy" \
     "$home/.overlord/skills/overlord-operations" \
     "$(readlink -- "$home/.agents/skills/overlord-operations" 2>/dev/null)"
   check "overlord skill link resolves to a real SKILL.md" \
