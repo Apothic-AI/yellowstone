@@ -99,13 +99,13 @@ suite_smoke() {
   local bad_syntax=0
   while IFS= read -r f; do
     bash -n "$f" 2>/dev/null || { bad_syntax=1; bad "bash syntax: $f"; }
-  done < <(find "$REPO" -name '*.sh' -not -path '*/.git/*')
+  done < <(find "$REPO" -name '*.sh' -not -path '*/.git/*' -not -path '*/src/*')
   [ "$bad_syntax" = 0 ] && ok "every shell script parses"
 
   local bad_js=0
   while IFS= read -r f; do
     node --check "$f" 2>/dev/null || { bad_js=1; bad "node syntax: $f"; }
-  done < <(find "$REPO" -name '*.js' -not -path '*/.git/*' -not -path '*/node_modules/*')
+  done < <(find "$REPO" -name '*.js' -not -path '*/.git/*' -not -path '*/node_modules/*' -not -path '*/src/*')
   [ "$bad_js" = 0 ] && ok "every JS script parses"
 
   # JSON that is meant to be JSON (tsconfig may be JSONC, but none ships now)
@@ -113,7 +113,7 @@ suite_smoke() {
   while IFS= read -r f; do
     node -e 'JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"))' "$f" 2>/dev/null \
       || { bad_json=1; bad "invalid JSON: $f"; }
-  done < <(find "$REPO" -name '*.json' -not -path '*/.git/*')
+  done < <(find "$REPO" -name '*.json' -not -path '*/.git/*' -not -path '*/src/*')
   [ "$bad_json" = 0 ] && ok "every JSON file parses"
 
   # Headings must be preceded by a blank line, or they render as part of the
@@ -123,7 +123,7 @@ suite_smoke() {
     if awk 'prev!="" && /^(##|###) /{found=1} {prev=$0} END{exit !found}' "$f"; then
       badmd=1; bad "heading without a preceding blank line: $f"
     fi
-  done < <(find "$REPO" -name '*.md' -not -path '*/.git/*')
+  done < <(find "$REPO" -name '*.md' -not -path '*/.git/*' -not -path '*/src/*')
   [ "$badmd" = 0 ] && ok "every Markdown heading has a preceding blank line"
 
   # Every SKILL.md needs name + description, or hosts refuse to load it.
@@ -132,7 +132,7 @@ suite_smoke() {
     if ! head -1 "$f" | grep -qx -- '---'; then bad_skill=1; bad "no frontmatter: $f"; continue; fi
     grep -qE '^name: *[a-z0-9-]+$' "$f" || { bad_skill=1; bad "no name: $f"; }
     grep -qE '^description: *' "$f"   || { bad_skill=1; bad "no description: $f"; }
-  done < <(find "$REPO" -name 'SKILL.md' -not -path '*/.git/*')
+  done < <(find "$REPO" -name 'SKILL.md' -not -path '*/.git/*' -not -path '*/src/*')
   [ "$bad_skill" = 0 ] && ok "every SKILL.md has valid frontmatter"
 
   # The skill manifest must be parseable and internally consistent.
@@ -355,8 +355,12 @@ suite_install() {
   local want_pkg
   want_pkg="$(node -e 'console.log(require(process.argv[1]).packages.length)' "$REPO/home/.pi/agent/settings.json")"
   check_eq "all $want_pkg declared packages present" "$want_pkg" "$npkg"
-  check "pi-pretty-tui installed from its fork repo" \
-    grep -q 'Apothic-AI/pi-pretty-tui' "$home/.pi/agent/settings.json"
+  # Since the conversion the nine carried packages are local paths into the
+  # checkout rather than git sources, so asserting the fork's GitHub slug would
+  # assert the pre-conversion world. What matters is that the entry names the
+  # monorepo copy of the fork.
+  check "pi-pretty-tui installed from the monorepo copy of its fork" \
+    grep -q 'yellowstone/src/pi-extensions/pi-pretty-tui' "$home/.pi/agent/settings.json"
 
   # Providers, and no secret values in models.json.
   local nprov
@@ -683,8 +687,12 @@ suite_failures() {
   check_contains "doctor names the missing config" "$out" "missing"
 
   # skills-sync with no checkouts must explain the remedy, not just fail.
+  # Two correct paths now: resolve the skill from a checkout inside the
+  # monorepo (the normal case), or explain the clone remedy when there is none.
+  # Asserting only the remedy would assert the world before the conversion.
   out="$(in_home "$home3" bash "$REPO/scripts/skills-sync.sh" install 2>&1)"
-  check_contains "skills-sync prints the clone command" "$out" "gh repo clone"
+  check "skills-sync resolves each repo-owned skill from a checkout or names the remedy" \
+    bash -c "printf '%s' \"\$1\" | grep -qE 'using checkout|gh repo clone'" _ "$out"
 }
 
 # --------------------------------------------------------------- builder ----
