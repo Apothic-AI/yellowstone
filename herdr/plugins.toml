@@ -159,3 +159,21 @@ source    = "EzraCerpac/jj-waltz/plugins/herdr"
 ref       = "cd7bb1eb6451b09c06853b0347f856b4203f7c89"
 why       = "jj workspace switching bound into Herdr"
 optional  = true
+
+# --- deliberately excluded: the pi-rooms popup -------------------------------
+# Not a plugin entry on purpose, and the reason is recorded here rather than in
+# someone's memory. The running popup is link-installed from
+# ~/Code/pi-rooms/.worktrees/c2/plugin, on branch task/c2 @ 856a8fb, and that
+# branch exists on no remote. Two of the three honest options are wrong:
+#
+#   - declaring it at `task/c2` records a ref nobody can fetch, so the file
+#     would look authoritative and install nothing on a fresh machine;
+#   - declaring it as `source = "local"` with a worktree path records a path
+#     into another lane's scratch tree, which is the scatter this monorepo is
+#     retiring.
+#
+# So it is excluded deliberately, and it is the only unpublished surface in the
+# fleet. The condition for adding it is not ours to meet: pi-rooms must land
+# task/c2 on a remote branch. When it does, add a normal [[plugin]] entry with
+# that branch's ref and a link_path under src/herdr-plugins/, and delete this
+# section in the same commit.
