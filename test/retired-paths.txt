@@ -1,0 +1,11 @@
+# Paths this repo deliberately stopped installing, and must never install again.
+#
+# `home/` records what SHOULD exist and has no way to record what was retired, so
+# a mirror will faithfully re-create a decommissioned file — which is how the two
+# hook copies below came back into the tree and would have double-loaded on any
+# fresh machine. Add a line here when you retire a path; the mirror suite fails if
+# one reappears in the tree or in the installer's plan.
+#
+# Form: the destination under $HOME, as install.sh --dry-run prints it.
+~/.pi/agent/extensions/nonblock.ts
+~/.pi/agent/extensions/transient-error-retry.ts

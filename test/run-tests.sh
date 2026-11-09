@@ -556,23 +556,25 @@ suite_mirror() {
   check_eq "every file in home/ has a destination" "" \
     "$(printf '%s\n' "$rows" | awk -F'\t' '$3=="NONE"{printf "%s ", $1}')"
 
-  # A destination that should no longer exist. `home/` records that a path SHOULD
-  # exist and never records that one was deliberately retired, so a mirror will
-  # faithfully re-create a decommissioned file — which is exactly how two retired
-  # hook copies came back into the tree. Comparing the installer's proposed
-  # destination set against a checked-in baseline turns a resurrection into a diff
-  # instead of a discovery.
-  local planset expected
-  planset="$(env HOME="$probe_home" HERDR_CONFIG_DIR="$probe_home/.config/herdr" \
-      PI_CODING_AGENT_DIR="$probe_home/.pi/agent" AGENTS_SKILLS_DIR="$probe_home/.agents/skills" \
-      LOCAL_BIN_DIR="$probe_home/.local/bin" OVERLORD_DIR="$probe_home/.overlord" \
-      SYSOPS_DIR="$probe_home/.sysops" \
-      "$REPO/install.sh" --dry-run 2>/dev/null \
-      | grep -oE -- '-> [^ ]+$' | sed 's/^-> //' \
-      | sed -e "s|$probe_home|<home>|g" -e "s|$REPO|<repo>|g" \
-      | sed 's|herdr-dagr-[a-f0-9]*|<plugin>|' | LC_ALL=C sort)"
-  expected="$(LC_ALL=C sed 's|herdr-dagr-[a-f0-9]*|<plugin>|' "$REPO/test/expected-install-plan.txt" | LC_ALL=C sort)"
-  check_eq "the installer plans exactly the destinations we expect" "$expected" "$planset"
+  # Paths this repo deliberately stopped installing must not come back. A
+  # full-plan golden file was the first attempt and it was the wrong shape: it
+  # fired on every intentional addition, and it baked host facts (whether dagr is
+  # installed, where its plugin lives) into a fixture. A retired-path list only
+  # fires on the thing it names.
+  local retired hit_plan="" hit_tree=""
+  if [ -f "$REPO/test/retired-paths.txt" ]; then
+    plan_destinations="$(env HOME="$probe_home" HERDR_CONFIG_DIR="$probe_home/.config/herdr" \
+        PI_CODING_AGENT_DIR="$probe_home/.pi/agent" AGENTS_SKILLS_DIR="$probe_home/.agents/skills" \
+        LOCAL_BIN_DIR="$probe_home/.local/bin" OVERLORD_DIR="$probe_home/.overlord" \
+        SYSOPS_DIR="$probe_home/.sysops" \
+        "$REPO/install.sh" --dry-run 2>/dev/null | grep -oE -- '-> [^ ]+$' | sed 's/^-> //')"
+    while IFS= read -r retired; do
+      case "$retired" in ''|'#'*) continue ;; esac
+      printf '%s\n' "$plan_destinations" | grep -qxF -- "$retired" && hit_plan="$hit_plan $retired"
+      [ -e "$probe_home/${retired#\~/}" ] && hit_tree="$hit_tree $retired"
+    done < "$REPO/test/retired-paths.txt"
+    check_eq "no retired path is back in the installer's plan" "" "$hit_plan"
+  fi
 
   # The other direction: every root the installer documents must be backed by
   # content in home/, unless what lands there is generated rather than shipped.
