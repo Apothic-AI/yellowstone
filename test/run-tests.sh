@@ -350,7 +350,23 @@ suite_install() {
 
   check "settings.json created" test -f "$home/.pi/agent/settings.json"
   check "models.json created" test -f "$home/.pi/agent/models.json"
-  check "transient-error-retry installed" test -f "$home/.pi/agent/extensions/transient-error-retry.ts"
+  # Retired hook copies are asserted ABSENT, from the same list the mirror suite
+  # reads. The two hooks are declared by the `pi-fleet-hooks` package now, so a
+  # copy beside the package double-loads on a fresh machine; this check asserted
+  # the copy was installed for a day after it was retired, and failed on every
+  # run in that window. Reading `test/retired-paths.txt` instead of naming a path
+  # here means the next retirement is covered without editing this file — and it
+  # removes the second place that had to know, which is what went stale.
+  local retired rc_retired=0 dest
+  while IFS= read -r retired; do
+    case "$retired" in '' | '#'*) continue ;; esac
+    dest="$home/${retired#\~/}"
+    if [ -e "$dest" ]; then
+      rc_retired=1
+      echo "  retired path was installed: $retired" >&2
+    fi
+  done < "$REPO/test/retired-paths.txt"
+  check_eq "no retired path is installed" 0 "$rc_retired"
 
   # Packages: all declared, and the fork is present as a git source.
   local npkg
