@@ -6,7 +6,7 @@
 # lane quietly running without it — and the profile still read as if it had it.
 #
 # This is the check that would have caught `profile-config`: named by the leader
-# profile, shipped by `src/apps/pi-profile-switch/skills/`, declared by no package and
+# profile, shipped by `src/pi-extensions/pi-profile-switch/skills/`, declared by no package and
 # absent from `skills/skills.tsv`, so it existed only as a hand copy on one machine.
 #
 #   ./test/verify-profile-skills.sh
