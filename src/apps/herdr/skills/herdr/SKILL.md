@@ -106,6 +106,33 @@ Both installations must support machine API forwarding, and the remote server mu
 
 ## Start and coordinate an agent
 
+### Target verification before delegation
+
+Never infer that a pane is the intended worker from its numeric ID, current
+focus, cwd, or a stale agent name. Before prompting an existing pane, inspect
+the live tab and pane topology and verify all of:
+
+1. the target tab's label/role matches the requested worker (for example,
+   `account-management-agent` rather than `account-management-orchestrator`),
+2. the target pane ID belongs to that tab, and
+3. the target pane's live agent state is idle/ready and its terminal title or
+   session identity is consistent with the worker role.
+
+Use the returned IDs from the same topology snapshot, preferably with an
+explicit pane target:
+
+```bash
+herdr tab list --workspace "$HERDR_WORKSPACE_ID"
+herdr pane list --workspace "$HERDR_WORKSPACE_ID"
+herdr agent list
+```
+
+Do not prompt the caller's current pane unless the user explicitly asked for
+that. If a tab is labeled `*-orchestrator`, treat every pane in it as the
+orchestrator side, even if another pane appears idle. If the intended worker
+tab is absent or ambiguous, stop and ask for clarification rather than
+creating a new worker or sending instructions to a likely-but-unverified pane.
+
 Default to a sibling pane in the current tab and the current working directory. Do not create a workspace, tab, worktree, or different cwd unless the user explicitly requests that topology or location.
 
 Honor a direction requested by the user. Otherwise inspect the caller pane:
@@ -143,6 +170,7 @@ herdr agent prompt reviewer "Review the current diff and report only actionable 
 ```
 
 `agent prompt` honors the pane's live bracketed-paste mode and sends text followed by encoded Enter as one ordered submission. It reports successful submission only after both have been written; that alone does not prove the agent started a turn. For Codex on Windows, Herdr sends a paste boundary before Enter so submission does not depend on prompt size. It rejects an agent already waiting at an approval or question dialog with `agent_blocked` before sending any input. Inspect the blocked UI and ask the user before answering it. For normal agent work, `--wait` is enough: it waits for the first settled `idle`, `done`, or `blocked` state. Do not repeat those defaults with `--until`.
+The prompt text must precede prompt options. Use the form `herdr agent prompt <target> <text> --wait --timeout <ms>`; placing `--wait` before `<text>` makes the prompt text parse as an unknown option. Agent names are only valid when unique among live agents. If `agent list` shows duplicate names, target the exact live `pane_id` (for example `w1:pK`) or rename one agent before sending work.
 
 With `--wait`, a prompt sent from a non-working state must produce observed `working` or `blocked` activity. After submission, Herdr waits up to five seconds for that activity; unrelated `idle`, `done`, or session changes do not satisfy this gate. It returns `agent_prompt_stalled` if no activity is observed, or `timeout` if the caller's timeout expires first. The caller timeout includes submission time. Without a timeout, the settled-state wait is indefinite after activity is observed. This wait tracks lifecycle state, not an individual turn; if the agent is already working, completion of the active turn may satisfy it.
 
