@@ -7,6 +7,6 @@
 	remote = https://github.com/Apothic-AI/mycord
 	branch = master
 	commit = 082556ff97b310295d3daaeeb3062245934b6a0f
-	parent = 6ae270c7c82f946da060605b881292eb0e492847
+	parent = 3bce869fca16464bd016b431f97b6c6655d443e8
 	method = merge
 	cmdver = 0.4.9
