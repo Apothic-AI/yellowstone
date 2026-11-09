@@ -430,7 +430,7 @@ while IFS='|' read -r root dest; do
     continue
   fi
 
-  total=0; bad=0; noted=0; where=""
+  total=0; bad=0; where=""
   while IFS= read -r rel; do
     [ -n "$rel" ] || continue
     total=$((total + 1))
@@ -467,36 +467,24 @@ while IFS='|' read -r root dest; do
           continue
         fi
         if ! cmp -s -- "$HOME_SRC/$rel" "$compare_target"; then
-          # Two ways to differ, and they are not the same finding.
+          # Every divergence is a finding, and the remedy depends on DIRECTION.
           #
-          # The fleet edits its own tooling IN PLACE and commits the mirror
-          # afterwards, so for those files a difference is usually work in
-          # progress. Failing would redden doctor for an hour of correct
-          # behaviour, and a check whose failing condition is a normal state gets
-          # ignored — an ignored check certifies nothing. Report direction and
-          # age; identity is enforced where it is the right question, at push
-          # time (test/verify-mirror-live.sh).
-          #
-          # Everything else that is copy-policy IS a broken install, and the
-          # message names the direction before the fix: after a merge that
-          # reverted the mirror, running ./install.sh would promote the
-          # regression into the running fleet, leave a backup nobody reads, and
-          # keep every gate green. A lane follows the error message rather than
-          # the reasoning, so the message has to carry it.
-          case "$rel" in
-            .overlord/tools/* | .overlord/bin/*)
-              noted=$((noted + 1))
-              if [ "$compare_target" -nt "$HOME_SRC/$rel" ]; then
-                record info "home/$rel" "live copy is $(ago "$(stat -c %Y -- "$compare_target")") newer than the mirror — commit it, or ./install.sh to take the mirror's copy"
-              else
-                record info "home/$rel" "mirror is newer than the live copy (live $(ago "$(stat -c %Y -- "$compare_target")") old) — ./install.sh will install it"
-              fi
-              ;;
-            *)
-              bad=$((bad + 1))
-              record fail "home/$rel" "differs from $(short "$compare_target") — diff them first: if the live file is the correct one, copy it into the mirror and commit; only ./install.sh if the tree's copy is right"
-              ;;
-          esac
+          # `install_file` copies the TREE over the live file (backup, then cp), so
+          # the mirror is authoritative and `./install.sh` is the right answer when
+          # the tree is right. After a merge that reverted the mirror it is exactly
+          # wrong: installing promotes the regression into the running fleet, leaves
+          # a backup nobody reads, and every gate stays green. A lane follows the
+          # error message rather than the reasoning, so the message has to carry the
+          # direction — that is why this is not one sentence for both cases, and why
+          # it is a `fail` in both: an earlier version made the tooling subtree an
+          # informational note, which silenced a working check rather than
+          # explaining it.
+          bad=$((bad + 1))
+          if [ "$compare_target" -nt "$HOME_SRC/$rel" ]; then
+            record fail "home/$rel" "live copy is $(ago "$(stat -c %Y -- "$compare_target")") newer than the mirror — if the live file is right, copy it into home/ and commit; do NOT run ./install.sh over it"
+          else
+            record fail "home/$rel" "mirror is newer than the live copy ($(ago "$(stat -c %Y -- "$compare_target")") old) — if the tree is right, ./install.sh pushes it out; diff them first either way"
+          fi
         fi
         ;;
       skill)
@@ -521,13 +509,7 @@ while IFS='|' read -r root dest; do
           where="$(short "$HOME/.pi/agent"), not the launch snapshot $(short "$dest")"
         fi ;;
     esac
-    if [ "$noted" = 0 ]; then
-      record ok "home/$root" "$total file(s) in place under $where"
-    else
-      # Saying "ok, N files in place" while N files differ from the machine would
-      # be the same self-satisfied reading the fail/noted split exists to avoid.
-      record info "home/$root" "$total file(s) in place under $where — $noted differ from live, listed above"
-    fi
+    record ok "home/$root" "$total file(s) in place under $where"
   fi
 done < <(home_dest_roots)
 
