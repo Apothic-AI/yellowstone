@@ -43,22 +43,25 @@ cwd; the walk from `spaces/<component>` is `spaces/` → worktree root → `~/`.
 path, never above it**, so a component's own `AGENTS.md` is unreachable however the space is arranged.
 Adding one to a component that lacks it would not change a single lane's context.
 
-Four components in this tree do have one, and two of them sit above packages a lane may be editing:
+**44 `AGENTS.md` files live under `src/`** — four at a component root, and **forty nested inside
+packages**. Check both levels before touching code, because the walk-up reaches neither:
 
 ```
-src/pi-extensions/tryinget/AGENTS.md           repo-level: structure, package conventions,
-                                               live package activation — and `pi-modes` is at
-                                               tryinget/packages/pi-modes
-src/pi-extensions/signalridge/AGENTS.md
-src/pi-extensions/pi-cache-optimizer/AGENTS.md
-src/pi-extensions/pi-profile-switch/AGENTS.md
+src/<component>/AGENTS.md                      4 files, component-level conventions
+src/<component>/packages/<pkg>/AGENTS.md       40 files, written for exactly that directory
 ```
 
-So a lane working in `src/pi-extensions/tryinget/…` is editing a package whose maintainers wrote 84
-lines of guidance that the lane's context cannot contain. The instruction stands as it always has:
-**read the component's `AGENTS.md` explicitly** — `src/<component>/AGENTS.md` — before changing that
-component. This file does not duplicate those instructions, deliberately: they belong where their
-maintainers put them, and a pointer is the cheap half of keeping them there.
+The sharpest case is the one a lane is most likely to hit: `pi-modes` lives at
+`tryinget/packages/pi-modes`, and **both** files exist above the code it edits —
+`tryinget/AGENTS.md` (84 lines: structure, package conventions, live package activation) and
+`tryinget/packages/pi-modes/AGENTS.md` (71 lines, written for that directory). The inner one is the
+worse miss, because it is the file written for the exact directory the lane is changing.
+
+The instruction is a pointer rather than a copy: **`find src/<component> -name AGENTS.md`** and read
+what it returns. This file does not duplicate that text, deliberately — it belongs where the
+maintainers keep it current, and a pointer is the cheap half of keeping it there. (An earlier version
+of this paragraph said "four components", which was the root count presented as the population. The
+instrument costs one command and returns worse news than the estimate.)
 
 ## Verifying that a space composed correctly
 
