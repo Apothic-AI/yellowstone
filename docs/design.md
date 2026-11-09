@@ -142,7 +142,21 @@ because of its name, not because a table beside it says so.
 
 The rule is what makes the layout mechanical: `home/` contains exactly the files
 `install.sh` writes, and nothing else. A file the installer does not write has no
-home under `home/`; a file it writes must have exactly one. That is why
+home under `home/`; a file it writes must have exactly one.
+
+**Both halves of that sentence matter, and only the first is obvious.** *"the
+installer writes it"* decides whether a file belongs in the mirror; *"anything
+reads what it writes"* decides whether the write should happen at all. A
+declaration the installer reads in order to decide what to apply is not content
+that lands on a machine — `herdr/plugins.toml` and `skills/skills.tsv` are both of
+that kind, and both stayed at the top level. This file's own history is the
+argument: the plugin manifest moved between the mirror and the root four times,
+and every flip was defensible from the write half alone. The read half decided it
+once.
+
+So the durable form of the rule is a **test**, not a table: *does the installer
+write this path, and does anything read what it writes?* A table records a
+location and goes stale the moment the evidence moves; a test can be re-derived. That is why
 `home/.pi/agent/` ships `settings.json` but not `auth.json`, `sessions/` or the
 profile instance tree — those are machine state, not shipped content — and why
 `skills/skills.tsv` and the installer's own `scripts/`, `docs/` and `test/` stay at
