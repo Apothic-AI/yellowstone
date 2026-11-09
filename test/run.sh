@@ -30,6 +30,12 @@ if [ "${1:-}" = gates ]; then
   # a copy of this tree and compare the install to the tree). Skips itself when
   # there is no live overlord space to compare against.
   ./test/verify-mirror-live.sh || rc=1
+  echo
+  # The mirror gate's own test: a reverted mirror, an uncommitted live edit and a
+  # pending install must be told apart. Without it, that gate is verified only by
+  # whatever happened to be true on this machine the day it was written — and its
+  # first version passed the revert case for an hour, in production, green.
+  ./test/verify-revert-detection.sh || rc=1
   exit "$rc"
 fi
 

@@ -118,8 +118,16 @@ rc=0
 provenance="$REPO/home/.overlord/tools/mirror-provenance.sh"
 if [ -x "$provenance" ] || [ -f "$provenance" ]; then
   bash "$provenance" --repo "$REPO" --live "$OVERLORD_DIR" || rc=1
+elif [ "$ahead" = 0 ]; then
+  : # nothing differs, so there is no direction to decide
 else
-  echo "note: no mirror-provenance.sh in the tree — direction is UNDECIDED for $ahead differing file(s)" >&2
+  # Absence is not neutrality. The tool ships in this tree, so a clone without it
+  # is broken — and "cannot tell" must not read as "nothing wrong" when the thing
+  # it cannot tell apart is a reverted mirror about to be published. Say it and
+  # fail; a gate that passes because it lost its instrument is the vacuous pass
+  # this whole file is about.
+  echo "FAIL: direction cannot be decided — home/.overlord/tools/mirror-provenance.sh is missing from the tree, and $ahead file(s) differ from live" >&2
+  rc=1
 fi
 
 if [ "$rc" = 0 ]; then
