@@ -325,19 +325,25 @@ blocking form of a wait, so an intake-style agent stays reachable. It ships
 bounded wait should not lose it silently. Opt in with
 `echo '{"enabled":true}' > ~/.pi/agent/nonblock.json` or `PI_NONBLOCK=1`.
 
-Packages are declared, not copied, and nothing points into this repository.
-Two entries are our forks:
+Packages are declared, and **nine of them point into this repository** rather
+than at a release:
 
 ```json
-"git:github.com/bitnom/pi-cache-optimizer",
-"git:github.com/Apothic-AI/pi-pretty-tui"
+"@YELLOWSTONE_REPO@/src/pi-extensions/pi-cache-optimizer",
+"@YELLOWSTONE_REPO@/src/pi-extensions/pi-pretty-tui",
+"@YELLOWSTONE_REPO@/src/pi-extensions/signalridge/packages/pi-goal",
 ```
 
-Both install from their own repositories, so `pi update` reconciles them and the
-fork's code is reviewed and versioned where it lives. A machine that already has
-either package from a different source is left alone: the merge compares package
-names, not source strings, so you never end up with two copies of an extension
-that claims a tool name.
+`json-edit.js` renders that prefix to the checkout at install time, so what `pi`
+loads and what the subrepo pins are the same files. The consequence is the one
+thing readers get wrong: **`pi update --extensions` reconciles the npm packages
+and does nothing to those nine.** They move when the subrepo moves —
+`git subrepo pull <dir>`, then `./test/verify-subrepo-roundtrip.sh`; the fork
+table further down is the per-component form of that rule.
+
+A machine that already has one of those packages from a different source is left
+alone: the merge compares package names, not source strings, so you never end up
+with two copies of an extension that claims a tool name.
 
 #### Where the run file lives, and why a closed run must move
 
