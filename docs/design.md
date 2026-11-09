@@ -170,6 +170,30 @@ search profile, the trailing reminders, the overlord index), `template`
 (install once, then report drift and never replace) or `skill` (linked by
 `scripts/skills-sync.sh`, so the manifest stays the single membership test).
 
+### A name is not a property — test the thing itself
+
+Three checks in this repo were green while the thing they named was false, and
+all three failed the same way:
+
+| Reported | Actually asked | What it should ask |
+|---|---|---|
+| `pi list` shows a package | is this source string in `settings.json`? | does the path exist on disk? |
+| `grep` finds no `~/Code` paths | does the text contain that substring? | do the **resolved** paths leave the checkout? |
+| a skill is `linked` | is this a symlink? | does its target still resolve? |
+
+Each was a truthful answer to the wrong question: a *name* standing in for a
+*property*. `pi list` printed a nonexistent local path and exited 0; a grep for
+`/home/bitnom/Code/` never saw the one relative `../../Code/…` entry, and matched
+its own replacement string; and `skills-sync status` reported `linked` for a
+symlink into a directory that had moved, so a restructure stayed green until a
+lane ran `readlink -f` by hand.
+
+The fix is always the same shape and it is one line each: resolve, then test.
+`readlink -f` before believing a link, `-e` before believing a path, and a
+count of resolved paths rather than a text search for a prefix. This is the
+cheapest durable lesson FT-01 produced, and it applies to any check written
+after it — including the ones that will one day police this page.
+
 ### Plugin refs are pinned commits
 
 `home/.config/herdr/plugins.toml` records a `ref` per plugin. Installing therefore produces
