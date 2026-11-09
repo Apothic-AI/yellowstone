@@ -44,7 +44,7 @@ cannot do for you:
   **Do not run `herdr server stop` while agents are working** — it ends the panes
   the server owns, and every agent in them dies with it.
 - **Accept a plugin bump.** Pinned refs move only when someone edits
-  `home/.config/herdr/plugins.toml`. `scripts/herdr-plugins.sh update` re-fetches the pinned
+  `herdr/plugins.toml`. `scripts/herdr-plugins.sh update` re-fetches the pinned
   ref; it will not move you to a newer upstream release.
 
 ## When things break

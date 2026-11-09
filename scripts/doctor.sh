@@ -107,7 +107,7 @@ else
 
   # plugins declared in the manifest
   if command -v "$REPO_ROOT/scripts/herdr-plugins.sh" >/dev/null 2>&1 || [ -x "$REPO_ROOT/scripts/herdr-plugins.sh" ]; then
-    local_rows="$(node "$REPO_ROOT/scripts/plugins-manifest.js" rows "$HOME_SRC/.config/herdr/plugins.toml")"
+    local_rows="$(node "$REPO_ROOT/scripts/plugins-manifest.js" rows "$REPO_ROOT/herdr/plugins.toml")"
     present="$(herdr plugin list --json 2>/dev/null | node -e '
       let s = "";
       process.stdin.on("data", (d) => (s += d)).on("end", () => {

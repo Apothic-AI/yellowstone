@@ -172,7 +172,7 @@ search profile, the trailing reminders, the overlord index), `template`
 
 ### Plugin refs are pinned commits
 
-`home/.config/herdr/plugins.toml` records a `ref` per plugin. Installing therefore produces
+`herdr/plugins.toml` records a `ref` per plugin. Installing therefore produces
 the same code on every machine, and upgrading is a commit that changes one line
 — reviewable, attributable, and revertible. The alternative (track a branch)
 would mean two machines with the same repo could run different plugin code.
@@ -257,7 +257,7 @@ plugins are — not a file copied between repos.
 
 ## How to add something
 
-1. **A herdr plugin** — add a `[[plugin]]` table to `home/.config/herdr/plugins.toml` with a
+1. **A herdr plugin** — add a `[[plugin]]` table to `herdr/plugins.toml` with a
    pinned `ref` and a one-line `why`; run `scripts/herdr-plugins.sh install`.
 2. **A pi package** — add its source to the `packages` array in
    `home/.pi/agent/settings.json`; run `install.sh pi`. If it is a git source, the pin lives
@@ -285,4 +285,4 @@ In every case: no credentials, no absolute home paths, and update
 `scripts/doctor.sh` so the next person finds out when it breaks. Prefer a
 mechanically-derived list over a hand-maintained one — several `doctor` and test
 checks were later rewritten to count from `skills/skills.tsv` or
-`home/.config/herdr/plugins.toml` after a hardcoded list went stale.
+`herdr/plugins.toml` after a hardcoded list went stale.

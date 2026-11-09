@@ -22,7 +22,7 @@ python3 -c 'import json;print(json.load(open("pi/settings.json"))["packages"])'
 pi list | grep -E '^(  git:|  /)'          # what is *running*, not what is declared
 
 # declared herdr plugins
-grep -E '^id|^source|^ref' home/.config/herdr/plugins.toml
+grep -E '^id|^source|^ref' herdr/plugins.toml
 
 # per-repo state
 git -C <path> remote get-url origin
@@ -90,7 +90,7 @@ read off the machine. Its branch outcome is `main` either way; the label stays o
 
 ## Not forks — they stay declared refs, not subrepos
 
-- **Twelve pinned upstream herdr plugins** in `home/.config/herdr/plugins.toml` (`herdr-bar`,
+- **Twelve pinned upstream herdr plugins** in `herdr/plugins.toml` (`herdr-bar`,
   `ray.plugin-manager`, `herdr-dagr`, `codeforbreakfast.beady-eye`, `mroth.jj-status`,
   `herdr-context`, `wilbeibi.catchup`, `vsh.stash`, `ntindle.herdr-resurrect`,
   `herdr-theme-picker`, `ezracerpac.jj-waltz`, `abhishekrana.dictate`). We do not patch them;
@@ -150,7 +150,7 @@ them. Carrying the repository does not install a skill; the row does.
 ## Explicitly out of scope
 
 - **`pi-ghost-text-x`** (`Apothic-AI/pi-ghost-text-x`, branch `apothic-main`) is an org fork
-  that appears in neither `pi/settings.json` nor `home/.config/herdr/plugins.toml` — `grep -r` over both
+  that appears in neither `pi/settings.json` nor `herdr/plugins.toml` — `grep -r` over both
   finds nothing. Unused; not a subrepo.
 - **Generated and secret-bearing state** never goes in: `~/.pi/agent/secrets/`, and the
   profile-switch instance tree `~/.pi-profile-switch/instances/<id>/` (auth, sessions, npm
@@ -252,7 +252,7 @@ the measurement. Four of its decisions shaped the entries above:
    all sit on `task/*` sibling worktrees belonging to live pi-rooms lanes, and `master` is level
    with `origin/master` (`efe5896`).
 8. **The herdr plugin manifest is short one plugin, and it is the one that runs unpublished
-   code.** `home/.config/herdr/plugins.toml` declares 14 plugins; `~/.config/herdr/plugins.json` has 15. The
+   code.** `herdr/plugins.toml` declares 14 plugins; `~/.config/herdr/plugins.json` has 15. The
    missing one is `pi-rooms`, which is the rooms popup, and it is *link*-installed from
    `~/Code/pi-rooms/.worktrees/c2/plugin` — the `task/c2` worktree, head `856a8fb`,
    which is on no remote. Two consequences: a machine built from this repo has no rooms popup
