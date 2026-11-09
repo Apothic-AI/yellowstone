@@ -22,6 +22,8 @@ if [ "${1:-}" = gates ]; then
   ./test/verify-subrepo-roundtrip.sh || rc=1
   echo
   ./test/verify-monorepo-install.sh || rc=1
+  echo
+  ./test/verify-profile-skills.sh || rc=1
   exit "$rc"
 fi
 

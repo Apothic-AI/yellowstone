@@ -568,7 +568,7 @@ suite_mirror() {
       LOCAL_BIN_DIR="$probe_home/.local/bin" OVERLORD_DIR="$probe_home/.overlord" \
       SYSOPS_DIR="$probe_home/.sysops" \
       "$REPO/install.sh" --dry-run 2>/dev/null \
-      | grep -oE '\\-> [^ ]+$' | sed 's/^-> //' \
+      | grep -oE -- '-> [^ ]+$' | sed 's/^-> //' \
       | sed -e "s|$probe_home|<home>|g" -e "s|$REPO|<repo>|g" \
       | sed 's|herdr-dagr-[a-f0-9]*|<plugin>|' | LC_ALL=C sort)"
   expected="$(LC_ALL=C sed 's|herdr-dagr-[a-f0-9]*|<plugin>|' "$REPO/test/expected-install-plan.txt" | LC_ALL=C sort)"
