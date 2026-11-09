@@ -124,8 +124,14 @@ PY
     src/pi-extensions/apothic-todo \
     src/pi-extensions/pi-persist \
     src/pi-extensions/pi-cache-optimizer ; do
-    if printf '%s\n' "$sources" | grep -q -- "$want"; then
+    # Presence of the string is not enough — a rendered source pointing at a
+    # directory the checkout does not contain is exactly the failure this gate is
+    # for, and grepping the list would pass it happily.
+    rendered="$(printf '%s\n' "$sources" | grep -- "$want" | head -1)"
+    if [ -n "$rendered" ] && [ -e "$rendered" ]; then
       note "ok   $want"
+    elif [ -n "$rendered" ]; then
+      bad "installed from a path that does not exist: $want"
     else
       bad "not installed from the monorepo: $want"
     fi
