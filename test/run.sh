@@ -34,7 +34,14 @@ fi
 
 # Mount the whole checkout, suite included: both the scripts under test and the
 # assertions themselves must come from this work tree.
+# A memory ceiling per container, so a suite that cannot fit dies *inside* its own
+# container with an OOM and a summary rather than taking the whole run with it as
+# rc=137 and no output. On a box already deep into swap that is the difference
+# between "failed" and "killed", and only one of those is a gate.
+#   YELLOWSTONE_TEST_MEMORY=6g ./test/run.sh all      # raise it on a roomier box
 exec docker run --rm \
+  --memory "${YELLOWSTONE_TEST_MEMORY:-4g}" \
+  --memory-swap "${YELLOWSTONE_TEST_MEMORY:-4g}" \
   -v "$PWD:/repo:ro" \
   -e REPO=/repo \
   "$IMAGE" "${1:-all}"
