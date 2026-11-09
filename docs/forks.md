@@ -19,7 +19,7 @@ Two rules apply to all of them:
 | Upstream | [`ykn0309/pi-pretty-tui`](https://github.com/ykn0309/pi-pretty-tui) 0.3.0 |
 | Our fork | `Apothic-AI/pi-pretty-tui` |
 | License | MIT, © 2026 Kainan Yang (kept in the fork's `LICENSE`) |
-| Installed as | `git:github.com/Apothic-AI/pi-pretty-tui@apothic` in `pi/settings.json` |
+| Installed as | `git:github.com/Apothic-AI/pi-pretty-tui@test/composer-selection-on-apothic` in `pi/settings.json` — the branch the machine runs, not the merge branch (`apothic`). The seven commits the test line carries beyond `apothic` are that space's follow-up; when they land, the manifest, the subrepo ref and the install flip together. |
 | Delta notes | the fork's `LOCAL-PATCHES.md` |
 
 **Why a fork.** pi allows exactly one owner per tool name, and the check runs
@@ -65,7 +65,7 @@ npm release. That is the retirement condition.
 |---|---|
 | Upstream | [`jiangge/pi-cache-optimizer`](https://github.com/jiangge/pi-cache-optimizer) |
 | Our fork | [`bitnom/pi-cache-optimizer`](https://github.com/bitnom/pi-cache-optimizer) |
-| Installed as | `git:github.com/bitnom/pi-cache-optimizer` in `pi/settings.json` |
+| Installed as | `git:github.com/bitnom/pi-cache-optimizer@feat/opencode-cache-stats` in `pi/settings.json` — that branch, not the default, because it is what the machine loads |
 | Base | upstream 2.10.4, merged forward |
 
 **Why a fork.** It adds provider adapters and cache-key handling for routes that
@@ -84,7 +84,7 @@ dirty.
 |---|---|
 | Upstream | [`patty-io/pi-patty-bg-tasks`](https://github.com/patty-io/pi-patty-bg-tasks) |
 | Our fork | [`Apothic-AI/bizzy`](https://github.com/Apothic-AI/bizzy) |
-| Installed as | `git:github.com/Apothic-AI/bizzy` in `pi/settings.json` |
+| Installed as | `git:github.com/Apothic-AI/bizzy@apothic-main` in `pi/settings.json` |
 | Package name | `pi-bizzy-bg-tasks` |
 
 **Why a fork.** Background tasks are the mechanism this whole setup leans on:
@@ -158,6 +158,31 @@ valid in the unmodified package once the release lands.
 by npm, so `pi update` silently reverts any in-place edit of it, and a local
 edit leaves the version `pi list` reports describing code that is not running.
 A fork costs one checkout and survives updates.
+
+## pi-modes (`Apothic-AI/pi-extensions-1`) — a fork, and a second lineage
+
+| | |
+|---|---|
+| Upstream | [`tryingET/pi-extensions`](https://github.com/tryingET/pi-extensions) |
+| Our fork | `Apothic-AI/pi-extensions-1`, branch `apothic-main` |
+| Installed as | a local path: `$PI_EXTENSIONS_1/packages/pi-modes` (default `~/Code/apothic-pi-extensions/packages/pi-modes`). `pi/settings.json` carries the `@PI_EXTENSIONS_1@` placeholder and `install.sh` resolves it. |
+| Supplies | `packages/pi-modes` — the mode-composition layer every lane runs on |
+
+**Why this is a separate entry from `pi-extensions` above.** The two are not
+the same project under two names: `pi-extensions` descends from Signalridge
+(root commit 2026-08-16) and supplies `pi-goal`; `pi-extensions-1` was
+bootstrapped from a monorepo template (2026-03-05) and supplies `pi-modes`.
+Different root commits, different upstreams, and neither package exists in the
+other. The org names are misleading enough that the subrepos are named by
+lineage instead — `src/pi-extensions/signalridge` and
+`src/pi-extensions/tryinget` — and this entry exists because a fork with a live
+upstream and no record here is exactly what the rule above forbids. Whether
+they should eventually be consolidated is its own piece of work, deliberately
+out of scope while `pi-extensions-1` carries uncommitted work.
+
+**Retirement condition.** The two forks merge, or upstream publishes a
+mode-composition package. Until then both are carried, and neither is a
+candidate for deletion on the grounds that the other looks similar.
 
 ## pi-rooms — fork
 
