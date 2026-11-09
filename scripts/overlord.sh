@@ -236,6 +236,46 @@ install_tabs() {
   return $failed
 }
 
+# ensure_skill_link <link> <target> — create a skill symlink, never a copy.
+#
+# The direction matters. The real skill lives at $OVERLORD_DIR/skills/, the
+# mirrored copy; what gets created in $AGENTS_SKILLS is a link to it. A real
+# directory here would be a hand copy — exactly the drift 2df88aee removed for
+# profile-config — and it would leave repo and installed skill free to diverge
+# forever. Created at install time rather than shipped as a home/.agents/skills/
+# entry because a mirrored symlink has to point at a target that already exists
+# at checkout time; this way the order is fixed.
+ensure_skill_link() {
+  local link="$1" target="$2" name
+  name="$(basename -- "$link")"
+
+  if [ -L "$link" ]; then
+    if [ "$(readlink -- "$link")" = "$target" ]; then
+      info "linked $name -> $(short "$target")"
+      return 0
+    fi
+    if [ "${DRY_RUN:-0}" = 1 ]; then
+      dryrun "relink $name -> $(short "$target")"
+      return 0
+    fi
+    rm -f -- "$link"
+  elif [ -e "$link" ]; then
+    # A real directory: someone hand-copied the skill. Report it and leave it.
+    # Replacing a directory the operator may have edited is not an install step.
+    warn "$(short "$link") is a real directory, not a link"
+    info "  the mirrored copy is at $(short "$target")"
+    info "  remove it and re-run this stage to link it instead"
+    return 0
+  elif [ "${DRY_RUN:-0}" = 1 ]; then
+    dryrun "link $name -> $(short "$target")"
+    return 0
+  fi
+
+  mkdir -p -- "$(dirname -- "$link")"
+  ln -s -- "$target" "$link"
+  info "linked $name -> $(short "$target")"
+}
+
 install_dir() {
   step "Overlord context directory"
 
@@ -258,21 +298,11 @@ install_dir() {
   #              come and go. Never overwritten: it is the only map.
   install_home_tree .overlord
 
-  # The `overlord-operations` skill ships under .overlord/skills/ — it belongs to
-  # this space, not to a component — but pi reads skills from ~/.agents/skills,
-  # so the installer owes that link: it writes the target, and no `skills.tsv` row
-  # names this skill because the file arrives with this stage rather than from a
-  # checkout. Without the link a fresh machine installs a skill nothing can find,
-  # which is the mycord gap in the other direction: declared in the tree, absent
-  # from the only directory that is searched. `link_dir` is reused rather than a
-  # bare `ln -s` so a real directory at that path is moved aside, not clobbered.
-  #
-  # The test is on the SOURCE in the mirror, not on the destination: in a dry run
-  # nothing has been copied yet, and a plan that silently omits a step it will
-  # really perform is the failure this flag exists to prevent.
-  if [ -d "$REPO_ROOT/home/.overlord/skills/overlord-operations" ]; then
-    link_dir "$OVERLORD_DIR/skills/overlord-operations" "$AGENTS_SKILLS/overlord-operations"
-  fi
+  # The overlord-operations skill is mirrored under $OVERLORD_DIR/skills/, but pi
+  # discovers skills from $AGENTS_SKILLS. The link between the two is part of the
+  # install, not a one-time act on whichever machine happened to make it first.
+  ensure_skill_link "$AGENTS_SKILLS/overlord-operations" \
+    "$OVERLORD_DIR/skills/overlord-operations"
 }
 
 # ensure_workspace <label> <cwd> — create the workspace only when the label is
