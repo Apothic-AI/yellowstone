@@ -194,7 +194,13 @@ lane ran `readlink -f` by hand.
 
 The fix is always the same shape and it is one line each: resolve, then test.
 `readlink -f` before believing a link, `-e` before believing a path, and a
-count of resolved paths rather than a text search for a prefix. This is the
+count of resolved paths rather than a text search for a prefix.
+
+And print the per-item verdict for one item before trusting any total. Every
+disagreement over a count in FT-01 was settled by dumping one file, one link or
+one lane and reading it, never by re-arguing the aggregate — because a wrong
+predicate and a stale reading produce totals that look equally plausible, and
+only the per-item evidence tells them apart. This is the
 cheapest durable lesson FT-01 produced, and it applies to any check written
 after it — including the ones that will one day police this page.
 
