@@ -8,6 +8,7 @@ configure, upgrade and repair instructions live in
 |---|---|
 | [`forks.md`](forks.md) | you want to know why a component is a fork or bundled, and whether it still needs to be |
 | [`design.md`](design.md) | you are changing the setup and want the reasoning behind the current shape |
+| [`pi-config.md`](pi-config.md) | you are editing the pi files under `home/.pi/agent/` and want to know which ones merge, copy, or install only once |
 | [`operations.md`](operations.md) | you are running this on a machine day to day: routines, failure modes, what to check |
 | [`testing.md`](testing.md) | you are changing the installer and want to prove it on a clean machine |
 
@@ -28,5 +29,5 @@ in dependency order.
   tracks the version you actually have.
 - **pi itself.** The package ships `docs/` beside the installed binary — start
   at `configuration.md`, `models.md`, `packages.md`, `extensions.md`.
-- **Each plugin's own behaviour.** `herdr/plugins.toml` records why a plugin is
+- **Each plugin's own behaviour.** `home/.config/herdr/plugins.toml` records why a plugin is
   installed and what it needs; the plugin's upstream README records the rest.

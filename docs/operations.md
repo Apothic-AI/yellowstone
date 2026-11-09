@@ -44,7 +44,7 @@ cannot do for you:
   **Do not run `herdr server stop` while agents are working** — it ends the panes
   the server owns, and every agent in them dies with it.
 - **Accept a plugin bump.** Pinned refs move only when someone edits
-  `herdr/plugins.toml`. `scripts/herdr-plugins.sh update` re-fetches the pinned
+  `home/.config/herdr/plugins.toml`. `scripts/herdr-plugins.sh update` re-fetches the pinned
   ref; it will not move you to a newer upstream release.
 
 ## When things break
@@ -75,7 +75,7 @@ pi auth check --provider <provider> --json
 `{"status":"ready"}` means the credential resolves and the endpoint accepts it.
 A failure here is almost always an empty or expired file in
 `~/.pi/agent/secrets/`. If the error mentions an upstream stream ending
-unexpectedly, that is the transient family `pi/extensions/transient-error-retry.ts`
+unexpectedly, that is the transient family `home/.pi/agent/extensions/transient-error-retry.ts`
 reclassifies so pi retries it — if it is still surfacing, the gateway returned
 something outside that family, and the extension's allowlist is the place to
 look.
@@ -87,9 +87,9 @@ Two causes worth checking, in this order:
 1. **Cache misses.** A gateway that routes to multiple backends will serve a
    multi-turn conversation from different upstreams unless
    `compat.sendSessionAffinityHeaders` is set. Check the provider block in
-   `pi/models.json`. `pi-cache-optimizer` reports hit rates in the footer when it
+   `home/.pi/agent/models.json`. `pi-cache-optimizer` reports hit rates in the footer when it
    is loaded.
-2. **Routing drift.** `modelOverrides` in `pi/models.json` pins OpenRouter
+2. **Routing drift.** `modelOverrides` in `home/.pi/agent/models.json` pins OpenRouter
    routing for models where the default could pick a differently quantized
    backend. A missing override produces correct output at a different price.
 

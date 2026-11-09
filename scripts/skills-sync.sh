@@ -15,8 +15,11 @@
 #           `dagr --skill` into the plugin's own skills/ directory, so the
 #           SKILL.md and the examples/ its links point at stay together, then
 #           linked into ~/.agents/skills. Never bundled: the plugin is pinned in
-#           herdr/plugins.toml, and `dagr --skill` prints exactly its copy.
-#   bundle  no installable home exists. This repo is the source of truth.
+#           home/.config/herdr/plugins.toml, and `dagr --skill` prints exactly
+#           its copy.
+#   bundle  no installable home exists. This repo is the source of truth, and
+#           the files live under home/.agents/skills/ — the mirror of the
+#           directory they are linked into.
 #           Reported by `status` as debt so it cannot quietly accumulate.
 
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -175,7 +178,11 @@ install_repo() {
   fi
 
   local out status
-  out="$(npx --yes skills add "$repo" --skill "$id" -g 2>&1)"; status=$?
+  # </dev/null: the skills CLI reads stdin. Inside this `while read` loop the
+  # loop's stdin *is* the manifest, so an inherited stdin lets the first
+  # fetched skill swallow every row after it — the install then reports success
+  # having silently skipped the second half of skills/skills.tsv.
+  out="$(npx --yes skills add "$repo" --skill "$id" -g 2>&1 </dev/null)"; status=$?
   if [ $status -eq 0 ] && ! printf '%s' "$out" | grep -qiE 'no (valid )?(matching )?skills found|No skills found'; then
     if [ -f "$AGENTS_SKILLS/$id/SKILL.md" ] || [ -L "$AGENTS_SKILLS/$id" ]; then
       info "$id: installed from $repo via the skills CLI"

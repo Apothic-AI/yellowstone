@@ -39,14 +39,14 @@ skips what already matches. Running it twice is safe; running it after an
 upstream change reconciles. There is no uninstall step because nothing is
 deleted — the `.bak-yellowstone-<stamp>` files are the rollback path.
 
-**2. Credentials are never in the repo.** `pi/models.json` declares `apiKey`
+**2. Credentials are never in the repo.** `home/.pi/agent/models.json` declares `apiKey`
 as a shell command (`!cat ${HOME}/.pi/agent/secrets/relayfast`), so the
 committed file contains paths and no secrets. The installer creates empty files
 for each provider it finds referenced and tells you which ones to fill. If you
 ever find a literal key in this repo, treat it as a bug and rotate it.
 
-**3. Pins are commits, not branches.** Plugin refs live in `herdr/plugins.toml`
-and model/package sources in `pi/settings.json`. Moving a component forward is
+**3. Pins are commits, not branches.** Plugin refs live in `home/.config/herdr/plugins.toml`
+and model/package sources in `home/.pi/agent/settings.json`. Moving a component forward is
 a commit that changes a ref, so a machine that has not pulled keeps working and
 a machine that has pulled can be diffed.
 
@@ -85,17 +85,23 @@ cd yellowstone
 ./install.sh herdr pi        # only selected stages
 ```
 
-Stages, in the order they run:
+Stages, in the order they run. Each stage installs the `home/` subtree that owns
+the destination — the tree is a literal mirror of `$HOME`, so the paths below are
+the installed paths:
 
 | Stage | What it does |
 |---|---|
-| `herdr` | writes `config.toml`, installs the pi integration, installs/links the plugins from `herdr/plugins.toml`, symlinks the herdr skill, installs `herdr-agy.sh` |
-| `pi` | merges owned keys into `settings.json`, merges providers into `models.json`, installs hand-written extensions, reconciles packages |
-| `skills` | installs every agent skill from the tree that owns it (`skills/skills.tsv`) |
-| `agents` | installs `~/AGENTS.md` from `fleet/AGENTS.md`, the shared agent instructions |
-| `overlord` | creates `~/.overlord` + `~/.sysops`, both spaces, and their agent tabs |
+| `herdr` | installs `home/.config/herdr/` (`config.toml`, `plugins.toml`), the pi integration, the plugins declared in `plugins.toml`, and `home/.local/bin/` (`herdr-agy.sh`, mode 755) |
+| `pi` | installs `home/.pi/agent/`: merges owned keys into `settings.json` (rendering `@PLACEHOLDER@` package sources on a first install), merges providers into `models.json`, installs extensions and configs, keeps the personal files, then reconciles packages |
+| `skills` | installs every agent skill from the tree that owns it (`skills/skills.tsv`); the ones this repo owns are linked from `home/.agents/skills/` |
+| `agents` | installs `~/AGENTS.md` from `home/AGENTS.md`, the shared agent instructions |
+| `overlord` | installs `home/.overlord/`, creates `~/.sysops`, both spaces, and their agent tabs |
 | `secrets` | creates empty credential files for every provider `models.json` references |
 | `verify` | runs `scripts/doctor.sh` |
+
+A stage that cannot finish (a missing checkout, a plugin needing a herdr server)
+reports and lets the run continue: an install that stops half way leaves a
+machine in a state nobody described.
 
 After it finishes, fill the credential files and check one route end to end:
 
@@ -107,17 +113,23 @@ pi auth check --provider relayfast --json      # {"status":"ready",...}
 
 ### What install deliberately does not do
 
-- It does not overwrite `model-picker.json` (its MRU list is personal) or
-  `web-search.json` (browser-cookie settings are machine-specific).
+- It does not overwrite `model-picker.json` (its MRU list is personal),
+  `web-search.json` (browser-cookie settings are machine-specific) or
+  `pi-persist.json` (the trailing reminders a person wrote). Each ships as a
+  first-install default and is then kept.
 - It does not write into an existing `models.json` provider block. If you
   already route `relayfast` yourself, your `baseUrl` and key command stay.
 - It does not touch `auth.json`, which holds OAuth credentials and belongs to pi.
 - It does not install `unblock` from npm if the local checkout is missing; the
   plugin is linked from a checkout so the CLI and the pane share one version.
+- It does not mirror `~/.pi/agent/secrets/` or `~/.pi-profile-switch/instances/`.
+  Credentials and generated profile state are not shipped content:
+  `home/.pi/agent/` is the path pi uses **when no profile is selected**, which on
+  a profile-driven machine is not the directory it actually reads.
 
 ## Configuration
 
-### herdr — `herdr/config.toml`
+### herdr — `home/.config/herdr/config.toml`
 
 The file is committed whole, because every section of it is part of the setup:
 
@@ -145,7 +157,7 @@ herdr server reload-config      # apply in the running server
 `herdr config reset-keys` exists if a keybinding fights your terminal; it backs
 up the file first.
 
-### herdr plugins — `herdr/plugins.toml`
+### herdr plugins — `home/.config/herdr/plugins.toml`
 
 One `[[plugin]]` table per plugin, with a pinned `ref` and a `why` line:
 
@@ -188,7 +200,7 @@ only one source of truth:
 | Surface | What it is | Where the record lives |
 |---|---|---|
 | the popup (`prefix+p`) | interactive discovery and one-off management | `~/.config/herdr/plugins.json`, per machine |
-| `herdr/plugins.toml` | the declared set, with pinned refs | this repo |
+| `home/.config/herdr/plugins.toml` | the declared set, with pinned refs | this repo |
 
 A plugin installed through the popup exists on that machine and nowhere else — a
 second machine provisioned from this repo will not have it, and `doctor.sh` will
@@ -197,7 +209,7 @@ installing something you intend to keep, add a `[[plugin]]` row with its resolve
 commit and a one-line `why`; `herdr plugin list` prints the ref.
 
 Neither plugin ships keybindings in its manifest, so the binds live in
-`herdr/config.toml` and are part of this repo: `prefix+k` → `herdr-bar.open` and
+`home/.config/herdr/config.toml` and are part of this repo: `prefix+k` → `herdr-bar.open` and
 `prefix+p` → `ray.plugin-manager.open`. Install the plugin without the bind and it
 is unreachable; install the bind without the plugin and the key does nothing.
 
@@ -227,7 +239,7 @@ manages that file — put your own hooks beside it, never in it.
 
 ### herdr-agy.sh — reliable waits for agy and grok
 
-`herdr/scripts/herdr-agy.sh` installs to `~/.local/bin`. It exists because
+`home/.local/bin/herdr-agy.sh` installs to `~/.local/bin`. It exists because
 herdr may report `idle`/`done` mid-turn for `agy` and `grok` agents, which makes
 `herdr agent wait` return early. The script treats the pane tail as ground truth
 and only believes a settled reading after consecutive clean polls:
@@ -244,7 +256,7 @@ Tune it with `HERDR_AGY_LINES` (tail depth, default 10), `HERDR_AGY_STABLE`
 Use it whenever an orchestrator depends on an agy or grok agent finishing;
 for pi, droid, claude and codex the native `herdr agent wait` is trustworthy.
 
-### pi — `pi/settings.json`
+### pi — `home/.pi/agent/settings.json`
 
 `install.sh` merges only the keys Yellowstone owns and leaves the rest alone:
 `defaultTools`, `theme`, `terminal`, `steeringMode`, `transport`, `retry`,
@@ -298,7 +310,7 @@ set `PI_ROOMS_NAME` per lane or a name is derived from cwd + pid and does not su
 a restart.
 
 **`pi-persist`** — a cached prompt section plus a per-request trailing message that
-other extensions append to. Configured by `pi/pi-persist.json` (trailing reminders).
+other extensions append to. Configured by `home/.pi/agent/pi-persist.json` (trailing reminders).
 Installed only when absent: it accumulates the operator's own reminders.
 
 **`apothic-todo`** (`@arhen/pi-core-todo`) and **`pi-core-tps-stats`** — todos and
@@ -351,8 +363,8 @@ Two theme systems, and it matters which one you are reading, because a
 
 | Surface | Set in | Source of the colours |
 |---|---|---|
-| herdr | `[theme]` + `[theme.custom]` in `herdr/config.toml` | built-in theme by name; `[theme.custom]` overrides individual tokens |
-| pi | `"theme"` in `pi/settings.json` | an npm package (`@spences10/pi-themes` here) |
+| herdr | `[theme]` + `[theme.custom]` in `home/.config/herdr/config.toml` | built-in theme by name; `[theme.custom]` overrides individual tokens |
+| pi | `"theme"` in `home/.pi/agent/settings.json` | an npm package (`@spences10/pi-themes` here) |
 
 **`[theme.custom]` wins, and `theme.name` stays whatever it was.**
 `herdr-theme-picker` never changes `theme.name`; it rewrites `[theme.custom]`
@@ -362,7 +374,7 @@ from a *terminalcolors/ghostty* palette through its own
 `tokyo-night` is vestigial in that case, not the active theme.
 
 **A custom palette is not a package, so do not document it as one.** The palette
-in `herdr/config.toml` is 19 derived tokens, not a file any plugin ships. To find
+in `home/.config/herdr/config.toml` is 19 derived tokens, not a file any plugin ships. To find
 where it came from, derive it yourself and compare:
 
 ```bash
@@ -370,7 +382,7 @@ where it came from, derive it yourself and compare:
 source ~/.config/herdr/plugins/github/herdr-theme-picker-*/bin/map.sh
 palette_to_tokens ~/.local/state/herdr/plugins/herdr-theme-picker/themes/<name> | sort
 # and the live values
-sed -n '/theme.custom/,$p' ~/.config/herdr/config.toml | grep -E '^[a-z_0-9]+ = ' | sort
+sed -n '/theme.custom/,$p' ~/.config/home/.config/herdr/config.toml | grep -E '^[a-z_0-9]+ = ' | sort
 ```
 
 If those match, the live palette *is* that palette file, mechanically derived;
@@ -402,7 +414,7 @@ already cost a real operator message — the turn held, their instruction queued
 it, and they had to interrupt by hand.
 
 Documentation alone does not hold this invariant, because the tempting call looks
-correct. `pi/extensions/nonblock.ts` enforces it through pi's `tool_call` hook, which
+correct. `home/.pi/agent/extensions/nonblock.ts` enforces it through pi's `tool_call` hook, which
 may mutate `event.input` in place: an `attach` with `wait: false` is rewritten to
 `output`, and an `attach` that would block is refused with the table above as the
 reason. Enable it wherever an agent is an intake:
@@ -425,9 +437,9 @@ Four small files decide how the packages behave. They are config, not state:
 | `pi/pi-goal.json` | goal extension: `toolVisibility: after-first-goal`, `experimental.goals`, `rpc.enabled`, and **`continuationLimits` — both `automaticTurns` and `noProgressTurns` are `null`**, i.e. no automatic ceiling. Do not set `--tokens` on a goal: a budget stops it at `budgetLimited` and revives it only with a new goal. |
 | `pi/pretty-tui.json` | `{"mode": "clean"}` — the three TUI modes are clean/compact/full, and clean is what the shipped theme is tuned for |
 | `pi/pi-auto-compact.json` | compaction threshold and alignment |
-| `pi/pi-persist.json` | trailing reminders appended to every request (installed only when absent — it accumulates the operator's own) |
+| `home/.pi/agent/pi-persist.json` | trailing reminders appended to every request (installed only when absent — it accumulates the operator's own) |
 
-### pi — `pi/models.json`
+### pi — `home/.pi/agent/models.json`
 
 Providers are keyed by name and each `apiKey` is a command that reads a file:
 
@@ -505,7 +517,7 @@ The `overlord` workspace has exactly two tabs, each hosting a **pi** agent:
 
 | Space | Tab label | Agent name | Role |
 |---|---|---|---|
-| `overlord` | `overlord` | `overlord` | the parent orchestrator — reads `~/.overlord/AGENTS.md` and directs the other spaces |
+| `overlord` | `overlord` | `overlord` | the parent orchestrator — reads `~/.home/.overlord/AGENTS.md` and directs the other spaces |
 | `sysops` | `sysop-leader` | `sysop-leader` | machine and service operations |
 
 `overlord.sh install` creates each tab if it is missing and starts a `pi` agent
@@ -610,8 +622,8 @@ it and nothing else decides what gets installed.
 | Skill | Owned by | Installed by |
 |---|---|---|
 | `yellowstone` | this repo | symlinked from `yellowstone-skill/` |
-| `herdr` | this repo (a fork of the shipped skill) | symlinked from `herdr/skills/herdr/` |
-| `hotshot` | this repo, for now | symlinked from `skills/hotshot/` |
+| `herdr` | this repo (a fork of the shipped skill) | symlinked from `home/.agents/skills/herdr/` |
+| `hotshot` | this repo, for now | symlinked from `home/.agents/skills/hotshot/` |
 | `dagr-producer` | the `herdr-dagr` plugin | `dagr --skill`, then symlinked |
 | `unblock` | `Apothic-AI/unblock` | linked from a checkout, else `npx skills add` |
 
@@ -725,7 +737,7 @@ Then it prints the state of the forks, which do not move with a blanket update:
 | `herdr-dagr` | a herdr plugin | `scripts/herdr-plugins.sh update`, or bump `ref` first |
 
 Upgrading a pinned plugin is a two-step decision, not a command: bump `ref` in
-`herdr/plugins.toml`, run `upgrade.sh plugins`, run `doctor.sh`, then commit.
+`home/.config/herdr/plugins.toml`, run `upgrade.sh plugins`, run `doctor.sh`, then commit.
 That way the version a machine runs is visible in the repo.
 
 ### Rolling back
@@ -733,7 +745,7 @@ That way the version a machine runs is visible in the repo.
 Nothing here is destructive, so rollback is file-level:
 
 ```bash
-ls ~/.config/herdr/config.toml.bak-yellowstone-*     # previous config
+ls ~/.config/home/.config/herdr/config.toml.bak-yellowstone-*     # previous config
 ls ~/.pi/agent/settings.json.bak-yellowstone-*       # previous settings
 herdr plugin install aemrebarut/herdr-dagr --ref <old-sha>
 ```
@@ -801,7 +813,7 @@ on another machine. Then raise `EXPECTED` and run the gate.
 | `$jj_bookmark` row is empty | `herdr plugin list`, then `jj --version` | install `jj`, re-run `scripts/herdr-plugins.sh install` |
 | `herdr agent wait` returns early for agy/grok | `herdr-agy.sh probe <agent>` | use `herdr-agy.sh wait`, not `herdr agent wait` |
 | pi says a model is unavailable | `pi auth check --provider <p> --json` | fill `~/.pi/agent/secrets/<p>` |
-| Requests succeed but the bill jumps | `pi/models.json` `compat` | `sendSessionAffinityHeaders: true` on the gateway |
+| Requests succeed but the bill jumps | `home/.pi/agent/models.json` `compat` | `sendSessionAffinityHeaders: true` on the gateway |
 | Config edit does nothing | `herdr config check` | `herdr server reload-config` |
 | A plugin pane will not open | `herdr plugin log list --plugin <id>` | `scripts/herdr-plugins.sh install` |
 | A package silently stopped loading | `pi list` vs `settings.json` | `pi update --extensions` |
@@ -820,7 +832,7 @@ Two conflicts are worth naming because they look like bugs:
 and pi fails the whole losing extension. Our fork registers render-only handlers
 that compose with whoever owns the tool instead of claiming the name. Installing
 the upstream npm release alongside `bizzy` breaks one of them — that is why
-`pi/settings.json` points at the fork. See `docs/forks.md`.
+`home/.pi/agent/settings.json` points at the fork. See `docs/forks.md`.
 
 **`transient-error-retry` versus pi's retry classifier.** pi retries a fixed set
 of error shapes. Some gateways report a dropped stream as `unknown:`, which pi
@@ -831,39 +843,44 @@ pi's own rules. It refuses to touch quota and billing errors.
 
 ## Layout
 
+`home/` is the mirror: a path under it is the path it installs to, so the tree
+below reads straight down into `$HOME`.
+
 ```
 AGENTS.md                  this repo's own instructions (a pointer to the global core)
-fleet/AGENTS.md            the fleet instruction core, installed to ~/AGENTS.md
 install.sh                 install / reconcile a machine
-herdr/
-  config.toml              theme, sidebar rows, keybindings
-  plugins.toml             plugin manifest with pinned refs
-  scripts/herdr-agy.sh     reliable waits for agy/grok agents
-  skills/herdr/SKILL.md    how agents drive herdr
-pi/
-  settings.json            owned keys + package declarations
-  pi-goal.json             goal extension: tool visibility, no automatic ceiling
-  pretty-tui.json          {"mode": "clean"}
-  pi-persist.json          trailing reminders (installed once)
-  models.json              provider routing (no secrets; key commands only)
-  model-picker.json        picker defaults (installed once, then personal)
-  web-search.json          browser-cookie search defaults
-  pi-auto-compact.json     compaction threshold
-  trust.example.json       how trust.json is shaped — copy, do not install blind
-  extensions/              hand-written pi extensions
-overlord/
-  AGENTS.md                orchestrator role + operating rules (installed)
-  README.md                workspace-index template (installed once)
+skills/skills.tsv          which skill comes from which tree, and why
+scripts/                   install helpers, plugin sync, doctor, upgrade
+docs/                      longer-form notes (trust.example.json lives here)
+test/                      the container suite
+home/
+  AGENTS.md                the fleet core, installed to ~/AGENTS.md
+  .config/herdr/
+    config.toml            theme, sidebar rows, keybindings        -> ~/.config/herdr/
+    plugins.toml           plugin manifest with pinned refs
+  .pi/agent/                                                      -> ~/.pi/agent/
+    settings.json          owned keys + package declarations
+    pi-goal.json           goal extension: tool visibility, no automatic ceiling
+    pretty-tui.json        {"mode": "clean"}
+    pi-persist.json        trailing reminders (installed once, then kept)
+    models.json            provider routing (no secrets; key commands only)
+    model-picker.json      picker defaults (installed once, then personal)
+    web-search.json        browser-cookie search defaults (same rule)
+    pi-auto-compact.json   compaction threshold
+    extensions/            hand-written pi extensions
+  .agents/skills/                                                 -> ~/.agents/skills/
+    herdr/SKILL.md         how agents drive herdr panes (linked)
+    hotshot/               bundled: its repo is still empty (linked)
+    shared-flyio-build-server/  the Fly build box half (linked)
+  .local/bin/herdr-agy.sh  reliable waits for agy/grok agents      -> ~/.local/bin/
+  .overlord/                                                      -> ~/.overlord/
+    AGENTS.md              orchestrator role + operating rules (installed once)
+    README.md              workspace-index template (installed once)
                            its space hosts one pi tab: `overlord`
-scripts/
-  overlord.sh              create ~/.overlord + the `overlord` workspace
-skills/
-  skills.tsv               which skill comes from which tree, and why
-  hotshot/                 bundled: its repo is still empty
-scripts/
-  install helpers, plugin sync, doctor, upgrade
-docs/                      longer-form notes
 ```
+
+`~/.sysops` is created empty by the `overlord` stage, which is why it is the one
+documented destination with no file under `home/`.
 
 ## Related
 
@@ -873,5 +890,5 @@ docs/                      longer-form notes
   `<pi install>/docs` — start with `configuration.md`, `models.md`,
   `packages.md` and `extensions.md`.
 - The two skill files that describe operating *this* stack rather than
-  installing it are `herdr/skills/herdr/SKILL.md` (driving panes) and
+  installing it are `home/.agents/skills/herdr/SKILL.md` (driving panes) and
   `dagr --skill` (publishing a valid run graph, straight from your binary).

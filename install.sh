@@ -19,13 +19,23 @@ usage() {
 Usage: ./install.sh [--yes] [--dry-run] [--help] [stage...]
 
 Stages (default: all, in this order):
-  herdr      config.toml, plugins, pi integration, herdr skill, herdr-agy.sh
-  pi         settings.json, models.json, extensions, packages
-  skills     install every agent skill from the tree that owns it
-  agents     ~/AGENTS.md — the fleet instruction core (fleet/AGENTS.md)
-  overlord   ~/.overlord + ~/.sysops dirs, the two herdr spaces and their tabs
+  herdr      home/.config/herdr (config.toml, plugins.toml), plugins, pi
+             integration, home/.local/bin
+  pi         home/.pi/agent — settings, models, extensions, configs — then the
+             packages those settings declare
+  skills     link every agent skill the manifest selects from home/.agents/skills
+             and from the repositories that own the rest
+  agents     ~/AGENTS.md — the fleet instruction core (home/AGENTS.md)
+  overlord   home/.overlord, the ~/.sysops directory, the two herdr spaces and
+             their tabs
   secrets    create empty ~/.pi/agent/secrets/<provider> files to fill in
   verify     report what is installed, outdated, or missing
+
+Every file above is a path under home/ whose destination is the same path under
+$HOME, so a file added to home/ is installed by the stage that owns its root.
+The installer's own files — scripts/, docs/, test/, yellowstone-skill/, the
+skill and plugin manifests — stay at the top level: they are not installed
+content.
 
 Options:
   -y, --yes      do not prompt
@@ -49,14 +59,15 @@ if [ ${#STAGES[@]} -eq 0 ]; then
   STAGES=(herdr pi skills agents overlord secrets verify)
 fi
 
-# Where the pi-goal fork lives. It must be a checkout because the fork is a
-# package inside a Bun workspace with no Pi manifest at its root, so `pi` cannot
-# load it as a git package. Overridable for a different checkout location.
-PI_EXTENSIONS_APOTHIC="${PI_EXTENSIONS_APOTHIC:-$HOME/Code/pi-extensions-apothic}"
-# The other checkouts pi loads a package from. Exported because json-edit.js
-# resolves the @PI_EXTENSIONS_1@ and @PI_FLEET_HOOKS@ placeholders from the
-# environment rather than from an argument, so one variable per checkout is
-# enough and a moved checkout needs no code change.
+# Where the pi-goal fork lives (PI_EXTENSIONS_APOTHIC) is a layout path, so its
+# default sits in scripts/lib.sh with the rest: the fork is a package inside a Bun
+# workspace with no Pi manifest at its root, so `pi` cannot load it as a git
+# package and it has to be a checkout.
+#
+# The two below are the other checkouts pi loads a package from, exported because
+# json-edit.js resolves the @PI_EXTENSIONS_1@ and @PI_FLEET_HOOKS@ placeholders
+# from the environment rather than from an argument, so one variable per checkout
+# is enough and a moved checkout needs no code change.
 PI_EXTENSIONS_1="${PI_EXTENSIONS_1:-$HOME/Code/apothic-pi-extensions}"
 PI_FLEET_HOOKS="${PI_FLEET_HOOKS:-$HOME/Code/pi-fleet-hooks}"
 export PI_EXTENSIONS_1 PI_FLEET_HOOKS
@@ -79,11 +90,13 @@ if [ "$NODE_MAJOR" -lt 22 ] || { [ "$NODE_MAJOR" -eq 22 ] && [ "$NODE_MINOR" -lt
 fi
 info "node $(node --version)"
 
-for f in pi/settings.json pi/models.json herdr/config.toml herdr/plugins.toml scripts/json-edit.js; do
+for f in home/.pi/agent/settings.json home/.pi/agent/models.json \
+         home/.config/herdr/config.toml home/.config/herdr/plugins.toml \
+         home/AGENTS.md scripts/json-edit.js; do
   [ -e "$REPO_ROOT/$f" ] || die "repository is incomplete: missing $f"
 done
 node "$REPO_ROOT/scripts/json-edit.js" validate \
-  "$REPO_ROOT/pi/settings.json" "$REPO_ROOT/pi/models.json" >/dev/null
+  "$REPO_ROOT/home/.pi/agent/settings.json" "$REPO_ROOT/home/.pi/agent/models.json" >/dev/null
 info "repository at $(short "$REPO_ROOT") is valid"
 
 have herdr || warn "herdr not on PATH — the herdr stages will be skipped"
@@ -97,10 +110,11 @@ install_herdr() {
 
   info "herdr $(version_of herdr) (channel: $(herdr channel show 2>/dev/null || echo unknown))"
 
-  # config.toml: ours is the whole file (theme, sidebar rows, keybinds), so it
-  # replaces rather than merges. The backup is the escape hatch.
-  mkdir -p -- "$HERDR_DIR"
-  install_file "$REPO_ROOT/herdr/config.toml" "$HERDR_DIR/config.toml"
+  # config.toml and plugins.toml are the two files this stack owns in herdr's
+  # config directory, so home/.config/herdr/ installs them by path: config.toml
+  # replaces (the backup is the escape hatch), plugins.toml is the declaration
+  # this machine's plugin set is applied from, and doctor compares both.
+  install_home_tree .config/herdr
   if have herdr && [ "$DRY_RUN" = 0 ]; then
     if herdr config check >/dev/null 2>&1; then
       info "config.toml passes herdr config check"
@@ -118,21 +132,23 @@ install_herdr() {
       || warn "herdr integration install pi failed"
   fi
 
-  # plugins.toml is declarative; apply it here.
+  # The plugin set is declarative; apply it here. A plugin whose local checkout
+  # is absent is a report, not a reason to abandon the install: the stages below
+  # still have work to do, and under `set -e` an unguarded failure here used to
+  # end the run before pi, skills, agents or overlord were reached.
   if [ "$DRY_RUN" = 1 ]; then
-    dryrun "herdr plugin install/update for every entry in herdr/plugins.toml"
+    dryrun "herdr plugin install/update for every entry in home/.config/herdr/plugins.toml"
   else
-    "$REPO_ROOT/scripts/herdr-plugins.sh" install
+    "$REPO_ROOT/scripts/herdr-plugins.sh" install || warn "some herdr plugins need attention (see above)"
   fi
 
-  # The herdr skill teaches agents to drive panes. Herdr ships one; ours adds
-  # the delegation and target-verification rules this setup depends on.
-  link_dir "$REPO_ROOT/herdr/skills/herdr" "$AGENTS_SKILLS/herdr"
+  # The herdr skill is not linked here: it is a skill like any other, so
+  # home/.agents/skills/herdr is installed by the skills stage from
+  # skills/skills.tsv — one membership test for every skill, one owner.
 
   # herdr-agy.sh: reliability wrapper for kind=agy/grok agents (herdr#3530).
-  if [ -e "$REPO_ROOT/herdr/scripts/herdr-agy.sh" ]; then
-    install_file "$REPO_ROOT/herdr/scripts/herdr-agy.sh" "$LOCAL_BIN/herdr-agy.sh" 755
-  fi
+  # home/.local/bin is the literal mirror of $LOCAL_BIN, mode preserved.
+  install_home_tree .local/bin
 }
 
 # ---------------------------------------------------------------------- pi --
@@ -141,62 +157,11 @@ install_pi() {
   step "Pi"
   info "pi $(version_of pi) (agent dir: $(short "$PI_DIR"))"
 
-  mkdir -p -- "$PI_DIR/extensions"
-
-  # settings.json: merge only the keys Yellowstone owns, so a user's model
-  # choice and packages survive.
-  if [ "$DRY_RUN" = 1 ]; then
-    dryrun "merge packages + extension defaults into $(short "$PI_DIR/settings.json")"
-  else
-    if [ ! -e "$PI_DIR/settings.json" ]; then
-      install_file "$REPO_ROOT/pi/settings.json" "$PI_DIR/settings.json"
-    else
-      json_edit ensure-keys "$PI_DIR/settings.json" "$REPO_ROOT/pi/settings.json" \
-        defaultTools theme terminal steeringMode transport retry \
-        collapseChangelog enableInstallTelemetry defaultProjectTrust \
-        enableSkillCommands autocompleteMaxVisible defaultThinkingLevel
-      json_edit merge-packages "$PI_DIR/settings.json" "$REPO_ROOT/pi/settings.json" \
-        "$REPO_ROOT" "$PI_EXTENSIONS_APOTHIC"
-    fi
-  fi
-
-  # models.json: providers Yellowstone knows how to route. Existing provider
-  # blocks are never overwritten — that is where the user's keys and edits live.
-  if [ "$DRY_RUN" = 1 ]; then
-    dryrun "merge providers into $(short "$PI_DIR/models.json")"
-  else
-    json_edit merge-models "$PI_DIR/models.json" "$REPO_ROOT/pi/models.json"
-  fi
-
-  # hand-written extensions (the herdr one is installed by herdr itself)
-  install_file "$REPO_ROOT/pi/extensions/transient-error-retry.ts" \
-               "$PI_DIR/extensions/transient-error-retry.ts"
-  # Opt-in: it changes agent behaviour, so it ships disabled and is enabled per
-  # machine by ~/.pi/agent/nonblock.json or PI_NONBLOCK=1.
-  install_file "$REPO_ROOT/pi/extensions/nonblock.ts" \
-               "$PI_DIR/extensions/nonblock.ts"
-
-  # extension configs. These are config, not state: they decide how each
-  # extension behaves, so a fresh machine without them behaves differently.
-  install_file "$REPO_ROOT/pi/pi-auto-compact.json" "$PI_DIR/pi-auto-compact.json"
-  install_file "$REPO_ROOT/pi/pi-goal.json"         "$PI_DIR/pi-goal.json"
-  install_file "$REPO_ROOT/pi/pretty-tui.json"      "$PI_DIR/pretty-tui.json"
-  # pi-persist holds the operator's own trailing reminders; install only when absent.
-  if [ ! -e "$PI_DIR/pi-persist.json" ]; then
-    install_file "$REPO_ROOT/pi/pi-persist.json" "$PI_DIR/pi-persist.json"
-  else
-    info "kept $(short "$PI_DIR/pi-persist.json") (holds your own reminders)"
-  fi
-  if [ ! -e "$PI_DIR/model-picker.json" ]; then
-    install_file "$REPO_ROOT/pi/model-picker.json" "$PI_DIR/model-picker.json"
-  else
-    info "kept $(short "$PI_DIR/model-picker.json") (MRU state is personal)"
-  fi
-  if [ ! -e "$PI_DIR/web-search.json" ]; then
-    install_file "$REPO_ROOT/pi/web-search.json" "$PI_DIR/web-search.json"
-  else
-    info "kept $(short "$PI_DIR/web-search.json")"
-  fi
+  # Every file home/.pi/agent/ carries, installed by its policy: settings.json
+  # and models.json merge, the three personal files install only when absent,
+  # everything else is copied. A new per-feature file needs no code here — only
+  # a path under home/.pi/agent/ — which is what the mirror is for.
+  install_home_tree .pi/agent
 
   # Now let pi install the packages the merged settings.json declares.
   if [ "$DRY_RUN" = 1 ]; then
@@ -218,8 +183,13 @@ install_skills() {
   # Nothing is copied into this repo that already has a home elsewhere: a
   # bundled copy of a skill that a plugin or fork ships is a silent fork of a
   # file somebody else maintains.
+  #
+  # A skill that cannot be resolved is a report, not a reason to abandon the
+  # install — and the same is true under --dry-run, where this call used to be
+  # the one unguarded stage: a machine with no dagr binary aborted the plan
+  # before agents, overlord, secrets and verify were ever printed.
   if [ "$DRY_RUN" = 1 ]; then
-    "$REPO_ROOT/scripts/skills-sync.sh" install --dry-run
+    "$REPO_ROOT/scripts/skills-sync.sh" install --dry-run || warn "some skills need attention"
   else
     "$REPO_ROOT/scripts/skills-sync.sh" install || warn "some skills need attention"
   fi
@@ -238,24 +208,17 @@ install_agents() {
   # working directory's ancestors. This file is the shared instruction set, so it
   # lives at $HOME: every project under $HOME inherits it.
   #
-  # The source is fleet/AGENTS.md, not the repo's own AGENTS.md. The two are
+  # The source is home/AGENTS.md, not the repo's own AGENTS.md. The two are
   # different documents with different readers: this repo's AGENTS.md tells an
   # agent how to work in this tree, while the fleet core is what every project
   # under $HOME inherits. They were one file while they were byte-identical, and
   # installing the repo copy once that stopped being true would have replaced the
   # core with a pointer to itself.
   #
-  # A local AGENTS.md is often hand-edited. Copy over it, but back it up first and
-  # say so — silently replacing someone's instructions is worse than a stale file.
-  local dest="$HOME/AGENTS.md"
-  if [ -f "$dest" ] && cmp -s "$FLEET_AGENTS" "$dest"; then
-    info "unchanged $(short "$dest")"
-    return 0
-  fi
-  if [ -f "$dest" ] && [ "$DRY_RUN" = 0 ]; then
-    info "existing $(short "$dest") differs from the shipped core — backing it up before replacing"
-  fi
-  install_file "$FLEET_AGENTS" "$dest"
+  # A local AGENTS.md is often hand-edited. install_file copies over it but backs
+  # it up first and says so — silently replacing someone's instructions is worse
+  # than a stale file.
+  install_home_tree AGENTS.md
 }
 
 # ---------------------------------------------------------------- overlord --

@@ -64,6 +64,7 @@ over uncommitted work is not describing what ships.
 |---|---|
 | `smoke` | every script parses, every JSON file parses, every `SKILL.md` has valid frontmatter, the skill and plugin manifests are consistent and pinned, no credentials or developer paths in the tree |
 | `install` | a from-scratch install produces the expected files, packages, providers, credential files and skill links |
+| `mirror` | `home/` is a literal mirror of `$HOME` in both directions: every file under `home/` has a destination and lands there byte-identical, every documented destination is backed by a file in `home/` (or is generated), a modified destination makes `doctor.sh` exit non-zero and name the path, the personal install-if-absent files survive a reinstall, and `--dry-run` names every destination without writing one |
 | `idempotent` | running install twice changes nothing byte-for-byte, and creates no duplicate packages or providers |
 | `partial` | on a machine that already has config, the installer adds and never overwrites: the user's theme, provider route, custom keys and package sources all survive |
 | `failures` | with no herdr, with a corrupt `settings.json`, with nothing installed: it explains itself, backs up, and exits honestly |
@@ -93,14 +94,40 @@ These are real defects the suite found, not hypotheticals:
    `set -u`: bash creates every name in the `local` list before assigning any.
    That was a defect in the test harness itself, and the kind of thing that makes
    a suite report 25 failures that are all one bug.
+6. **`short()` never shortened anything.** It was written
+   `${1/#$HOME/~}`, and bash tilde-expands the replacement, so the `~` expanded
+   straight back to `$HOME` and every "installed ~/…" line printed an absolute
+   path. Escaping the replacement (`\~`) is the fix; the mirror suite reads the
+   plan, so a plan that cannot say `~/AGENTS.md` is now a failure.
+7. **`--dry-run` could abort before it printed the plan.** Two stages called a
+   helper without the `|| warn` guard their neighbours had, so under `set -e` a
+   missing dagr binary (the skills stage) or an absent local plugin checkout (the
+   herdr stage) ended the run — in dry-run, before agents, overlord, secrets and
+   verify were ever described. A dry run that stops half way is worse than no
+   dry run: it reads as "nothing left to do".
+8. **A first install handed pi a package placeholder as a path.** The template's
+   `@PI_EXTENSIONS_APOTHIC@/packages/pi-goal`, `@PI_EXTENSIONS_1@/packages/pi-modes`
+   and `@PI_FLEET_HOOKS@` were copied verbatim when no `settings.json` existed
+   yet, because the copy branch skipped the rendering the merge did. `json-edit.js
+   render-settings` renders them and drops the ones whose checkout is absent.
+9. **The skills manifest was read as the loop's stdin.** `npx skills add` can
+   read stdin, and inside `while read … done < <(rows)` that is the manifest, so
+   the first fetched skill swallowed every row after it and the install reported
+   success having skipped the rest. `</dev/null` on the fetch is the fix; it only
+   bites on a machine with no local checkouts, which is exactly a fresh clone.
 
 ## Writing a new check
 
 - Use `in_home <sandbox> <command>` so the script under test sees a throwaway
   `HOME`, `HERDR_CONFIG_DIR`, `PI_CODING_AGENT_DIR`, `AGENTS_SKILLS_DIR`,
-  `LOCAL_BIN_DIR` and `YELLOWSTONE_BACKUP_DIR`. Every one of those is an
+  `LOCAL_BIN_DIR`, `OVERLORD_DIR`, `SYSOPS_DIR` and `YELLOWSTONE_BACKUP_DIR`.
+  Every one of those is an
   override the installer honours; if you need a new one, add it to `lib.sh` and
   to this list rather than letting a test write to the real home.
+- Resolve paths through `scripts/lib.sh` (`home_dest`, `home_policy`,
+  `home_dest_roots`), as the `mirror` suite does, instead of hardcoding a
+  destination in the test: a test that repeats the mapping cannot catch the
+  mapping being wrong.
 - Prefer asserting on **artifacts** (file exists, JSON parses, exit code) over
   transcript text. Text assertions are for the cases where the message is the
   contract, such as a failure explaining how to fix itself.

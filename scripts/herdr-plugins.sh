@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# herdr-plugins.sh — apply herdr/plugins.toml to this machine.
+# herdr-plugins.sh — apply home/.config/herdr/plugins.toml to this machine.
 #
 #   herdr-plugins.sh install     install every plugin not present
 #   herdr-plugins.sh update      refresh GitHub-managed plugins in place
@@ -10,10 +10,14 @@
 # only way to run a local checkout, so each entry declares either a GitHub source
 # or link_path. Refs are pinned in the manifest: updating a plugin here is a
 # commit that bumps `ref`, not a silent moving target.
+#
+# The manifest is read from home/ rather than from the installed copy, because
+# this is the file a `git pull` updates; the installed copy exists so the machine
+# records the declared set, and doctor compares the two.
 
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
-MANIFEST="$REPO_ROOT/herdr/plugins.toml"
+MANIFEST="$HOME_SRC/.config/herdr/plugins.toml"
 MANIFEST_JS="$REPO_ROOT/scripts/plugins-manifest.js"
 
 have herdr || die "herdr is not installed; install it first (curl -fsSL https://herdr.dev/install.sh | sh)"

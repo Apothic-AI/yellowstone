@@ -59,16 +59,19 @@ Some files describe a machine rather than a configuration:
 | File | Why it is not committed |
 |---|---|
 | `~/.pi/agent/auth.json` | OAuth credentials |
-| `~/.pi/agent/model-picker.json` | most-recently-used order is a habit, not a setting |
-| `~/.pi/agent/web-search.json` | picks a browser profile, which is machine-specific |
-| `~/.pi/agent/trust.json` | blanket project trust is a judgement about whose code you run |
 | `~/.pi/agent/sessions/` | conversations |
 | `~/.config/herdr/session.json` | live pane layout |
+| `~/.pi/agent/secrets/` | the operator's provider keys, one file each |
+| `~/.pi-profile-switch/instances/<id>/` | the generated profile instance tree (auth, sessions, npm, modes) |
 
-`model-picker.json` and `web-search.json` are installed only when absent, and
-`trust.example.json` is documented rather than installed. That is the pattern:
-ship a default that a fresh machine needs, never overwrite a choice a human
-made by using the tool.
+Three files are a mix, and the mix is what the installer encodes: a *default*
+that a fresh machine needs is committed under `home/`, and the live file is
+installed only when absent, so the choice a human made by using the tool is
+never overwritten. That is `~/.pi/agent/model-picker.json` (MRU order),
+`~/.pi/agent/web-search.json` (browser profile) and `~/.pi/agent/pi-persist.json`
+(the trailing reminders a person wrote). `docs/trust.example.json` is documented
+rather than installed, because blanket project trust is a judgement about whose
+code you run.
 
 ## 5. Components are subrepos, not copies
 
@@ -131,9 +134,45 @@ describing what ships.
 
 ## Design decisions worth knowing
 
+### `home/` is a literal mirror, so the destination of a file is a path
+
+Every file the installer puts in `$HOME` lives at the same path underneath
+`home/`. `home/.pi/agent/settings.json` is installed to `~/.pi/agent/settings.json`
+because of its name, not because a table beside it says so.
+
+The rule is what makes the layout mechanical: `home/` contains exactly the files
+`install.sh` writes, and nothing else. A file the installer does not write has no
+home under `home/`; a file it writes must have exactly one. That is why
+`home/.pi/agent/` ships `settings.json` but not `auth.json`, `sessions/` or the
+profile instance tree — those are machine state, not shipped content — and why
+`skills/skills.tsv` and the installer's own `scripts/`, `docs/` and `test/` stay at
+the top level. They are bookkeeping and tooling, not installed content.
+
+Three things follow, and they are the reason the layout is worth the move:
+
+1. **A new file needs no new code.** Drop it under `home/.pi/agent/` and
+   `./install.sh pi` installs it, because the stage installs a subtree rather
+   than a hand-maintained list.
+2. **The destination is overridable where it must be.** The four roots
+   (`~/.config/herdr`, `~/.pi/agent`, `~/.agents/skills`, `~/.local/bin`) plus
+   `~/AGENTS.md`, `~/.overlord` and `~/.sysops` keep their environment variables,
+   which is how the test suite installs into a throwaway `HOME`. The path
+   *below* a root is never remapped.
+3. **The mirror is checkable.** `scripts/doctor.sh` compares every mirrored file
+   with its destination and names the path that differs, and `test/run-tests.sh`
+   fails if a file has no destination or a documented destination has no file.
+
+Not every row is a copy, and flattening them would be a data-loss bug. A file's
+`home_policy` in `scripts/lib.sh` is one of: `copy` (the default), `copy-exec`,
+`merge-settings` (owned keys and a package union), `merge-models` (providers are
+added, never replaced), `keep` (install only when absent — the MRU list, the
+search profile, the trailing reminders, the overlord index), `template`
+(install once, then report drift and never replace) or `skill` (linked by
+`scripts/skills-sync.sh`, so the manifest stays the single membership test).
+
 ### Plugin refs are pinned commits
 
-`herdr/plugins.toml` records a `ref` per plugin. Installing therefore produces
+`home/.config/herdr/plugins.toml` records a `ref` per plugin. Installing therefore produces
 the same code on every machine, and upgrading is a commit that changes one line
 — reviewable, attributable, and revertible. The alternative (track a branch)
 would mean two machines with the same repo could run different plugin code.
@@ -149,7 +188,7 @@ defined set of keys and unions the `packages` array by source. A provider block
 you already route yourself is never replaced.
 
 This is why re-running the installer is safe on a machine that has been lived
-in. The one file it replaces wholesale is `herdr/config.toml`, because every
+in. The one file it replaces wholesale is `home/.config/herdr/config.toml`, because every
 section of it is part of the setup and a partial merge of a TOML file with
 `[theme.custom]` tables is a recipe for a broken config.
 
@@ -218,12 +257,12 @@ plugins are — not a file copied between repos.
 
 ## How to add something
 
-1. **A herdr plugin** — add a `[[plugin]]` table to `herdr/plugins.toml` with a
+1. **A herdr plugin** — add a `[[plugin]]` table to `home/.config/herdr/plugins.toml` with a
    pinned `ref` and a one-line `why`; run `scripts/herdr-plugins.sh install`.
 2. **A pi package** — add its source to the `packages` array in
-   `pi/settings.json`; run `install.sh pi`. If it is a git source, the pin lives
+   `home/.pi/agent/settings.json`; run `install.sh pi`. If it is a git source, the pin lives
    in the git ref itself.
-3. **A pi extension you wrote** — drop it in `pi/extensions/` and add it to the
+3. **A pi extension you wrote** — drop it in `home/.pi/agent/extensions/` and add it to the
    installer's file list. Pin nothing: it moves with the repo.
 4. **A skill** — add one row to `skills/skills.tsv` and nothing else. The `kind`
    decides where it installs from, and that file is the only thing that has to
@@ -239,11 +278,11 @@ plugins are — not a file copied between repos.
 5. **A fork** — record it in `docs/forks.md` with its upstream, the reason, and
    how it updates. A fork without a stated reason is a bug.
 6. **A default herdr space** — add it to `scripts/overlord.sh`'s space spec
-   (label, cwd, tabs) and to `overlord/README.md`. `herdr workspace create` does
+   (label, cwd, tabs) and to `home/.overlord/README.md`. `herdr workspace create` does
    not deduplicate, so the lookup-then-create path there is not optional.
 
 In every case: no credentials, no absolute home paths, and update
 `scripts/doctor.sh` so the next person finds out when it breaks. Prefer a
 mechanically-derived list over a hand-maintained one — several `doctor` and test
 checks were later rewritten to count from `skills/skills.tsv` or
-`herdr/plugins.toml` after a hardcoded list went stale.
+`home/.config/herdr/plugins.toml` after a hardcoded list went stale.

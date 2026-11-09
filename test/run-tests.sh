@@ -4,6 +4,9 @@
 # Suites (pass one as $1, default "all"):
 #   smoke     syntax, JSON, frontmatter, manifest parsing. No writes.
 #   install   install.sh from scratch, then verify what landed.
+#   mirror    home/ is a literal mirror: every file has a destination, the
+#             destination lands byte-identical, doctor fails by path when one is
+#             modified, and the personal files are never overwritten.
 #   idempotent re-run install.sh and assert nothing changes (byte-for-byte).
 #   partial   install on a machine with pre-existing config: assert the
 #             installer adds and never overwrites.
@@ -63,6 +66,8 @@ in_home() {
   PI_CODING_AGENT_DIR="$home/.pi/agent" \
   AGENTS_SKILLS_DIR="$home/.agents/skills" \
   LOCAL_BIN_DIR="$home/.local/bin" \
+  OVERLORD_DIR="$home/.overlord" \
+  SYSOPS_DIR="$home/.sysops" \
   YELLOWSTONE_BACKUP_DIR="$home/.local/state/yellowstone/backups" \
   NO_COLOR=1 \
     "$@"
@@ -156,17 +161,24 @@ suite_smoke() {
   # working in this tree; the fleet core that installs to $HOME/AGENTS.md is a
   # separate artifact. Collapsing them is what made the installed copy a
   # pointer to itself on the next install.
-  check "ships the fleet core" test -f "$REPO/fleet/AGENTS.md"
+  check "ships the fleet core" test -f "$REPO/home/AGENTS.md"
   check "fleet core is not this repo's own instructions" bash -c \
-    "! cmp -s '$REPO/AGENTS.md' '$REPO/fleet/AGENTS.md'"
+    "! cmp -s '$REPO/AGENTS.md' '$REPO/home/AGENTS.md'"
+  # The two exclusions are decisions, not accidents: a mirror of the agent dir
+  # must never carry credential files, and the generated profile instance tree is
+  # not this repo's content at all.
+  check "the mirror ships no secrets directory" \
+    bash -c "[ ! -e '$REPO/home/.pi/agent/secrets' ]"
+  check "the mirror does not carry a profile instance tree" \
+    bash -c "[ ! -e '$REPO/home/.pi-profile-switch' ]"
 
   # The shipped overlord docs: present, and free of any one operator's projects.
-  for f in overlord/AGENTS.md overlord/README.md; do
+  for f in home/.overlord/AGENTS.md home/.overlord/README.md; do
     check "ships $f" test -f "$REPO/$f"
   done
   local leaks
   leaks="$(grep -riE 'apothic|autopod|subtoken|starla|sibyl|solid-lynx|omebian|mycord|vpn2proxy|surreal|account-management' \
-           "$REPO/overlord/" 2>/dev/null | wc -l)"
+           "$REPO/home/.overlord/" 2>/dev/null | wc -l)"
   check_eq "no operator project names in the shipped overlord docs" 0 "$leaks"
 
   # mycord: five skills, one repository, resolved from a checkout at the repo
@@ -186,7 +198,7 @@ suite_smoke() {
   # Theme provenance: a [theme.custom] block is a derived palette, not a package.
   # Documenting it as "comes from <plugin>" is wrong unless the plugin's own
   # mapping reproduces it, so the tree must not claim a shipped source for it.
-  if grep -q 'theme.custom' "$REPO/herdr/config.toml"; then
+  if grep -q 'theme.custom' "$REPO/home/.config/herdr/config.toml"; then
     ok "herdr ships a [theme.custom] palette (derived, not a package)"
     local misclaim
     misclaim="$(grep -riE 'palette (comes|ships) from|theme.*(shipped|packaged) (by|with) the .*plugin' \
@@ -212,7 +224,7 @@ suite_smoke() {
     grep -q 'Replace goal' "$REPO/yellowstone-skill/SKILL.md"
   local sec
   for sec in '## Intake' '### Goal-driven lanes' '### Reserved right now'; do
-    check "overlord doc carries '$sec'" grep -qF "$sec" "$REPO/overlord/AGENTS.md"
+    check "overlord doc carries '$sec'" grep -qF "$sec" "$REPO/home/.overlord/AGENTS.md"
   done
   # Goal state is footer-only: the claim must stay true, or the doc is wrong.
   if command -v herdr >/dev/null 2>&1 && herdr workspace list >/dev/null 2>&1; then
@@ -239,19 +251,19 @@ suite_smoke() {
   # config.toml because neither manifest declares keys: plugin without bind is
   # unreachable, bind without plugin does nothing.
   check "manifest declares herdr-bar" \
-    awk -F'\t' '$1=="herdr-bar"' "$REPO/herdr/plugins.toml" >/dev/null 2>&1 || \
-    node "$REPO/scripts/plugins-manifest.js" ids "$REPO/herdr/plugins.toml" | grep -qx herdr-bar
+    awk -F'\t' '$1=="herdr-bar"' "$REPO/home/.config/herdr/plugins.toml" >/dev/null 2>&1 || \
+    node "$REPO/scripts/plugins-manifest.js" ids "$REPO/home/.config/herdr/plugins.toml" | grep -qx herdr-bar
   check "manifest declares the plugin manager" \
-    node "$REPO/scripts/plugins-manifest.js" ids "$REPO/herdr/plugins.toml" | grep -qx ray.plugin-manager
-  check "config ships the command-bar bind" grep -q 'command = "herdr-bar.open"' "$REPO/herdr/config.toml"
-  check "config ships the plugin-manager bind" grep -q 'command = "ray.plugin-manager.open"' "$REPO/herdr/config.toml"
+    node "$REPO/scripts/plugins-manifest.js" ids "$REPO/home/.config/herdr/plugins.toml" | grep -qx ray.plugin-manager
+  check "config ships the command-bar bind" grep -q 'command = "herdr-bar.open"' "$REPO/home/.config/herdr/config.toml"
+  check "config ships the plugin-manager bind" grep -q 'command = "ray.plugin-manager.open"' "$REPO/home/.config/herdr/config.toml"
   # Every plugin whose manifest declares a keybind must have that bind in
   # config.toml — a manifest-only pin is not reachable.
   local missing_bind="" id kind_tab src ref link_path optional why repo note
   while IFS=$'\x1f' read -r id source ref link_path optional why repo note; do
     [ -n "$id" ] || continue
     # read the bind recorded in the manifest's keybind field, if any
-    bind="$(node "$REPO/scripts/plugins-manifest.js" get "$REPO/herdr/plugins.toml" "$id" keybind)"
+    bind="$(node "$REPO/scripts/plugins-manifest.js" get "$REPO/home/.config/herdr/plugins.toml" "$id" keybind)"
     [ -n "$bind" ] || continue
     # A plugin may declare several binds in one field, comma-separated
     # ("prefix+v -> dictate.toggle, prefix+shift+v -> dictate.toggle-send").
@@ -260,24 +272,24 @@ suite_smoke() {
       action="${one#*-> }"
       action="${action%% *}"
       [ -n "$action" ] || continue
-      grep -q "command = \"$action\"" "$REPO/herdr/config.toml" \
+      grep -q "command = \"$action\"" "$REPO/home/.config/herdr/config.toml" \
         || missing_bind="$missing_bind$id($action) "
     done < <(printf '%s' "$bind" | tr ',' '\n')
-  done < <(node "$REPO/scripts/plugins-manifest.js" rows "$REPO/herdr/plugins.toml")
+  done < <(node "$REPO/scripts/plugins-manifest.js" rows "$REPO/home/.config/herdr/plugins.toml")
   check_eq "every declared keybind is present in config.toml" "" "$missing_bind"
 
   # The non-blocking invariant must be enforced at a call site, not just written
   # down: an agent that forgets does not get the benefit of a paragraph.
-  check "nonblock extension ships" test -f "$REPO/pi/extensions/nonblock.ts"
-  check "nonblock defaults to disabled" grep -q 'function enabled' "$REPO/pi/extensions/nonblock.ts"
-  check "nonblock targets the attach trap" grep -q 'action !== "attach"' "$REPO/pi/extensions/nonblock.ts"
+  check "nonblock extension ships" test -f "$REPO/home/.pi/agent/extensions/nonblock.ts"
+  check "nonblock defaults to disabled" grep -q 'function enabled' "$REPO/home/.pi/agent/extensions/nonblock.ts"
+  check "nonblock targets the attach trap" grep -q 'action !== "attach"' "$REPO/home/.pi/agent/extensions/nonblock.ts"
   check "skill documents the blocking table" \
     grep -q "jobs action='attach'" "$REPO/yellowstone-skill/SKILL.md"
-  check "overlord doc carries the invariants" grep -qF '## Operational invariants' "$REPO/overlord/AGENTS.md"
+  check "overlord doc carries the invariants" grep -qF '## Operational invariants' "$REPO/home/.overlord/AGENTS.md"
 
   # Plugin manifest.
   local n
-  n="$(node "$REPO/scripts/plugins-manifest.js" ids "$REPO/herdr/plugins.toml" 2>/dev/null | wc -l)"
+  n="$(node "$REPO/scripts/plugins-manifest.js" ids "$REPO/home/.config/herdr/plugins.toml" 2>/dev/null | wc -l)"
   [ "${n:-0}" -ge 5 ] && ok "herdr/plugins.toml declares $n plugins" || bad "plugins.toml parsed $n plugins (expected >=5)"
 
   # Every plugin entry needs a pinned ref or a local link path.
@@ -289,7 +301,7 @@ suite_smoke() {
     else
       [ -n "$ref" ] || { badpin=1; bad "plugins.toml: $id has no pinned ref"; }
     fi
-  done < <(node "$REPO/scripts/plugins-manifest.js" rows "$REPO/herdr/plugins.toml")
+  done < <(node "$REPO/scripts/plugins-manifest.js" rows "$REPO/home/.config/herdr/plugins.toml")
   [ "$badpin" = 0 ] && ok "every plugin is pinned or locally linked"
 
   # No secrets and no absolute home paths in the tree.
@@ -308,8 +320,15 @@ suite_smoke() {
   check_eq "no credentials in the tree" 0 "$hits"
 
   # Match any concrete developer home directory rather than one literal path,
-  # so this check cannot be satisfied or defeated by its own text.
-  hits="$(grep -rnE '/home/(bitnom|ubuntu|runner|[a-z]+)/Code/' --exclude-dir=.git --exclude-dir=src "$REPO" 2>/dev/null | wc -l)"
+  # so this check cannot be satisfied or defeated by its own text. In a git
+  # worktree `.git` is a *file* whose one line is the main checkout's gitdir, so
+  # the directory exclusion alone would report the lane's scaffolding as tree
+  # content; the second filter drops that line and nothing else. `src/` is
+  # excluded on purpose: those are other repositories' trees at pinned commits,
+  # delivered by `git subrepo`, and their fixtures are not ours to edit — the
+  # credentials check above carries the same exclusion for the same reason.
+  hits="$(grep -rnE '/home/(bitnom|ubuntu|runner|[a-z]+)/Code/' --exclude-dir=.git --exclude-dir=src "$REPO" 2>/dev/null \
+          | grep -v '^[^:]*/\.git:' | wc -l)"
   check_eq "no absolute developer paths in the tree" 0 "$hits"
 }
 
@@ -334,7 +353,7 @@ suite_install() {
   # whenever a package is added, and a literal turns that into a test failure
   # that says nothing about correctness.
   local want_pkg
-  want_pkg="$(node -e 'console.log(require(process.argv[1]).packages.length)' "$REPO/pi/settings.json")"
+  want_pkg="$(node -e 'console.log(require(process.argv[1]).packages.length)' "$REPO/home/.pi/agent/settings.json")"
   check_eq "all $want_pkg declared packages present" "$want_pkg" "$npkg"
   check "pi-pretty-tui installed from its fork repo" \
     grep -q 'Apothic-AI/pi-pretty-tui' "$home/.pi/agent/settings.json"
@@ -343,7 +362,7 @@ suite_install() {
   local nprov
   nprov="$(node -e 'const m=require(process.argv[1]);console.log(Object.keys(m.providers).length)' "$home/.pi/agent/models.json")"
   local want_prov
-  want_prov="$(node -e 'console.log(Object.keys(require(process.argv[1]).providers).length)' "$REPO/pi/models.json")"
+  want_prov="$(node -e 'console.log(Object.keys(require(process.argv[1]).providers).length)' "$REPO/home/.pi/agent/models.json")"
   check_eq "$want_prov providers merged" "$want_prov" "$nprov"
   check "apiKey values are commands, not literals" \
     bash -c "! grep -qE '\"apiKey\": *\"(sk-|pk-)' '$home/.pi/agent/models.json'"
@@ -369,7 +388,7 @@ suite_install() {
   # be created in the sandbox because herdr workspaces are per-user, so this
   # asserts the directory side and that the script reports the workspace gap.
   check "~/AGENTS.md installed" test -f "$home/AGENTS.md"
-  check "~/AGENTS.md matches the shipped core" cmp -s "$REPO/fleet/AGENTS.md" "$home/AGENTS.md"
+  check "~/AGENTS.md matches the shipped core" cmp -s "$REPO/home/AGENTS.md" "$home/AGENTS.md"
   check "~/.sysops created" test -d "$home/.sysops"
   check "overlord AGENTS.md installed" test -f "$home/.overlord/AGENTS.md"
   check "overlord README.md installed" test -f "$home/.overlord/README.md"
@@ -388,7 +407,10 @@ suite_install() {
   local dout
   dout="$(in_home "$home" bash "$REPO/scripts/doctor.sh" 2>&1)"
   check_contains "doctor reports missing credentials" "$dout" "pi-secrets"
-  check_contains "doctor reports missing herdr config" "$dout" "herdr-config"
+  # The herdr stage did not run in this sandbox, so config.toml is absent. doctor
+  # reports that from the mirror section, by mirror path — one place for "the
+  # file is missing/differs", instead of a second comparison in the herdr block.
+  check_contains "doctor reports missing herdr config" "$dout" "home/.config/herdr/config.toml"
 }
 
 # ----------------------------------------------------------- idempotent -----
@@ -479,7 +501,7 @@ JSON
   printf '# my own instructions\ncustom rule\n' > "$home/AGENTS.md"
   in_home "$home" bash "$REPO/install.sh" agents --yes >/dev/null 2>&1
   check "hand-edited ~/AGENTS.md backed up" bash -c "ls '$home/AGENTS.md.bak-yellowstone-'* >/dev/null 2>&1"
-  check "~/AGENTS.md replaced by the shipped core" cmp -s "$REPO/fleet/AGENTS.md" "$home/AGENTS.md"
+  check "~/AGENTS.md replaced by the shipped core" cmp -s "$REPO/home/AGENTS.md" "$home/AGENTS.md"
 
   # An operator's live workspace index must survive a reinstall.
   mkdir -p "$home/.overlord"
@@ -492,6 +514,131 @@ JSON
 
   # A backup exists for every file that was modified.
   check "settings.json backed up before merge" bash -c "ls '$home/.pi/agent/settings.json.bak-yellowstone-'* >/dev/null 2>&1"
+}
+
+# --------------------------------------------------------------- mirror -----
+# home/ is the literal mirror of $HOME, so the mirror is testable *as* a mirror.
+# These checks fail in both directions — a file in home/ that no destination
+# claims, and a documented destination that home/ cannot back — plus the three
+# behaviours a restructure like this breaks first: a copy landing byte-identical,
+# doctor noticing a modified file, and the install-if-absent personal files
+# surviving a reinstall.
+#
+suite_mirror() {
+  suite mirror
+
+  local probe_home="$SANDBOX/mirror-probe"
+  mkdir -p "$probe_home"
+
+  # rel<TAB>destination<TAB>policy for every file under home/, resolved by
+  # scripts/lib.sh itself so this suite cannot drift from the installer by
+  # re-implementing the mapping $2 is the HOME the destinations are computed for.
+  mirror_rows() {
+    env HOME="$1" REPO_FOR_PROBE="$REPO" bash -c '
+      source "$REPO_FOR_PROBE/scripts/lib.sh"
+      cd "$REPO_FOR_PROBE/home" || exit 1
+      find . -type f | sed "s|^\./||" | LC_ALL=C sort | while IFS= read -r rel; do
+        if ! dest="$(home_dest "$rel")"; then printf "%s\t-\tNONE\n" "$rel"; continue; fi
+        printf "%s\t%s\t%s\n" "$rel" "$dest" "$(home_policy "$rel")"
+      done
+    '
+  }
+
+  local rows nrows
+  rows="$(mirror_rows "$probe_home")"
+  nrows="$(printf '%s\n' "$rows" | grep -c .)"
+  [ "$nrows" -ge 18 ] && ok "home/ carries $nrows files" || bad "home/ carries only $nrows files"
+
+  check_eq "every file in home/ has a destination" "" \
+    "$(printf '%s\n' "$rows" | awk -F'\t' '$3=="NONE"{printf "%s ", $1}')"
+
+  # The other direction: every root the installer documents must be backed by
+  # content in home/, unless what lands there is generated rather than shipped.
+  local roots generated root dest missing_roots=""
+  roots="$(env HOME="$probe_home" REPO_FOR_PROBE="$REPO" bash -c '
+    source "$REPO_FOR_PROBE/scripts/lib.sh"; home_dest_roots')"
+  generated="$(env HOME="$probe_home" REPO_FOR_PROBE="$REPO" bash -c '
+    source "$REPO_FOR_PROBE/scripts/lib.sh"; home_generated_dirs')"
+  while IFS='|' read -r root dest; do
+    [ -n "$root" ] || continue
+    if [ -n "$(cd "$REPO/home" && find "./$root" -type f 2>/dev/null | head -1)" ]; then
+      continue
+    fi
+    printf '%s\n' "$generated" | grep -qx -- "$dest" || missing_roots="$missing_roots$root "
+  done <<< "$roots"
+  check_eq "every documented destination is backed by home/ or generated" "" "$missing_roots"
+
+  # ---- install into a throwaway HOME: the mirror must land intact --------
+  local home out rc
+  home="$(new_home mirror)"
+  out="$(in_home "$home" bash "$REPO/install.sh" pi agents overlord secrets --yes 2>&1)"; rc=$?
+  check_eq "install.sh exits 0" 0 "$rc"
+
+  # The herdr stage's two file destinations through the same helper the stage
+  # calls. Its remaining work — the pi integration and 14 plugin installs — is
+  # machine state, not mirror content, and running it here would make this suite
+  # depend on the network and mutate the box.
+  in_home "$home" bash -c 'source "$1/scripts/lib.sh"; install_home_tree .config/herdr; install_home_tree .local/bin' \
+    _ "$REPO" >/dev/null 2>&1
+
+  # Only the bundle skills, from a synthetic manifest: the mirror's skill rows
+  # are what this asserts, and a repo-kind fetch would prove the network instead.
+  local bundles="$home/bundles.tsv"
+  grep -vE '^[[:space:]]*(#|$)' "$REPO/skills/skills.tsv" | awk -F'\t' '$2=="bundle"' > "$bundles"
+  in_home "$home" env SKILLS_MANIFEST="$bundles" bash "$REPO/scripts/skills-sync.sh" install >/dev/null 2>&1
+
+  rows="$(mirror_rows "$home")"
+  local rel target policy not_landed="" not_identical=""
+  while IFS=$'\t' read -r rel target policy; do
+    [ -n "$rel" ] || continue
+    case "$policy" in
+      copy|copy-exec)
+        if [ ! -e "$target" ]; then not_landed="$not_landed$rel "
+        elif ! cmp -s -- "$REPO/home/$rel" "$target"; then not_identical="$not_identical$rel "
+        fi ;;
+      *)
+        [ -e "$target" ] || not_landed="$not_landed$rel " ;;
+    esac
+  done <<< "$rows"
+  check_eq "every mirrored file landed at its destination" "" "$not_landed"
+  check_eq "every copied file is byte-identical to home/" "" "$not_identical"
+
+  # A first install must not hand pi a package placeholder as a path.
+  check_eq "no unrendered package placeholder in a fresh settings.json" "" \
+    "$(node -e 'const s=require(process.argv[1]);const b=(s.packages||[]).map(p=>String(typeof p==="string"?p:p.source)).filter(x=>x.startsWith("@"));console.log(b.join(" "))' "$home/.pi/agent/settings.json")"
+
+  # ---- the personal files are kept, never overwritten -------------------
+  printf '{"reminders":["mine, hand-written"]}\n' > "$home/.pi/agent/pi-persist.json"
+  printf '{"mru":["my-model"]}\n' > "$home/.pi/agent/model-picker.json"
+  out="$(in_home "$home" bash "$REPO/install.sh" pi --yes 2>&1)"
+  check_contains "reinstall reports the personal file was kept" "$out" "kept"
+  check_eq "pi-persist.json kept" '{"reminders":["mine, hand-written"]}' \
+    "$(cat "$home/.pi/agent/pi-persist.json")"
+  check_eq "model-picker.json kept" '{"mru":["my-model"]}' \
+    "$(cat "$home/.pi/agent/model-picker.json")"
+
+  # ---- doctor: one modified destination is a failure, named by path ------
+  local victim="$home/.pi/agent/pi-auto-compact.json" dout drc
+  node -e 'const f=process.argv[1];const j=require(f);j.tampered=true;require("fs").writeFileSync(f,JSON.stringify(j,null,2)+"\n")' "$victim"
+  dout="$(in_home "$home" bash "$REPO/scripts/doctor.sh" 2>&1)"; drc=$?
+  check_ne "doctor exits non-zero when a mirrored file is modified" 0 "$drc"
+  check_contains "doctor names the modified path" "$dout" "pi-auto-compact.json"
+
+  # ---- dry run: names every destination, writes nothing ------------------
+  # A destination file that exists after a dry run would mean the plan was a lie.
+  # Rendered as `~/…`, because that is the form the plan prints.
+  local dh wrote plan d
+  dh="$(new_home mirror-dry)"
+  plan="$(in_home "$dh" bash "$REPO/install.sh" --dry-run --yes 2>&1)"
+  wrote=""
+  while IFS=$'\t' read -r rel target policy; do
+    [ -e "$target" ] && wrote="$wrote$rel "
+  done <<< "$(mirror_rows "$dh")"
+  check_eq "dry run creates no destination" "" "$wrote"
+  check_eq "dry run creates no backup" "" "$(find "$dh" -name '*.bak-yellowstone-*' 2>/dev/null | head -1)"
+  for d in .config/herdr .pi/agent .agents/skills .local/bin AGENTS.md .overlord .sysops; do
+    check_contains "dry-run plan names ~/$d" "$plan" "~/$d"
+  done
 }
 
 # ------------------------------------------------------------- failures ----
@@ -548,7 +695,7 @@ suite_failures() {
 suite_builder() {
   suite builder
 
-  local script="$REPO/skills/shared-flyio-build-server/builder-idle.sh"
+  local script="$REPO/home/.agents/skills/shared-flyio-build-server/builder-idle.sh"
   local home; home="$(new_home builder)"
   local shims="$home/shims"
   mkdir -p "$shims"
@@ -639,7 +786,7 @@ EOS
   # The lease must not outlive the record: a child that inherits the lock fd keeps
   # the shared lock held after the recorded holder is gone, and `park` then refuses
   # forever with nothing to name.
-  local st="$REPO/skills/shared-flyio-build-server/builder-state.sh"
+  local st="$REPO/home/.agents/skills/shared-flyio-build-server/builder-state.sh"
   local ldir="$home/state-lock"; rm -rf "$ldir"; mkdir -p "$ldir"
   BUILDER_STATE_DIR="$ldir" sh "$st" lease probe -- sleep 30 >/dev/null 2>&1 &
   local shellpid=$!
@@ -717,12 +864,13 @@ main() {
   case "$SUITE" in
     smoke)      suite_smoke ;;
     install)    suite_install ;;
+    mirror)     suite_mirror ;;
     idempotent) suite_idempotent ;;
     partial)    suite_partial ;;
     failures)   suite_failures ;;
     resolvers)  suite_resolvers ;;
     builder)    suite_builder ;;
-    all)        suite_smoke; suite_install; suite_idempotent; suite_partial; suite_failures; suite_resolvers; suite_builder ;;
+    all)        suite_smoke; suite_install; suite_mirror; suite_idempotent; suite_partial; suite_failures; suite_resolvers; suite_builder ;;
     *) printf 'unknown suite: %s\n' "$SUITE" >&2; exit 2 ;;
   esac
 
