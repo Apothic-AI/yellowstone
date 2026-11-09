@@ -4,9 +4,9 @@
 ; git-subrepo command. See https://github.com/ingydotnet/git-subrepo#readme
 ;
 [subrepo]
-	remote = https://github.com/Apothic-AI/mycord
+	remote = https://github.com/Apothic-AI/cargo-remote-3000
 	branch = master
-	commit = 082556ff97b310295d3daaeeb3062245934b6a0f
-	parent = 6ae270c7c82f946da060605b881292eb0e492847
+	commit = 3be73ff10d482fa6475e6ad97499fb674fc280f1
+	parent = 72b94e271349f577c9a4791695c54e7da0a8aa68
 	method = merge
 	cmdver = 0.4.9

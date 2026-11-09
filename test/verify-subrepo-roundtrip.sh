@@ -19,7 +19,7 @@
 set -euo pipefail
 cd "$(dirname -- "$0")/.."
 
-EXPECTED=14
+EXPECTED=15
 REPO="$(pwd)"
 
 # `.pi/launch.env` is tracked on purpose: it is this space's launch line, and `pil` falls back to
