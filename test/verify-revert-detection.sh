@@ -22,7 +22,7 @@ fail=0
 
 # build <case> — a scratch repo with one tool file and a synthetic live copy.
 run_case() {
-  local want="$1" kind="$2" P; P="$(mktemp -d)"
+  local want="$1" kind="$2" want_msg="${3:-}" P; P="$(mktemp -d)"
   mkdir -p "$P/repo/test" "$P/repo/home/.overlord/tools" "$P/live/tools"
   (
     cd "$P/repo" || exit 1
@@ -40,6 +40,16 @@ run_case() {
         # still has A's — and A is committed, which is what makes this benign
         # rather than a revert. Both sides are in history, mirror is the descendant.
         git show HEAD~1:home/.overlord/tools/t.sh > "$P/live/tools/t.sh" ;;
+      diverged)
+        # The lineages have split. The live content IS committed — on a branch this
+        # one cannot reach — so "never committed at this path" would be the opposite
+        # of the truth and "commit it" an instruction into a second divergence.
+        # Right verdict is fail either way; the message is what tells a lane what to
+        # do, so this row asserts the wording and not only the exit status.
+        git checkout -q -b sideB
+        printf 'SIDE-B contract\n' > home/.overlord/tools/t.sh; git commit -qam sideB
+        cp home/.overlord/tools/t.sh "$P/live/tools/t.sh"
+        git checkout -q - ;;
       runtime)
         # live edited on the machine, never committed anywhere.
         cp home/.overlord/tools/t.sh "$P/live/tools/t.sh"
@@ -56,7 +66,12 @@ run_case() {
     echo "  ok   $kind: gate passes"; return 0
   fi
   if [ "$want" = fail ] && [ "$rc" != 0 ]; then
-    echo "  ok   $kind: gate fails"; return 0
+    if [ -n "$want_msg" ] && ! printf '%s' "$out" | grep -qi -- "$want_msg"; then
+      echo "  FAIL $kind: right verdict, wrong message (wanted /$want_msg/)" >&2
+      printf '%s\n' "$out" | sed 's/^/       /' >&2
+      return 1
+    fi
+    echo "  ok   $kind: gate fails${want_msg:+ (message names it)}"; return 0
   fi
   echo "  FAIL $kind: wanted $want, gate exited $rc" >&2
   printf '%s\n' "$out" | sed 's/^/       /' >&2
@@ -66,10 +81,11 @@ run_case() {
 echo "== mirror direction =="
 run_case fail  revert  || fail=1
 run_case fail  runtime || fail=1
+run_case fail  diverged "lineage" || fail=1
 run_case pass  pending || fail=1
 
 if [ "$fail" = 0 ]; then
-  echo "gate passed: a reverted mirror, an uncommitted live edit and a pending install are told apart"
+  echo "gate passed: revert, committed revert, uncommitted edit, diverged lineage and pending install are told apart"
 else
   echo "gate FAILED: the revert detection is not distinguishing the cases" >&2
 fi
