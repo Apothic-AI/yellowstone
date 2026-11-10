@@ -49,14 +49,14 @@ while [ $# -gt 0 ]; do
     -y|--yes) ASSUME_YES=1 ;;
     -n|--dry-run) DRY_RUN=1 ;;
     -h|--help) usage; exit 0 ;;
-    herdr|launcher|pi|plugins|skills|agents|spaces|overlord|secrets|verify) STAGES+=("$1") ;;
+    herdr|launcher|pi|plugins|skills|agents|extensions|spaces|overlord|secrets|verify) STAGES+=("$1") ;;
     *) err "unknown argument: $1"; usage; exit 2 ;;
   esac
   shift
 done
 
 if [ ${#STAGES[@]} -eq 0 ]; then
-  STAGES=(herdr launcher pi skills agents plugins spaces overlord secrets verify)
+  STAGES=(herdr launcher pi skills agents extensions plugins spaces overlord secrets verify)
 fi
 
 # Where the pi-goal fork lives (PI_EXTENSIONS_APOTHIC) is a layout path, so its
@@ -315,6 +315,73 @@ install_launcher() {
   return 0
 }
 
+# -------------------------------------------------------------- extensions --
+install_extensions() {
+  step "Pi extensions (pi install)"
+  # How the nine yellowstone components are declared and installed, in two modes:
+  #
+  #   PI_EXTENSIONS_FROM=local  (default on a development machine)
+  #       pi install <repo>/src/pi-extensions/<component>
+  #       pi records the local package and reads it from the working tree, so an
+  #       edit is live in the next lane. That is the point of a development machine.
+  #
+  #   PI_EXTENSIONS_FROM=git    (a fresh production machine)
+  #       pi install git:github.com/Apothic-AI/<repo>@<sha>
+  #       the sha comes from each subrepo's .gitrepo, so production runs exactly the
+  #       commit the tree pins — no checkout of the component is needed at all.
+  #
+  # `pi install` is the right tool in both cases: it is pi's own package mechanism,
+  # it writes the declaration and performs the install, and it is the only path that
+  # keeps `pi update --extensions` coherent. Hand-writing absolute paths into
+  # settings.json — what this repo did — bypasses all of that.
+  #
+  # The launcher is NOT here: `pi-profile-switch` creates the instance dir and spawns
+  # pi, so it cannot be a package. See install_launcher.
+  local from="${PI_EXTENSIONS_FROM:-local}" c spec repo sha ok=0 skipped=0
+  if ! have pi; then
+    warn "pi is not on PATH — cannot install extensions"
+    return 0
+  fi
+  for c in bizzy pi-cache-optimizer pi-pretty-tui pi-rooms apothic-todo \
+           pi-persist pi-fleet-hooks pi-goal pi-modes; do
+    [ -d "$REPO_ROOT/src/pi-extensions/$c" ] || { skipped=$((skipped + 1)); continue; }
+    case "$from" in
+      local)
+        spec="$REPO_ROOT/src/pi-extensions/$c"
+        ;;
+      git)
+        repo="$(grep -m1 'remote = ' "$REPO_ROOT/src/pi-extensions/$c/.gitrepo" 2>/dev/null | cut -d= -f2 | tr -d ' ')"
+        sha="$(grep -m1 'commit = ' "$REPO_ROOT/src/pi-extensions/$c/.gitrepo" 2>/dev/null | cut -d= -f2 | tr -d ' ')"
+        if [ -z "$repo" ] || [ -z "$sha" ]; then
+          warn "$c: no remote/sha in its .gitrepo — skipped"
+          skipped=$((skipped + 1)); continue
+        fi
+        spec="git:${repo#https://github.com/}@${sha}"
+        ;;
+      *)
+        warn "PI_EXTENSIONS_FROM='$from' is not local or git — nothing installed"
+        return 0
+        ;;
+    esac
+    if [ "$DRY_RUN" = 1 ]; then
+      dryrun "pi install $(short "$spec")"
+      ok=$((ok + 1)); continue
+    fi
+    if pi install "$spec" >/tmp/pi-install-ext.log 2>&1; then
+      ok=$((ok + 1))
+    else
+      warn "$c: pi install failed — run: pi install $spec"
+      tail -3 /tmp/pi-install-ext.log | sed 's/^/    /'
+    fi
+  done
+  if [ "$DRY_RUN" = 1 ]; then
+    dryrun "$ok extension(s) would install from $from, $skipped skipped"
+  else
+    info "$ok extension(s) installed from $from, $skipped skipped"
+  fi
+  return 0
+}
+
 # ----------------------------------------------------------------- plugins --
 install_plugins() {
   # Once per run. The herdr stage calls this and the `plugins` stage calls it, so a
@@ -416,6 +483,7 @@ want herdr   && install_herdr
 want launcher && install_launcher
 want pi      && install_pi
 want plugins && install_plugins
+want extensions && install_extensions
 want skills   && install_skills
 want agents   && install_agents
 want overlord && install_overlord
