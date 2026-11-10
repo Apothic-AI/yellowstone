@@ -42,9 +42,30 @@ Consequence, recorded plainly and asserted in `test/model-thinking-lifecycle.int
 - an explicit in-session selection (`/thinking`, and a model switch to a different model) is a session choice and
   survives `/reload` and resume as it always has.
 
-## Existing sessions
+## Existing sessions and existing instances
 
-A session records its own model and thinking level, and resuming restores them (Pi's documented behaviour). A lane
-that started at the pinned level before this change therefore resumes at that level; `/reload` re-reads settings and
-resources but does not re-resolve a selection. Correcting a live lane takes a new session or an explicit `/thinking`.
-This ADR does not reset resumed sessions to the profile's spec: the recorded session is the more specific state.
+Two different things can be "existing", and the rule differs. Confusing them is what made an earlier version of
+this section wrong.
+
+**A recorded session choice is unchanged.** A session records its own model and thinking level, and resuming restores
+them (Pi's documented behaviour). A lane that started at the pinned level before this change therefore resumes at that
+level, and that is correct native state — this ADR does not reset it, and nothing here should be described as
+"correcting" it.
+
+**A pre-existing *instance* keeps its generated settings for its whole life.** The file was written by the old
+launcher and still contains the conflicting pin, so **`/new` in that instance is not a fix**: a new session re-reads
+the same `settings.json` and starts at the pinned level again. `/reload` likewise reloads the settings and resources
+but regenerates nothing. So "start a new session" is not a correction path, and an earlier version of this section
+saying that was an operational falsehood.
+
+There are exactly two ways an existing lane reaches the declared level for *future* sessions:
+
+1. **Migrate the instance file, then reload once.** Remove only the conflicting own-model entry from that instance's
+   `settings.json` (the same delta the generator now applies) and `/reload`. Measured on a fixture: the running
+   session keeps its id, its JSONL bytes, its provider, model and recorded level, while a *disposable* new session
+   afterwards starts at the declared level and `/resume` still restores the recorded one.
+2. **Launch again.** A fresh launch writes a new instance directory from the installed launcher, which already
+   applies this ADR.
+
+In both cases the installed launcher matters more than the source tree: only an install that carries this change
+generates correct instance settings. Fixing the source alone changes nothing for a running fleet.
