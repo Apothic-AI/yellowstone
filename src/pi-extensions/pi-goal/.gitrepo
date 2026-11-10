@@ -1,0 +1,12 @@
+; DO NOT EDIT (unless you know what you are doing)
+;
+; This subdirectory is a git "subrepo", and this file is maintained by the
+; git-subrepo command. See https://github.com/ingydotnet/git-subrepo#readme
+;
+[subrepo]
+	remote = https://github.com/Apothic-AI/pi-goal
+	branch = main
+	commit = 38f8220ed4b73cb206c25342b584d0057281f878
+	parent = 8ebe2af504f0ef63f87b1e2e4f4b1aab28fcdc74
+	method = merge
+	cmdver = 0.4.9
