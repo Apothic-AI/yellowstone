@@ -1,6 +1,0 @@
-{
-  "name": "@tryinget/pi-eval-kernel-host-contract-fixture",
-  "version": "0.0.0",
-  "private": true,
-  "description": "Dependency-isolated fixture for the root exact-Pi-host compatibility canary"
-}

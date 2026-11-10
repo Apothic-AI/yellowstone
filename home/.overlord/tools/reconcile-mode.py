@@ -75,7 +75,7 @@ def _pi_modes_package() -> Path:
         pass
     return (
         Path.home() / "Code" / "yellowstone" / "src" / "pi-extensions"
-        / "tryinget" / "packages" / "pi-modes"
+        / "pi-modes"
     )
 
 

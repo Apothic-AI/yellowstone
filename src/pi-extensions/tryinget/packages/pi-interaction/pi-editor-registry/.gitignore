@@ -1,6 +1,0 @@
-node_modules/
-.ts-quality/
-coverage/
-ts-quality.config.mjs
-*.log
-*.tgz

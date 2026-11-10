@@ -1,2 +1,0 @@
-# Upstream patches keep upstream whitespace byte-for-byte.
-*.patch -whitespace

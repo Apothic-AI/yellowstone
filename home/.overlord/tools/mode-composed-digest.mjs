@@ -27,7 +27,7 @@ function piModesPackage() {
   } catch {
     // fall through to the monorepo default
   }
-  const fallback = `${process.env.HOME}/Code/yellowstone/src/pi-extensions/tryinget/packages/pi-modes`;
+  const fallback = `${process.env.HOME}/Code/yellowstone/src/pi-extensions/pi-modes`;
   if (existsSync(fallback)) return fallback;
   console.error("pi-modes package not found: set PI_MODES_PKG or install it from the monorepo");
   process.exit(2);
