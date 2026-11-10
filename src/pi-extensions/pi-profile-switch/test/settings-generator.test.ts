@@ -299,8 +299,9 @@ describe("native model declaration inputs", () => {
 		it("drops the pin for the profile's own model when it disagrees with the declared level", async () => {
 			const settings = await withPins({ defaultProvider: "extension-provider", defaultModel: "local-model", defaultThinkingLevel: "high" });
 			expect(settings.defaultThinkingLevel).toBe("high");
-			expect(settings.modelThinkingLevels["extension-provider/local-model"]).toBeUndefined();
-			expect(settings.modelThinkingLevels["extension-provider/other-model"]).toBe("medium");
+			const pins = settings.modelThinkingLevels as Record<string, string>;
+			expect(pins["extension-provider/local-model"]).toBeUndefined();
+			expect(pins["extension-provider/other-model"]).toBe("medium");
 		});
 
 		it("leaves every pin alone when the plan declares no thinking level", async () => {

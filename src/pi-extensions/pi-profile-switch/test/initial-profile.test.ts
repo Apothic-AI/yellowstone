@@ -99,6 +99,71 @@ describe("resolveInitialProfile", () => {
 		await expect(resolveInitialProfile("review", context())).rejects.toThrow(/unknown profile: review/);
 	});
 
+	// PI_PROFILE is the spawner-facing selection. Its documented rank is below a
+	// positional name and above every saved selection, and an unknown value fails
+	// loudly rather than silently yielding an unfiltered lane. `setup-env.ts`
+	// clears the ambient value for the suite, so each case sets its own.
+	describe("PI_PROFILE precedence", () => {
+		afterEach(() => {
+			delete process.env.PI_PROFILE;
+		});
+
+		it("selects the named profile when no positional name is given", async () => {
+			await writeCatalog({ "env-lane": { skills: [] } });
+			process.env.PI_PROFILE = "env-lane";
+
+			const { plan } = await resolveInitialProfile(undefined, context());
+
+			expect(plan.profile).toBe("env-lane");
+		});
+
+		it("wins over the saved active profile", async () => {
+			await writeCatalog({ "env-lane": { skills: [] }, saved: { skills: [] } });
+			await writeFile(
+				path.join(fixture.agentDir, "pi-profile-state.json"),
+				JSON.stringify({ activeProfile: "saved" }),
+			);
+			process.env.PI_PROFILE = "env-lane";
+
+			const { plan } = await resolveInitialProfile(undefined, context());
+
+			expect(plan.profile).toBe("env-lane");
+		});
+
+		it("loses to a positional name", async () => {
+			await writeCatalog({ positional: { skills: [] }, "env-lane": { skills: [] } });
+			process.env.PI_PROFILE = "env-lane";
+
+			const { plan } = await resolveInitialProfile("positional", context());
+
+			expect(plan.profile).toBe("positional");
+		});
+
+		it("rejects an unknown value instead of falling back to the saved selection", async () => {
+			await writeCatalog({ saved: { skills: [] } });
+			await writeFile(
+				path.join(fixture.agentDir, "pi-profile-state.json"),
+				JSON.stringify({ activeProfile: "saved" }),
+			);
+			process.env.PI_PROFILE = "ghost-lane";
+
+			await expect(resolveInitialProfile(undefined, context())).rejects.toThrow(UnknownProfileError);
+		});
+
+		it("ignores an empty value, restoring the saved selection", async () => {
+			await writeCatalog({ saved: { skills: [] } });
+			await writeFile(
+				path.join(fixture.agentDir, "pi-profile-state.json"),
+				JSON.stringify({ activeProfile: "saved" }),
+			);
+			process.env.PI_PROFILE = "   ";
+
+			const { plan } = await resolveInitialProfile(undefined, context());
+
+			expect(plan.profile).toBe("saved");
+		});
+	});
+
 	it("does not write runtime state for the initial selection", async () => {
 		await writeCatalog({ review: { skills: [] } });
 

@@ -28,7 +28,7 @@ export default function thinkingLifecycleProvider(pi: ExtensionAPI): void {
 		api: "openai-completions",
 		baseUrl: "http://127.0.0.1:9",
 		apiKey: "test-only-not-a-credential",
-		models: ["leader-model", "worker-model", "ask-model", "other-model"].map((id) => ({
+		models: ["shared-model", "other-model"].map((id) => ({
 			id,
 			name: `Thinking lifecycle fixture ${id}`,
 			reasoning: true,

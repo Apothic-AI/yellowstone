@@ -159,7 +159,7 @@ The profile object is the JSON top-level value. Every field is optional; omitted
 | `mcp_tools` | `Record<string, string[]>` | Select tools per MCP server; see MCP configuration below. |
 | `defaultProvider` | `string` | Default model provider; declare together with `defaultModel`. |
 | `defaultModel` | `string` | Model ID within the provider; declare together with `defaultProvider`. |
-| `defaultThinkingLevel` | `string` | Default model thinking level; takes effect only when both model fields above are declared. Use a value supported by Pi. |
+| `defaultThinkingLevel` | `string` | Startup thinking level for the model above; takes effect only when both model fields are declared. A declared level governs startup even when the user has pinned the same model globally, and it never rewrites the user's settings or their pins for other models. Use a value supported by Pi. |
 | `instructions` | `string` | Text appended to the system prompt without replacing it. |
 | `subagents` | `object` | pi-subagents defaults and role-specific settings; see Child-agent configuration below. |
 
