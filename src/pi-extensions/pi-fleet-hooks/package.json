@@ -2,7 +2,7 @@
   "name": "pi-fleet-hooks",
   "version": "0.1.0",
   "private": true,
-  "description": "Fleet-invariant hooks for Pi: never-block enforcement and transient-error retry recovery.",
+  "description": "Fleet-invariant hooks for Pi: never-block enforcement, transient-error retry recovery, and durable recovery of model-emitted reasoning markup.",
   "type": "module",
   "license": "MIT",
   "repository": {
@@ -17,7 +17,8 @@
   "pi": {
     "extensions": [
       "./src/nonblock.ts",
-      "./src/transient-error-retry.ts"
+      "./src/transient-error-retry.ts",
+      "./src/reasoning-recovery.ts"
     ]
   },
   "peerDependencies": {
@@ -25,5 +26,11 @@
   },
   "engines": {
     "node": ">=22.19.0"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.ts",
+    "test:reasoning": "node --test test/reasoning-tags.test.ts test/reasoning-replay.test.ts test/chat-completions-payload.test.ts test/persist-replay.test.ts",
+    "typecheck": "tsc --noEmit --strict --target es2022 --module nodenext --moduleResolution nodenext --allowImportingTsExtensions src/reasoning-tags.ts src/reasoning-replay.ts",
+    "test:session": "node --test test/session-integration.test.ts"
   }
 }
