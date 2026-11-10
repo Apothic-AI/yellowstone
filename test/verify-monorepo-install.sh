@@ -115,8 +115,8 @@ PY
   echo
   echo "== the nine packages resolve inside the checkout =="
   for want in \
-    src/pi-extensions/signalridge/packages/pi-goal \
-    src/pi-extensions/tryinget/packages/pi-modes \
+    src/pi-extensions/pi-goal \
+    src/pi-extensions/pi-modes \
     src/pi-extensions/pi-fleet-hooks \
     src/pi-extensions/bizzy \
     src/pi-extensions/pi-pretty-tui \
