@@ -18,7 +18,7 @@ Owner: `packages/pi-modes`
 
 ## Verified current state
 
-The current package has one active key, persisted as `pi-mode-state.v1 { key }`. `/mode` selects one mode. `append`, `replace_base`, and `replace_final` are mutually alternative strategies on that selected definition. `append` composes over the host-assembled prompt, `replace_base` reconstructs the host custom-base branch, and `replace_final` returns exact configured text. Project discovery is trust-gated and deepest-ancestor-wins by key. A startup-only nonblank `PI_MODE` overrides replayed session selection.
+The current package has one active key, persisted as `pi-mode-state.v1 { key }`. `/mode` selects one mode. `append`, `replace_base`, and `replace_final` are mutually alternative strategies on that selected definition. `append` composes over the host-assembled prompt, `replace_base` reconstructs the host custom-base branch, and `replace_final` returns exact configured text. Project discovery is trust-gated and deepest-ancestor-wins by key. A nonblank `PI_MODE` overrides replayed session selection at process startup and when `/new` creates an empty session branch.
 
 No existing package packet or AK task found in the 2026-07-13 preflight described this base-plus-overlay feature. The repository direction check passed, but the active `SF5`/`IW4` nodes concern measured campaign automation and are not a truthful parent. After explicit owner authorization to proceed, unlinked scoped AK task `3904` was created and claimed for this package-only implementation rather than falsely linking it to campaign automation.
 
@@ -120,14 +120,14 @@ Replay and resolution diagnostics are runtime warnings, not hidden repairs or pe
 
 ## Startup semantics
 
-Preserve `PI_MODE` as a startup-only explicit override. Backward-compatible single values retain legacy interpretation:
+Preserve `PI_MODE` as an explicit override at process startup and for fresh `/new` sessions with empty branches. Backward-compatible single values retain legacy interpretation:
 
 - base key -> that base, no overlays;
 - append key -> native base plus that overlay;
 - `off|default|none` -> native base, no overlays;
 - invalid/unavailable -> native base, no overlays, warning.
 
-`PI_MODES` provides strict JSON `{baseKey, overlayKeys}` multi-selection and takes precedence over `PI_MODE`; no delimiter grammar is accepted. Both selectors are consumed only on process startup, not reload/session replacement, and interactive changes supersede them for later turns. Startup `replace_final` additionally requires `PI_MODE_CONFIRM_EXACT=1`.
+`PI_MODES` provides strict JSON `{baseKey, overlayKeys}` multi-selection and takes precedence over `PI_MODE`; no delimiter grammar is accepted. The selectors are consumed on process startup and when a fresh `/new` session creates an empty branch; `/resume`, `/reload`, and `/fork` replay the selected session branch instead. Interactive changes supersede them for later turns. Startup `replace_final` additionally requires `PI_MODE_CONFIRM_EXACT=1`.
 
 Every configured nonblank startup selector—including `off`, invalid syntax, unavailable keys, and unacknowledged exact-final—appends one authoritative v3 entry before later turns replay session state. Invalid selections persist native-empty fallback so an older session selection cannot unexpectedly reactivate.
 
@@ -161,7 +161,7 @@ Kernel tests:
 - v1-to-v2 translation for append/base/final/off and chronological mixed-entry replay;
 - unavailable base/overlay and strategy drift after ancestor override;
 - trusted/untrusted ancestor discovery and deepest-key override;
-- startup-only `PI_MODE` compatibility for all strategy types and invalid values, including authoritative v2 persistence over prior v1/v2 state across later turns;
+- `PI_MODE` compatibility for startup and fresh `/new` sessions across all strategy types and invalid values, including authoritative v2 persistence over prior v1/v2 state across later turns;
 
 Adapter tests or host-compatible harness coverage:
 

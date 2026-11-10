@@ -22,8 +22,7 @@ Mandatory workflow:
    - Do not create the commit until the gate passes.
 5. Create the commit once the gate passes.
    - Capture the created commit SHA.
-   - Prefer `~/ai-society/core/agent-scripts/scripts/git-note-provenance.sh` to attach a YAML git note on `refs/notes/ai-society/provenance` with:
-     - `kind: ai-society/commit-provenance/v1`
+   - If repository-local provenance-note tooling is configured, attach a YAML git note using that tool and its documented ref/kind.
      - `tool: /commit`
      - `intent`
      - exact `files`
@@ -34,7 +33,7 @@ Mandatory workflow:
 6. After the final commit is created, run once:
    - `npm run quality:pre-push`
 7. If the pre-push gate fails, stop and fix before any push.
-8. Rewrite each created commit note with `~/ai-society/core/agent-scripts/scripts/git-note-provenance.sh` so `validation.full_gate` records the final gate command and result.
+8. If repository-local provenance-note tooling was used, rewrite each created commit note so `validation.full_gate` records the final gate command and result.
 9. Keep the final success report concise: list commit `sha` + subject and whether provenance notes were attached. Detailed successful-commit metadata belongs in the git note, not the chat response.
 
 Output:
