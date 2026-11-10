@@ -40,28 +40,21 @@ So do not add a `spaces/<name>` for a non-component lane, and do not move fleet 
 because it is fleet-related. **The mirror carries content that lands on a machine; it does not carry the
 fleet's working data.**
 
-### The pilot lanes are the last holders of this layer
+### The pilot lanes are gone; the worktrees are what remain
 
-Six pilot lanes run in these directories today, each in its own worktree whose branch is
-`space/<component>`:
+Six pilot lanes used to run in these directories, each in its own worktree on branch
+`space/<component>`. **All seven component workspaces were closed** once the folded model
+was adopted, so no lane has any of these paths as its cwd and the directories themselves
+are retired from `ft-01/herdr` — components get no space.
 
-```
-mycord-pilot-leader          ~/Code/yellowstone-wt/space-mycord/spaces/mycord
-pi-modes-pilot-leader        ~/Code/yellowstone-wt/space-pi-modes/spaces/pi-modes
-pi-pretty-tui-pilot-leader   ~/Code/yellowstone-wt/space-pi-pretty-tui/spaces/pi-pretty-tui
-pi-rooms-pilot-leader        ~/Code/yellowstone-wt/space-pi-rooms/spaces/pi-rooms
-unblock-pilot-leader         ~/Code/yellowstone-wt/space-unblock/spaces/unblock
-herdr-voice-pilot-leader     ~/Code/yellowstone-wt/space-herdr-voice/spaces/herdr-voice
-```
+The `space/*` worktrees still exist and their branches still contain `spaces/<component>`;
+removing a worktree does not rewrite a branch. They are dormant, not in use, and can go
+whenever a lane with the time removes them. Nothing depends on them, and no new
+`spaces/<component>` is ever created.
 
-They are the experiment that showed a component space works, and they are now the only thing keeping
-the layer alive. **No new `spaces/<component>` is created.** When the last pilot lane retires, these
-directories and the `space/*` worktrees go with them, and a component lane starts in the yellowstone
-space like any other lane.
-
-Until then the directories stay, because deleting one removes the cwd of a running lane — and a lane
-cannot change its own cwd. Retiring a pilot is a lane restart, so it belongs to whoever runs
-workspace ops, not to whoever edits this file.
+The old warning — that deleting a directory removes the cwd of a running lane — was right
+while the pilots ran and is now discharged by measurement, not by assumption: the
+workspaces are closed, and the deletion was checked against `/proc` first.
 
 ## Why the space is not the component directory
 
@@ -74,9 +67,30 @@ is the whole reason this layer exists.
 It also means nothing is installed into the subrepo tree, so the worktree stays clean and no
 `gitignore` rule has to hide scaffolding from the component's own history.
 
-## The space directory is the only sanctioned lane cwd
+## A component lane runs in the subrepo, and only scaffolding is forbidden there
 
-A lane for a component runs here — `spaces/<component>/` — not in `src/<component>/`.
+This section reversed on 2026-11-10, and the reversal is deliberate rather than a drift.
+
+The rule used to be: a lane for a component runs in `spaces/<component>/`, never in
+`src/<component>/`. The reason was sound at the time — pi walks **up** from cwd, so a lane
+whose cwd were inside `src/` would load any `AGENTS.md` there, and a fleet-internal role
+contract sitting in the subrepo tree would be published to the component's own repository by
+the next `git subrepo push`.
+
+The folded model removes the premise. yellowstone owns every subrepo and spawns an
+**ephemeral leader per job with the subrepo path as its cwd** — `src/herdr-plugins/unblock`,
+`src/pi-extensions/pi-modes` — because that is where the work is. Loading the component's own
+`AGENTS.md` from there is not a leak, it is the required first read (see below).
+
+What survives, narrowed to exactly the thing that caused the hazard:
+
+- **Fleet scaffolding must never be written into `src/`.** No `.pi/launch.env`, no
+  `.pi/modes/*.json`, no space `AGENTS.md` inside a subrepo tree. Those are fleet-internal,
+  and a subrepo push would publish them.
+- **A component's own `AGENTS.md` belongs in its repo** and is a normal, wanted file there —
+  it is read by whoever works on that component, in-tree.
+- `.pi/` is untracked in a component checkout, which is why scaffolding left there was
+  invisible to `git status` and survived two compaction cycles as an open question.
 
 This is a rule, not a preference, and the reason is a hazard that is currently **latent rather than
 live**. There is no `AGENTS.md` beside the code today, and no `.git` in a subrepo directory (a subrepo
