@@ -19,32 +19,46 @@ cd "$(dirname -- "$0")/.."
 
 if [ "${1:-}" = gates ]; then
   rc=0
-  ./test/verify-subrepo-roundtrip.sh || rc=1
+  # The count comes from the traversal, never from the narrator. This suite has been
+  # quoted as "7 gates", "8", "9" and "10" in one session — 10 was a grep counting the
+  # string "gate passed", and one script prints it twice. A suite that will not state its
+  # own size invites everyone to guess it, so it states it: the total below is computed
+  # from the calls actually made, not from a list in prose.
+  gates_run=0
+  gates_failed=0
+  gate() {
+    gates_run=$((gates_run + 1))
+    if "$@"; then return 0; fi
+    gates_failed=$((gates_failed + 1))
+    rc=1
+    return 0
+  }
+  gate ./test/verify-subrepo-roundtrip.sh
   echo
-  ./test/verify-monorepo-install.sh || rc=1
+  gate ./test/verify-monorepo-install.sh
   echo
-  ./test/verify-profile-skills.sh || rc=1
-  ./test/verify-pre-push-hook.sh || rc=1
+  gate ./test/verify-profile-skills.sh
+  gate ./test/verify-pre-push-hook.sh
   echo
   # Host-side like the others, and machine-local: it compares the mirror to the
   # machine it is being pushed from, which no container suite can do (they install
   # a copy of this tree and compare the install to the tree). Skips itself when
   # there is no live overlord space to compare against.
-  ./test/verify-mirror-live.sh || rc=1
+  gate ./test/verify-mirror-live.sh
   echo
   # The same idea for the spaces themselves. verify-mirror-live covers home/.overlord/tools
   # only — its count does not move when a space's AGENTS.md or .pi/modes appears under home/,
   # which is how a 510-line file and a 108-line file of the same name sat in the tree and on
   # the machine without anything noticing. This gate holds the scaffolding together, and
   # requires a difference that has been decided to be written down rather than tolerated.
-  ./test/verify-space-scaffold.sh || rc=1
+  gate ./test/verify-space-scaffold.sh
   echo
   # What a new machine actually receives: the plugin manifest must link components out
   # of the repo (Objective 4) and the space table must carry all seven labels verbatim.
   # Both failed silently: two plugins pointed at ~/Code checkouts, and three space
   # labels were lowercased against the operator's capitalised workspaces, which would
   # have created duplicate spaces rather than failing.
-  ./test/verify-fleet-manifest.sh || rc=1
+  gate ./test/verify-fleet-manifest.sh
   echo
   # Objective 2 has two halves and only the local one was checked. A development machine
   # installs from src/; a fresh machine installs `git:Apothic-AI/<repo>@<sha>` from each
@@ -52,13 +66,19 @@ if [ "${1:-}" = gates ]; then
   # install.sh and in no test at all — implemented, never exercised, and the mode a new
   # machine actually runs. It also catches the closed-list defect: install.sh iterates a
   # hardcoded nine, so a tenth component would install locally and never in production.
-  ./test/verify-extensions-git-mode.sh || rc=1
+  gate ./test/verify-extensions-git-mode.sh
   echo
   # The mirror gate's own test: a reverted mirror, an uncommitted live edit and a
   # pending install must be told apart. Without it, that gate is verified only by
   # whatever happened to be true on this machine the day it was written — and its
   # first version passed the revert case for an hour, in production, green.
-  ./test/verify-revert-detection.sh || rc=1
+  gate ./test/verify-revert-detection.sh
+  echo
+  if [ "$gates_failed" -eq 0 ]; then
+    echo "gates: ${gates_run}/${gates_run} passed, rc=0"
+  else
+    echo "gates: $((gates_run - gates_failed))/${gates_run} passed, ${gates_failed} failed, rc=${rc}"
+  fi
   exit "$rc"
 fi
 
