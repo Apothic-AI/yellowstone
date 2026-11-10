@@ -102,6 +102,24 @@ for p in d.get('packages',[]):
     print(s)
 PY
 )"
+  # pi records an in-tree package RELATIVE to the settings file that declares it
+  # ("../../../repo/src/pi-extensions/bizzy"), which keeps the config portable when
+  # the tree and the agent dir move together. That is better than the absolute paths
+  # this repo used to hand-write, but it means a source cannot be classified or
+  # existence-checked until it is resolved against its own settings file. Normalise
+  # once here, and both the checks below work on absolute paths.
+  sources_resolved=""
+  while IFS= read -r s; do
+    [ -n "$s" ] || continue
+    case "$s" in
+      npm:*) sources_resolved="$sources_resolved$s"$'\n' ;;
+      /*)    sources_resolved="$sources_resolved$s"$'\n' ;;
+      *)     r="$(cd "$(dirname "$SETTINGS")" 2>/dev/null && realpath -m "$s")"
+             sources_resolved="$sources_resolved${r:-$s}"$'\n' ;;
+    esac
+  done <<< "$sources"
+  sources="$sources_resolved"
+
   while IFS= read -r s; do
     [ -n "$s" ] || continue
     case "$s" in
