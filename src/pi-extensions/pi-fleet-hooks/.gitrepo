@@ -6,7 +6,7 @@
 [subrepo]
 	remote = https://github.com/Apothic-AI/pi-fleet-hooks
 	branch = master
-	commit = b048cc08ddf98d4193d1b398808cd9d2265640e2
-	parent = 40746b0a662214946f21f984fba6436a89ce3e90
+	commit = 8ab092849074e6c96131f565caa1a1332047b9bb
+	parent = 5e295c7a545504fae81ea044377c92183ab37529
 	method = merge
 	cmdver = 0.4.9
