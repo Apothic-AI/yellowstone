@@ -77,7 +77,11 @@ fi
 # expected and is *not* the gate's criterion: the assertions below are. What
 # matters is that the pi and skills surfaces installed, so an absent
 # settings.json is the failure, an angry herdr stage is a note.
-./install.sh --yes >"$SANDBOX/install.log" 2>&1
+# The launcher stage would otherwise mutate npm's GLOBAL bin dir and repoint this
+# machine's real pi-profile at the sandbox — it did exactly that once, and broke the
+# launcher for every lane. The gate tests that the tree installs; a sandbox must not
+# touch anything outside itself.
+PI_LAUNCHER_SKIP_GLOBAL=1 ./install.sh --yes >"$SANDBOX/install.log" 2>&1
 rc=$?
 if [ "$rc" -ne 0 ]; then
   note "install.sh exited $rc with the herdr stage stubbed (log: $SANDBOX/install.log)"

@@ -250,56 +250,69 @@ install_launcher() {
   # instance directory, writes settings.json and pi-profile.json, writes the liveness
   # token, then spawns pi. A package cannot bootstrap the process that installs packages.
   #
-  # It also cannot come from npm. The registry name `pi-profile-switch` belongs to
-  # upstream (maintainer vincentff, repository VincentFF/pi-profile-switch) and our
-  # fork kept the name, so `npm i -g pi-profile-switch` installs upstream, not us. The
-  # only address that is ours is the git URL at a pinned sha.
+  # It cannot come from npm either: the registry name `pi-profile-switch` belongs to
+  # upstream (maintainer vincentff), and our fork kept the name — so `npm i -g` would
+  # install someone else's code. Our only address for it is the git URL at the pin.
   #
-  # Installed into a fixed prefix, NOT `npm install -g`. On this mise-managed Node a
-  # global install of this package aborts with ENOTDIR on its rename-based swap and
-  # leaves a dangling symlink into ~/.npm/_cacache/tmp/git-cloneXXXX, which turns
-  # `pi-profile` into an invalid mise shim and takes every future lane with it. A
-  # prefix install runs the same npm resolution and leaves no such debris; the global
-  # name is then pointed at the prefix with `npm link`, which is the one operation that
-  # has been reliable here.
+  # Installed into a fixed prefix rather than with `npm install -g`, because a global
+  # install of this package aborts on its rename-based swap (ENOTDIR) and leaves a
+  # dangling symlink into ~/.npm/_cacache/tmp/git-cloneXXXX, which turns `pi-profile`
+  # into an invalid mise shim and takes every future lane with it.
+  #
+  # EVERY failure here is a warning, never `return 1`. This stage runs before `pi`, so
+  # a hard failure aborts the install before settings.json is written — and the
+  # acceptance gate then reports "a machine installed from this tree would not run the
+  # fleet", which is a true statement about the wrong thing. A missing launcher is a
+  # broken lane; a missing settings.json is a broken install.
+  #
+  # PI_LAUNCHER_SKIP_GLOBAL=1 installs to the prefix but does NOT touch npm's global
+  # bin dir. The acceptance gate sets it: a sandboxed install must not repoint the real
+  # machine's launcher (it did, and broke it).
   local pin repo prefix
   pin="$(grep -m1 'commit = ' "$REPO_ROOT/src/pi-extensions/pi-profile-switch/.gitrepo" 2>/dev/null | cut -d= -f2 | tr -d ' ')"
   repo="$(grep -m1 'remote = ' "$REPO_ROOT/src/pi-extensions/pi-profile-switch/.gitrepo" 2>/dev/null | cut -d= -f2 | tr -d ' ')"
   prefix="${PI_LAUNCHER_PREFIX:-$HOME/.local/share/yellowstone/pi-profile-switch}"
   if [ -z "$pin" ] || [ -z "$repo" ]; then
-    warn "cannot read the pi-profile-switch pin from its .gitrepo — skipping"
-    return 1
+    warn "cannot read the pi-profile-switch pin from its .gitrepo — launcher not installed"
+    return 0
   fi
   if [ "$DRY_RUN" = 1 ]; then
     dryrun "npm install --prefix $(short "$prefix") git+${repo}#${pin}"
-    dryrun "npm link $(short "$prefix")/node_modules/pi-profile-switch"
+    [ "${PI_LAUNCHER_SKIP_GLOBAL:-0}" = 1 ] \
+      && dryrun "skip global link (PI_LAUNCHER_SKIP_GLOBAL=1)" \
+      || dryrun "npm link $(short "$prefix")/node_modules/pi-profile-switch"
     return 0
   fi
   if ! have npm; then
-    warn "npm is not available — cannot install the launcher"
-    return 1
+    warn "npm is not available — launcher not installed"
+    return 0
   fi
-  mkdir -p "$prefix" || { warn "cannot create $prefix"; return 1; }
-  if ! npm install --prefix "$prefix" --no-audit --no-fund "git+${repo}#${pin}" >/tmp/launcher-install.log 2>&1; then
+  if ! mkdir -p "$prefix" || ! npm install --prefix "$prefix" --no-audit --no-fund "git+${repo}#${pin}" >/tmp/launcher-install.log 2>&1; then
     warn "launcher install failed — run: npm install --prefix $prefix git+${repo}#${pin}"
-    tail -5 /tmp/launcher-install.log | sed 's/^/    /'
-    return 1
+    tail -5 /tmp/launcher-install.log 2>/dev/null | sed 's/^/    /'
+    return 0
   fi
   info "installed pi-profile-switch @ ${pin:0:9} from ${repo##*/} into $(short "$prefix")"
-  # Clear any prior global entry (link or the debris of a failed -g install) before
-  # pointing the name at the prefix.
+
+  if [ "${PI_LAUNCHER_SKIP_GLOBAL:-0}" = 1 ]; then
+    info "skipping the global link (PI_LAUNCHER_SKIP_GLOBAL=1 — sandboxed install)"
+    return 0
+  fi
+  # Clear any prior global entry — a link, or the debris of a failed `-g` install —
+  # before pointing the name at the prefix.
   npm unlink -g pi-profile-switch >/dev/null 2>&1 || true
   rm -f "$(npm root -g 2>/dev/null)/pi-profile-switch" 2>/dev/null || true
   if ! npm link --silent "$prefix/node_modules/pi-profile-switch" >/dev/null 2>&1; then
-    warn "could not link the launcher into npm's global bin dir"
-    return 1
+    warn "could not link the launcher into npm's global bin dir — do it by hand:"
+    info "  npm link $prefix/node_modules/pi-profile-switch"
+    return 0
   fi
   if command -v pi-profile >/dev/null 2>&1 && pi-profile --version >/dev/null 2>&1; then
     info "pi-profile resolves to $(short "$(readlink -f "$(command -v pi-profile)" 2>/dev/null)")"
   else
     warn "pi-profile does not run after installing — check PATH and npm's global bin dir"
-    return 1
   fi
+  return 0
 }
 
 # ----------------------------------------------------------------- plugins --
