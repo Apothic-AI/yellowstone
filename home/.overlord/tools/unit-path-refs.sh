@@ -21,6 +21,8 @@
 #   PATTERN       path prefix to look for (default: apothic-monorepo-workspace)
 #   --unit-dir    scan this directory for unit fragments instead of the live ones (self-test)
 #   --no-system   skip /etc/systemd/system
+#   --expect N    fail (rc=2) unless exactly N units reference the pattern — so a count that
+#                 moved because a unit was repointed cannot be mistaken for "never a problem"
 #
 # Exit: 0 if every referenced path exists, 1 if any reference is DANGLING, 2 on usage error.
 #
@@ -34,10 +36,12 @@ case "$PATTERN" in --*) PATTERN="apothic-monorepo-workspace";; esac
 
 declare -a DIRS=()
 SCAN_SYSTEM=1
+EXPECT=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --unit-dir) DIRS+=("$2"); shift 2 ;;
     --no-system) SCAN_SYSTEM=0; shift ;;
+    --expect) EXPECT="$2"; shift 2 ;;
     *) shift ;;
   esac
 done
@@ -87,6 +91,21 @@ done
 
 echo
 echo "units=${units} live=${live} dangling=${dangling}  pattern='${PATTERN}'"
+# Silence needs a sign on it. After a repoint, a unit that used to point into this directory
+# simply stops appearing — so units=0 (or a missing row) reads as "never a problem here" to
+# anyone who did not see the earlier count. That is silence read as absence, arriving through
+# the tool built to prevent it. So: say what an empty result means, and let a caller declare
+# what it expected, so a moved fact fails loudly instead of reading as clean.
+if [ "$units" -eq 0 ]; then
+  echo "Note: nothing currently references '${PATTERN}' — that is silence, not a history."
+  echo "      A unit repointed to a new path will not appear here. Run this BEFORE a delete to"
+  echo "      find the exposure, and AFTER to confirm zero, and keep both outputs together."
+fi
+if [ -n "$EXPECT" ] && [ "$units" -ne "$EXPECT" ]; then
+  echo "EXPECTATION FAILED: expected ${EXPECT} unit(s) referencing '${PATTERN}', found ${units}."
+  echo "      A count that moved is a fact that moved. Say which you are asserting before you act."
+  exit 2
+fi
 if [ "$dangling" -gt 0 ]; then
   echo "REFUSED TO CALL THIS CLEAN: ${dangling} reference(s) point into a path that does not exist."
   echo "Repoint those fragments before the directory is deleted, or they never start again."
