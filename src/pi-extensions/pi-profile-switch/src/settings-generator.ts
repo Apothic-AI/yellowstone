@@ -560,6 +560,24 @@ function buildSelectionSettings(
 		settings.defaultModel = plan.model.id;
 		if (plan.model.thinkingLevel !== undefined) {
 			settings.defaultThinkingLevel = plan.model.thinkingLevel;
+			// Pi ranks a per-model startup level (`modelThinkingLevels`) above
+			// `defaultThinkingLevel`, and the copy at the top of this function carries
+			// the user's pins into every instance. For the one model this profile
+			// declares, an inherited pin that disagrees would silently beat the declared
+			// level at every session start, `/new` included, so it is not carried over.
+			// Every other model keeps its pin, and the user's own settings file is never
+			// modified: Pi's merge order (project over agent dir) still decides everything
+			// outside this one inherited key.
+			const declaredModelKey = `${plan.model.provider}/${plan.model.id}`;
+			if (isRecord(userSettings.modelThinkingLevels)) {
+				const inheritedPins = userSettings.modelThinkingLevels;
+				if (inheritedPins[declaredModelKey] !== undefined && inheritedPins[declaredModelKey] !== plan.model.thinkingLevel) {
+					const remaining = { ...inheritedPins };
+					delete remaining[declaredModelKey];
+					if (Object.keys(remaining).length === 0) delete settings.modelThinkingLevels;
+					else settings.modelThinkingLevels = remaining;
+				}
+			}
 		}
 	}
 	if (plan.tools !== undefined) {

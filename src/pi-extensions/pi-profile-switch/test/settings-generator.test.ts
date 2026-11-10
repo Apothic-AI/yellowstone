@@ -272,6 +272,48 @@ describe("native model declaration inputs", () => {
 		const settings = JSON.parse(await readFile(path.join(runtimeDir, "settings.json"), "utf8"));
 		expect(settings.defaultThinkingLevel).toBe(native.defaultThinkingLevel);
 	});
+
+	// A per-model startup pin outranks defaultThinkingLevel in Pi, and the copy the
+	// generator starts from carries the user's pins into every instance. A pin for
+	// the model a profile declares would therefore beat the profile's own level on
+	// every session start, so it is not inherited for that model alone.
+	describe("inherited per-model startup pins", () => {
+		const pinned = {
+			...native,
+			modelThinkingLevels: {
+				"extension-provider/local-model": "max",
+				"extension-provider/other-model": "medium",
+			},
+		};
+
+		async function withPins(definition: ProfileDefinition): Promise<Record<string, unknown>> {
+			await writeFile(path.join(fixture.agentDir, "settings.json"), JSON.stringify(pinned));
+			const plan = await resolveModelProfileInNode(definition);
+			const { runtimeDir } = await generateRuntimeDir(plan, { agentDir: fixture.agentDir, homeDir: fixture.root, discovery: { skills: [], packages: [] } });
+			const settings = JSON.parse(await readFile(path.join(runtimeDir, "settings.json"), "utf8"));
+			// The user's real settings file is never rewritten.
+			expect(JSON.parse(await readFile(path.join(fixture.agentDir, "settings.json"), "utf8"))).toEqual(pinned);
+			return settings;
+		}
+
+		it("drops the pin for the profile's own model when it disagrees with the declared level", async () => {
+			const settings = await withPins({ defaultProvider: "extension-provider", defaultModel: "local-model", defaultThinkingLevel: "high" });
+			expect(settings.defaultThinkingLevel).toBe("high");
+			expect(settings.modelThinkingLevels["extension-provider/local-model"]).toBeUndefined();
+			expect(settings.modelThinkingLevels["extension-provider/other-model"]).toBe("medium");
+		});
+
+		it("leaves every pin alone when the plan declares no thinking level", async () => {
+			const settings = await withPins({ defaultProvider: "extension-provider", defaultModel: "local-model" });
+			expect(settings.modelThinkingLevels).toEqual(pinned.modelThinkingLevels);
+			expect(settings.defaultThinkingLevel).toBe(native.defaultThinkingLevel);
+		});
+
+		it("leaves a matching pin and other models' pins in place", async () => {
+			const settings = await withPins({ defaultProvider: "extension-provider", defaultModel: "local-model", defaultThinkingLevel: "max" });
+			expect(settings.modelThinkingLevels).toEqual(pinned.modelThinkingLevels);
+		});
+	});
 });
 
 
