@@ -148,6 +148,26 @@ function mergePackages(settingsPath, templatePath, repoRoot, externalRoot) {
   const existing = Array.isArray(settings.value.packages) ? settings.value.packages : [];
   // Two sets: the exact source (so a re-run is a no-op) and the package
   // identity (so a different source for the same package is not doubled).
+  // Prune entries whose local source has gone. A package entry pointing at a
+  // directory that no longer exists is worse than a missing package: pi tries to
+  // load it, fails, and the installer cannot tell a deliberate removal from a
+  // broken reference. This is also what lets a path MIGRATION converge — the stale
+  // entry is dropped and the template's new one added in the same pass, instead of
+  // accumulating both. Observed when pi-modes/pi-goal moved out of their parent
+  // repos: live settings ended up with four entries for two packages.
+  const pruned = [];
+  for (let i = existing.length - 1; i >= 0; i--) {
+    const stale = sourceOf(existing[i]);
+    if (typeof stale === 'string' && stale.startsWith('/') && !fs.existsSync(stale)) {
+      pruned.push(stale);
+      existing.splice(i, 1);
+    }
+  }
+  if (pruned.length) {
+    for (const gone of pruned) process.stdout.write(`packages: pruned ${gone} (directory no longer exists)\n`);
+    settings.value.packages = existing;
+  }
+
   const presentSources = new Set(existing.map(sourceOf).filter(Boolean));
   const presentNames = new Set(existing.map(packageNameOf).filter(Boolean));
 
@@ -164,6 +184,23 @@ function mergePackages(settingsPath, templatePath, repoRoot, externalRoot) {
     if (!source || presentSources.has(source)) continue;
     const name = packageNameOf(rendered);
     if (name && presentNames.has(name)) {
+      // Same package, different source: the template has moved it. Rewrite the
+      // existing entry rather than keeping the old path, or a path migration never
+      // converges — the installer reports success and the machine keeps loading a
+      // directory the tree no longer contains. Observed with pi-modes/pi-goal,
+      // extracted from parent repos into their own: merge-packages said
+      // "kept existing source" and left 48 instances pointing at deleted paths.
+      const i = existing.findIndex((e) => packageNameOf(e) === name);
+      if (i !== -1) {
+        const before = sourceOf(existing[i]);
+        if (before !== source) {
+          existing[i] = rendered;
+          presentSources.delete(before);
+          presentSources.add(source);
+          added.push(`${source} (moved from ${before})`);
+          continue;
+        }
+      }
       process.stdout.write(`packages: kept existing source for ${name} (template wanted ${source})\n`);
       continue;
     }
@@ -173,7 +210,10 @@ function mergePackages(settingsPath, templatePath, repoRoot, externalRoot) {
     added.push(source);
   }
 
-  if (added.length === 0) {
+  // A prune with nothing to add still has to be written: the commonest migration
+  // is "the old path went away and the template already names the new one", where
+  // added is empty and skipping the write leaves the stale entry in place forever.
+  if (added.length === 0 && pruned.length === 0) {
     process.stdout.write('packages: already complete\n');
     return;
   }
