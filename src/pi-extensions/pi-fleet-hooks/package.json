@@ -18,7 +18,8 @@
     "extensions": [
       "./src/nonblock.ts",
       "./src/transient-error-retry.ts",
-      "./src/reasoning-recovery.ts"
+      "./src/reasoning-recovery.ts",
+      "./src/tool-markup-inert.ts"
     ]
   },
   "peerDependencies": {
@@ -30,7 +31,8 @@
   "scripts": {
     "test": "node --test test/*.test.ts",
     "test:reasoning": "node --test test/reasoning-tags.test.ts test/reasoning-replay.test.ts test/chat-completions-payload.test.ts test/persist-replay.test.ts",
-    "typecheck": "tsc --noEmit --strict --target es2022 --module nodenext --moduleResolution nodenext --allowImportingTsExtensions src/reasoning-tags.ts src/reasoning-replay.ts",
-    "test:session": "node --test test/session-integration.test.ts"
+    "typecheck": "tsc --noEmit --strict --target es2022 --module nodenext --moduleResolution nodenext --allowImportingTsExtensions src/reasoning-tags.ts src/reasoning-replay.ts src/inert-tool-markup.ts src/tool-markup-inert.ts",
+    "test:session": "node --test test/session-integration.test.ts",
+    "test:inert": "node --test test/tool-markup-inert.test.ts test/tool-markup-render.test.ts"
   }
 }
