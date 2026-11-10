@@ -20,7 +20,10 @@ function record(event: Record<string, unknown>): void {
 	appendFileSync(tracePath!, `${JSON.stringify({ ...event, pid: process.pid })}\n`);
 }
 
-record({ kind: "module" });
+// Provenance: the entry this child actually executed. The suite asserts it against
+// `pi --version` so a scratch home or a PATH change cannot silently swap the
+// deployed runtime for the pinned dev dependency (or the reverse).
+record({ kind: "module", piEntry: process.argv[1] });
 
 export default function thinkingLifecycleProvider(pi: ExtensionAPI): void {
 	record({ kind: "factory" });

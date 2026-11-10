@@ -30,10 +30,17 @@ This is not "re-applying the profile at session start" (rejected in ADR-0011): P
 everything Pi merges — project settings still win, `--thinking`/`--model` still win, and nothing is re-applied after a
 session exists. The change is confined to which single inherited key the launcher writes into the file it generates.
 
-Consequence, recorded plainly: a global pin for the model an explicit profile declares no longer governs that
-profile's startup level. It still governs every lane whose profile does not declare that model and level, and it
-still applies when the model is selected later in-session, because the pin remains in the user's own settings and in
-every instance that did not suppress it.
+Consequence, recorded plainly and asserted in `test/model-thinking-lifecycle.integration.test.ts`:
+
+- a global pin for the model an explicit profile declares no longer governs that profile's startup level;
+- because the pin is absent from *that instance's* settings for its whole life, it also does not come back when the
+  lane switches to another model and returns — an instance that suppressed the pin re-selects the model at the
+  profile's declared level (the `defaultThinkingLevel` in the same file), not at the user's pin;
+- the user's own `settings.json` is unchanged, so every other profile, every lane whose profile does not declare
+  that model, and every project, CLI or in-session selection keeps native precedence, and unrelated model pins keep
+  applying inside this instance;
+- an explicit in-session selection (`/thinking`, and a model switch to a different model) is a session choice and
+  survives `/reload` and resume as it always has.
 
 ## Existing sessions
 

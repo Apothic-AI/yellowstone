@@ -222,7 +222,12 @@ Qualified prompt.
 	});
 
 	it("keeps provider/project precedence and only updates fields accepted by native role type", { timeout: 120_000 }, async () => {
-		const userSettings = { defaultProvider: "fixture", defaultModel: "fixture/shared-model", subagents: { defaultModel: "fixture/shared-model", agentOverrides: { reviewer: { model: "fixture/review-model", description: "User description" } } } };
+		// `defaultModel` is Pi's own bare model id (the provider is separate). Writing a
+		// provider-qualified id here made the declared default unresolvable, so Pi fell
+		// through to the first credential-available model — on a machine with ambient
+		// provider credentials that was a real Bedrock model, which then also stopped the
+		// provider-scoped override below from matching.
+		const userSettings = { defaultProvider: "fixture", defaultModel: "shared-model", subagents: { defaultModel: "fixture/shared-model", agentOverrides: { reviewer: { model: "fixture/review-model", description: "User description" } } } };
 		await writeFile(path.join(fixture.agentDir, "settings.json"), JSON.stringify({ ...userSettings, packages: ["npm:pi-subagents"] }));
 		const projectSettingsPath = path.join(fixture.cwd, ".pi", "settings.json");
 		const projectSettings = { subagents: { defaultModel: "fixture/review-model", agentOverrides: { reviewer: { model: "inherit", description: "Project description" } }, agentOverridesByProvider: { fixture: { reviewer: { model: "fixture/project-model" } } } } };

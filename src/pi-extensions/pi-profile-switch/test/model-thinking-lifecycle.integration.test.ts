@@ -1,4 +1,5 @@
-import { existsSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -49,6 +50,7 @@ interface SessionState {
 }
 interface ProviderEvent {
 	kind: string;
+	piEntry?: string;
 }
 
 /** The user's real (global) settings, which the launcher starts from. The pin
@@ -256,6 +258,55 @@ describe("a declared profile spec governs startup for its own model", () => {
 		const settings = JSON.parse(await readFile(path.join(instance, "settings.json"), "utf8"));
 		expect(settings.defaultThinkingLevel).toBe(GLOBAL_SETTINGS.defaultThinkingLevel);
 		expect(settings.modelThinkingLevels?.[`${PROVIDER}/${SHARED}`]).toBe("max");
+		await expectNoRequests(value);
+	});
+
+	it("runs the runtime the launcher resolves from PATH, and names it in the trace", { timeout: 120_000 }, async () => {
+		const value = await fixture();
+		await profile(value, "worker-like", { defaultModel: SHARED, defaultThinkingLevel: "high" });
+		const driver = start(value, "worker-like");
+		expect(await level(driver)).toBe("high");
+
+		// The child recorded the entry it actually executed. Resolve that entry the way
+		// the OS does (the CLI entry may be a shim), find the package that owns it, and
+		// compare its version with what `pi --version` reports here. This proves the
+		// executed file, not prose: a scratch HOME or a changed PATH cannot silently
+		// substitute the pinned dev dependency for the deployed runtime.
+		const moduleEvent = (await events(value)).find((event) => event.kind === "module");
+		expect(typeof moduleEvent?.piEntry).toBe("string");
+		const entry = realpathSync(moduleEvent!.piEntry!);
+		expect(existsSync(entry)).toBe(true);
+
+		let owner: { version: string; name?: string } | undefined;
+		for (let dir = path.dirname(entry); dir !== path.dirname(dir); dir = path.dirname(dir)) {
+			const candidate = path.join(dir, "package.json");
+			if (existsSync(candidate)) {
+				owner = JSON.parse(readFileSync(candidate, "utf8")) as { version: string; name?: string };
+				break;
+			}
+		}
+		expect(owner?.version).toBeDefined();
+		const reported = execFileSync("pi", ["--version"], { encoding: "utf8" }).trim();
+		expect(owner!.version).toBe(reported);
+		await expectNoRequests(value);
+	});
+
+	it("keeps the generated own-model pin suppressed for the instance lifetime", { timeout: 120_000 }, async () => {
+		const value = await fixture();
+		await profile(value, "worker-like", { defaultModel: SHARED, defaultThinkingLevel: "high" });
+		const driver = start(value, "worker-like");
+		expect(await level(driver)).toBe("high");
+
+		// Switch to another model and back. The global pin for the shared model was
+		// dropped from this instance, so returning to it re-applies the profile's
+		// declared default, not the user's global pin. Recording the actual
+		// semantics: suppression lasts for the instance lifetime.
+		expect((await driver.send({ type: "set_model", provider: PROVIDER, modelId: OTHER })).success).toBe(true);
+		expect(identity(await state(driver))).toBe(`${PROVIDER}/${OTHER}`);
+		expect((await driver.send({ type: "set_model", provider: PROVIDER, modelId: SHARED })).success).toBe(true);
+		const back = await state(driver);
+		expect(identity(back)).toBe(`${PROVIDER}/${SHARED}`);
+		expect(back.thinkingLevel).toBe("high");
 		await expectNoRequests(value);
 	});
 
