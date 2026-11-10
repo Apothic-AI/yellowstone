@@ -481,6 +481,10 @@ export async function startDaemon({ port, secretStore: injectedSecretStore, issu
     return {
       open: asks.length,
       gating: asks.filter((ask) => ask.gating).length,
+      // Open asks parked on the weekly decide-or-drop list. Reported separately
+      // so no watcher can read `open: 0` as "nothing to do" while asks are
+      // sitting out of today's deck.
+      weekly: store.countWeekly(),
       hidden: 0,
     }
   }

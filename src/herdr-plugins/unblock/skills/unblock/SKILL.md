@@ -206,6 +206,20 @@ the human to look again. It takes `title`, `why`,
 send it in `add_fields` under the same name. An ask filed before the gate
 existed must include `tried` and `only_you` in its first update.
 
+## Telling the human how to answer
+
+The web page needs no keys. In the herdr TUI pane the keys are: `j`/`k` move,
+`⏎` opens a card (and folds it again), `tab` moves between fields, `space` or
+`←`/`→` answers a choice, `s` sends the answer, `xx` closes an ask without
+answering, `esc` folds, `r` refreshes, `p` swaps profile scope, `l` mints a
+link, `q` quits.
+
+If you write instructions for a human, say **`s` to send** — never `ctrl+enter`.
+Most terminals cannot deliver that chord, so the pane stopped advertising it.
+A focused text, paste or secret field keeps every printable key (an answer may
+contain an `s`), so the safe instruction is "fill it in, then `tab` to the
+*send answer* row and press `s`". `⏎` only opens and folds; it never sends.
+
 ## Reading what comes back
 
 | you get | it means |

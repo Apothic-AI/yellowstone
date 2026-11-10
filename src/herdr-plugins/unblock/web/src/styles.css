@@ -413,6 +413,16 @@ textarea.control { display: block; min-height: 84px; resize: vertical; }
 .action-bar.is-hidden { visibility: hidden; pointer-events: none; }
 .action-bar .primary { flex: 0 0 auto; }
 .action-bar .send-back { flex: 0 0 auto; white-space: nowrap; }
+/* Dismiss: the quiet exit is visually distinct from Send back — it closes the
+   ask instead of returning it for rework, so it never looks like the safe one. */
+.action-bar .dismiss { flex: 0 0 auto; white-space: nowrap; }
+.action-bar .dismiss:hover { color: var(--red-text); }
+.dismiss-box { border-left: 2px solid var(--red-text); padding-left: 14px; }
+.dismiss-note { margin: 6px 0 12px; padding: 10px 12px; border-radius: var(--r-sm);
+  background: var(--rail); border: 1px solid var(--border);
+  font-size: 13px; line-height: 20px; color: var(--ink); }
+.dismiss-actions { display: flex; align-items: center; gap: 14px; }
+.dismiss-box .dismiss-actions .secondary { margin-top: 0; }
 .action-status { flex: 1; min-width: 0; text-align: right; color: var(--dim); font-size: 13px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .action-status.error { color: var(--red-text); }

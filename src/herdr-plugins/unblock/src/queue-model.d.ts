@@ -28,6 +28,9 @@ export interface SelectionOf<A> {
 export const MAX_GROUP_ASKS: number
 export const MAX_GROUP_FIELDS: number
 
+/** The note both surfaces send when a person closes an ask unanswered. */
+export const DISMISS_NOTE: string
+
 export function groupOf<A>(ask: A): string
 export function hideProducts<A>(asks: A[], hidden: Iterable<string>): A[]
 export function isImageUrl(url: string): boolean

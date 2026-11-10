@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { api, ApiError, BASE, DraftStaleError, FinishedError, NetworkError } from './lib/api'
 import { clearLocal, readLocal, writeLocal } from './lib/drafts'
 import { askKind, ago, groupOf, isMissing, reviewLinks, type Ask, type FieldValue, type Link, type Values } from './deck'
+import { DISMISS_NOTE } from '../../src/queue-model.js'
 import { FieldControl } from './FieldControl'
 import { Icon } from './icons'
 import { Chip, ChipText, PlainText } from './ChipText'
@@ -302,6 +303,7 @@ export function SoloCard({ ask, onFinished, onReload, queueSend, recovery, voice
   const actionBarRef = useRef<HTMLDivElement>(null)
   const [focalActionsInView, setFocalActionsInView] = useState(false)
   const [sendBackOpen, setSendBackOpen] = useState(!!recovery?.backNote)
+  const [dismissOpen, setDismissOpen] = useState(false)
   const [backNote, setBackNote] = useState(recovery?.backNote || '')
   const [state, setState] = useState<'idle' | 'sending' | 'done' | 'error'>('idle')
   const [status, setStatus] = useState('')
@@ -509,6 +511,35 @@ export function SoloCard({ ask, onFinished, onReload, queueSend, recovery, voice
     persist({ notes: next })
   }
   const onSkip = (name: string) => onChange(name, null)
+  /**
+   * Close the ask without answering it. The default note is an instruction to
+   * re-check the blocker, not a verdict — closing is "not now", not "resolved".
+   * It goes through the same failure handling as send-back so a stale revision,
+   * a closed ask or a dropped connection is reported the same way.
+   */
+  const dismiss = async () => {
+    if (isBusy) return
+    setState('sending'); setStatus('Closing…'); setErrorText('')
+    try {
+      await api(`/api/asks/${encodeURIComponent(ask.ticket)}/cancel`, { note: DISMISS_NOTE })
+      clearLocal(ask.ticket)
+      setState('done'); setStatus('Closed — the agent will re-check')
+      finish()
+    } catch (error) {
+      if (error instanceof FinishedError) return onFinished()
+      if (error instanceof ApiError && error.code === 'ASK_NOT_OPEN') return onFinished()
+      if (error instanceof ApiError && error.code === 'STALE_REVISION') {
+        setSafetyNotice('The agent changed this ask. Check it again.')
+        setState('idle'); setStatus('')
+        await onReload()
+        return
+      }
+      setState('error'); setStatus('Not closed')
+      setErrorText(`Not closed: ${error instanceof NetworkError
+        ? 'the connection to unblock dropped, even after retrying.'
+        : error instanceof Error ? error.message : 'unknown error'}`)
+    }
+  }
   const onBounce = (name: string, note: string) => {
     const next = { ...bounced, [name]: note }
     setBounced(next)
@@ -901,6 +932,21 @@ export function SoloCard({ ask, onFinished, onReload, queueSend, recovery, voice
       )}
       {state === 'error' && errorText && <p className="send-error" role="alert">{errorText}</p>}
       {safetyNotice && <p className="safety-notice" role="alert">{safetyNotice}</p>}
+      {dismissOpen && (
+        <div className="send-back-box dismiss-box">
+          <label className="section-label" htmlFor={`dismiss_${ask.ticket}`}>Close without answering</label>
+          <p className="field-help">The agent gets this note and checks whether the blocker still exists:</p>
+          <p className="dismiss-note" id={`dismiss_${ask.ticket}`}>{DISMISS_NOTE}</p>
+          <div className="dismiss-actions">
+            <button className="secondary" type="button" onClick={() => void dismiss()} disabled={isBusy}>
+              Close it
+            </button>
+            <button className="text-button" type="button" onClick={() => setDismissOpen(false)} disabled={isBusy}>
+              Keep it
+            </button>
+          </div>
+        </div>
+      )}
       {sendBackOpen && (
         <div className="send-back-box">
           <label htmlFor={`back_${ask.ticket}`} className="section-label">Send back with a note</label>
@@ -935,6 +981,12 @@ export function SoloCard({ ask, onFinished, onReload, queueSend, recovery, voice
             onClick={() => setSendBackOpen(true)}
           >
             Send back…
+          </button>
+          <button
+            type="button" className="text-button dismiss" disabled={isBusy}
+            onClick={() => setDismissOpen(true)}
+          >
+            Dismiss
           </button>
           <span className={`action-status${state === 'error' ? ' error' : ''}`} role="status">
             {state === 'error' ? 'Not sent' : state !== 'idle' ? status : (progress || draftState)}

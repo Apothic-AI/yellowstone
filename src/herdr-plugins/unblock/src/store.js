@@ -919,6 +919,16 @@ export class Store {
     return this.get(ticket)
   }
 
+  /**
+   * `keep` is the documented "put it back in today's queue" verb, so it has to
+   * clear `weekly_at` as well as `set_aside_at`. Before this it only stamped
+   * `kept_at`: it printed "kept", reported success, and left the ask exactly as
+   * hidden as it was.
+   *
+   * Clearing the column is not enough on its own. The weekly sweep used to key
+   * on `created_at` alone, so it re-demoted a kept ask on its very next tick —
+   * see `weeklyCandidates`, which now measures from the last human touch.
+   */
   keep(ticket, origin) {
     const ask = this.get(ticket)
     if (!ask) return null
@@ -926,7 +936,7 @@ export class Store {
       const error = new Error(`ask ${ticket} is ${ask.status}, not open`)
       error.code = 'ASK_NOT_OPEN'; error.askStatus = ask.status; throw error
     }
-    this.#db.prepare("UPDATE asks SET kept_at = ?, set_aside_at = NULL, set_aside_reason = NULL, origin_json = ? WHERE ticket = ? AND status = 'open'").run(nowMs(), JSON.stringify(origin ?? ask.origin), ticket)
+    this.#db.prepare("UPDATE asks SET kept_at = ?, weekly_at = NULL, set_aside_at = NULL, set_aside_reason = NULL, origin_json = ? WHERE ticket = ? AND status = 'open'").run(nowMs(), JSON.stringify(origin ?? ask.origin), ticket)
     return this.get(ticket)
   }
 
@@ -950,10 +960,30 @@ export class Store {
       .run(at, ticket)
   }
 
+  /**
+   * Open asks that have gone long enough without a human touch to leave today's
+   * deck for the weekly decide-or-drop list.
+   *
+   * The clock runs from the LAST HUMAN TOUCH, not from filing. `keep` is a human
+   * saying "this is still today's work"; a demotion that ignored it would re-hide
+   * the ask on the next sweep, which makes `keep` a verb that reports success and
+   * changes nothing observable. `kept_at` is only ever written by `keep`, so it is
+   * exactly the "somebody looked at this" signal.
+   *
+   * Set-aside asks are already deliberately out of today's deck; demoting them as
+   * well would stack two hidden states on one ask for no gain.
+   */
   weeklyCandidates(afterMs) {
     return this.#db.prepare(`SELECT ticket FROM asks WHERE status = 'open'
-      AND created_at <= ? AND weekly_at IS NULL`)
+      AND set_aside_at IS NULL AND weekly_at IS NULL
+      AND MAX(created_at, COALESCE(kept_at, created_at)) <= ?`)
       .all(nowMs() - afterMs).map(({ ticket }) => ticket)
+  }
+
+  /** Open asks sitting on the weekly decide-or-drop list, so no surface can
+   *  report a clear queue while asks are parked out of sight. */
+  countWeekly() {
+    return this.#db.prepare(`SELECT count(*) AS n FROM asks WHERE status = 'open' AND weekly_at IS NOT NULL`).get().n
   }
 
   markWeekly(ticket) {

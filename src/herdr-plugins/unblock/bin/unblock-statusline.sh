@@ -25,21 +25,30 @@ try:
 except Exception:
     sys.exit(0)
 opened = [a for a in asks if a.get("status") == "open" and not a.get("set_aside_at") and not a.get("weekly_at")]
-print(len(opened), sum(1 for a in opened if a.get("gating")))
+weekly = [a for a in asks if a.get("status") == "open" and a.get("weekly_at")]
+print(len(opened), sum(1 for a in opened if a.get("gating")), len(weekly))
 ' 2>/dev/null) || exit 0
 [ -n "$counts" ] || exit 0
 
 set -- $counts
 open=$1
 gating=$2
-[ "$open" -gt 0 ] || exit 0
+weekly=$3
+# Never render the queue as clear while asks are parked on the weekly list: that
+# read as "nothing to do" while 18 age-sensitive asks sat out of sight.
+if [ "$open" -eq 0 ] && [ "$weekly" -eq 0 ]; then exit 0; fi
 
-if [ "${NO_COLOR:-}" = "" ] && [ "$gating" -gt 0 ]; then
-  printf '\033[38;5;202m!%s blocked\033[0m' "$gating"
+suffix=""
+[ "$weekly" -gt 0 ] && suffix=" · ${weekly} weekly"
+
+if [ "$open" -eq 0 ]; then
+  printf '%s weekly' "$weekly"
+elif [ "${NO_COLOR:-}" = "" ] && [ "$gating" -gt 0 ]; then
+  printf '\033[38;5;202m!%s blocked\033[0m%s' "$gating" "$suffix"
 elif [ "$gating" -gt 0 ]; then
-  printf '!%s blocked' "$gating"
+  printf '!%s blocked%s' "$gating" "$suffix"
 elif [ "$open" -eq 1 ]; then
-  printf '1 ask'
+  printf '1 ask%s' "$suffix"
 else
-  printf '%s asks' "$open"
+  printf '%s asks%s' "$open" "$suffix"
 fi

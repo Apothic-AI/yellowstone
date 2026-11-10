@@ -273,6 +273,19 @@ and brings the Herdr terminal forward.
 `alt+p u` opens unblock mode: a zoomed pane with the whole queue, scoped to the
 active profile, answerable in place. Answers wake the agent in its pane.
 
+The keys, as the pane prints them: `j`/`k` move, `⏎` opens a card (`⏎` again
+folds it), `tab` moves between fields, `space`/`←`/`→` answer a choice, `s`
+sends the answer, `xx` closes an ask without answering, `esc` folds, `r`
+refreshes, `p` swaps profile scope, `l` mints a link, `q` quits.
+
+`s` is the send key on purpose. It works from any choice or confirm field and
+from the "send answer" row at the end of the field list; a focused text, paste
+or secret field keeps every printable key, so `tab` to that row first when you
+have finished typing. `⏎` never sends — it only opens or folds — so pressing it
+by reflex after typing an answer is safe. `ctrl+⏎` still works as a hidden
+secondary path, but it is deliberately not advertised: most terminals cannot
+send it, and a hint you cannot follow is worse than no hint.
+
 The plugin also lists agents herdr has detected as blocked but which never
 declared an ask — below the declared ones, so a silent stall is still visible.
 

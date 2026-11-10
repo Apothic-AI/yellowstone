@@ -237,3 +237,12 @@ export function selectDeck({
   const items = [...(pinnedItem ? [pinnedItem] : []), ...fresh, ...later]
   return { items, projects, activeProject, current: items[0], remaining: items.length, weekly }
 }
+
+/**
+ * What a human says when they close an ask without answering it.
+ *
+ * It is an instruction, not an explanation: the agent still owns the problem,
+ * and a blocker nobody answered is not the same as a blocker that is gone.
+ * Both surfaces send exactly this text so an agent can rely on the wording.
+ */
+export const DISMISS_NOTE = 'User closed without reason. Determine whether the blocker still exists.'

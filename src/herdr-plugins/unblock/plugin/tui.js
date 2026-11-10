@@ -3,7 +3,7 @@ import readline from 'node:readline'
 import { api, hasSession, login } from './paths.js'
 import { activeProfile } from './herdr.js'
 import { applyKey, initialValues, missingFor, redactValue, sortAsks } from './queue-model.js'
-import { levelOf } from '../src/queue-model.js'
+import { DISMISS_NOTE, levelOf } from '../src/queue-model.js'
 import { APPROVAL_PURPOSES } from '../src/schema.js'
 
 // Consent, spend, message and permission asks refuse every local write with
@@ -12,6 +12,12 @@ import { APPROVAL_PURPOSES } from '../src/schema.js'
 // all; editing an approval's verdict or sending one is how a person crosses
 // that line here, and it costs a signed-in session.
 const isApproval = (ask) => APPROVAL_PURPOSES.includes(ask?.purpose)
+
+/**
+ * Fields that swallow printable keys. Only these may keep `s` for themselves:
+ * an answer literally containing an "s" must not be cut short by the send key.
+ */
+const capturesText = (field) => field?.type === 'text' || field?.type === 'paste' || field?.type === 'secret'
 
 const stdin = process.stdin
 const stdout = process.stdout
@@ -76,6 +82,10 @@ function meta(ask) {
   const parts = [origin.workspace_name || 'workspace']
   if (origin.pane_id) parts.push(`pane ${origin.pane_id}`)
   parts.push(age(ask.created_at))
+  // Parked on the weekly decide-or-drop list. The row is still dealt here (an
+  // ask nobody can answer must not disappear), but it is not today's work and
+  // the line should not read as if it were.
+  if (ask.weekly_at) parts.push('weekly')
   return parts.join(' · ')
 }
 
@@ -131,9 +141,11 @@ function wrap(text, width) {
 
 function headerLines(width, queue, scope) {
   const gating = queue.filter((ask) => ask.gating).length
+  const weekly = queue.filter((ask) => ask.weekly_at != null).length
   const right = [
     queue.length ? `${queue.length} waiting` : 'clear',
     gating ? `${gating} gating` : '',
+    weekly ? `${weekly} weekly` : '',
     `profile ${scope}`,
   ].filter(Boolean).join(' · ')
   const left = [s(' ▌', accent), s(' unblock', bold)]
@@ -249,13 +261,13 @@ function askLines(ask, { focused, open, width }) {
         else row = next
       }
       if (row) lines.push([s(choiceIndent), s(row, dim)])
-      if (isFocus) for (const row of wrap('←/→ or number to choose · tab next field', Math.max(16, width - visible(choiceIndent)))) lines.push([s(choiceIndent), s(row, faint)])
+      if (isFocus) for (const row of wrap('←/→ or number to choose · tab next · s sends', Math.max(16, width - visible(choiceIndent)))) lines.push([s(choiceIndent), s(row, faint)])
     } else if (field.type === 'confirm') {
       const choiceIndent = '         '
       const labelRows = wrap(label, Math.max(16, width - visible(choiceIndent) - 8))
       lines.push([pointer, s(labelRows[0], isFocus ? bold : ''), s(`  ${state.value ? '▣ yes' : '□ no'}`, state.value ? ok : dim)])
       for (const row of labelRows.slice(1)) lines.push([s(choiceIndent), s(row, isFocus ? bold : '')])
-      if (isFocus) for (const row of wrap('space to toggle · tab next field', Math.max(16, width - visible(choiceIndent)))) lines.push([s(choiceIndent), s(row, faint)])
+      if (isFocus) for (const row of wrap('space to toggle · tab next · s sends', Math.max(16, width - visible(choiceIndent)))) lines.push([s(choiceIndent), s(row, faint)])
     } else {
       const shown = redactValue(field, state.value)
       const choiceIndent = '         '
@@ -278,6 +290,17 @@ function askLines(ask, { focused, open, width }) {
       }
     }
   })
+  // The last tab stop, made visible: with no field focused every key is free,
+  // so `s` sends. It is the way out of a text field without committing it.
+  if (fields.length && focused) {
+    const ready = fieldIndex >= fields.length
+    const pointer = ready ? s('    › ', accent) : s('      ')
+    lines.push([
+      pointer,
+      s('send answer', ready ? bold : dim),
+      s(ready ? '  press s' : '  (tab here when done)', ready ? accent : faint),
+    ])
+  }
   lines.push([s('')])
   return lines
 }
@@ -298,11 +321,12 @@ function footerLines(width) {
   const line = status
     ? wrap(status, Math.max(16, width - 1)).map((row) => flat([s(' '), s(row, tone)], width))
     : []
-  // A hidden passphrase prompt owns every key; the keymap would lie.
-  if (passphrasePrompt) return [rule, ...line]
+  // A hidden passphrase prompt owns every key; the keymap would lie. So does
+  // a dismiss confirmation, which is answered with x or anything else.
+  if (passphrasePrompt || dismissPrompt) return [rule, ...line]
   const keys = expanded === ask?.ticket
-    ? [keyChip('tab', 'fields'), keyChip('␣/←/→', 'answer'), keyChip('^⏎', 'submit'), keyChip('↑↓', 'scroll'), keyChip('esc', 'fold'), keyChip('q', 'quit')]
-    : [keyChip('j/k', 'move'), keyChip('⏎', 'open'), keyChip('↑↓', 'scroll'), keyChip('r', 'refresh'), keyChip('p', 'scope'), keyChip('l', 'link'), keyChip('q', 'quit')]
+    ? [keyChip('tab', 'fields'), keyChip('␣/←/→', 'answer'), keyChip('s', 'send answer'), keyChip('xx', 'dismiss'), keyChip('↑↓', 'scroll'), keyChip('esc', 'fold'), keyChip('q', 'quit')]
+    : [keyChip('j/k', 'move'), keyChip('⏎', 'open'), keyChip('xx', 'dismiss'), keyChip('↑↓', 'scroll'), keyChip('r', 'refresh'), keyChip('p', 'scope'), keyChip('l', 'link'), keyChip('q', 'quit')]
   return [rule, ...line, ...chipLines(keys, width)]
 }
 
@@ -515,6 +539,48 @@ async function submit() {
   finally { busy = false; render() }
 }
 
+/**
+ * Close an ask without answering it. The default note tells the agent to
+ * re-check the blocker rather than assume it is gone — closing is a "not now",
+ * not a verdict. Approvals close under the same human gate as answering.
+ */
+async function dismiss() {
+  const ask = selectedAsk()
+  if (!ask) return
+  if (isApproval(ask) && !needHuman(dismiss)) return
+  busy = true
+  try {
+    await api(`/api/asks/${encodeURIComponent(ask.ticket)}/cancel`, { note: DISMISS_NOTE })
+    setFooter(`closed ${ask.ticket} — the agent will re-check`, 'ok')
+    expanded = null
+    data.asks = data.asks.filter((item) => item.ticket !== ask.ticket)
+  } catch (error) { writeError(error) }
+  finally { busy = false; render() }
+}
+
+/**
+ * Closing is irreversible for a person at a keyboard, so x asks first — and
+ * the answer is another x, not a shared key. Enter already means "open the
+ * card"; borrowing it for a destructive action is how people close things by
+ * accident. Any other key drops the confirmation and keeps its normal job.
+ */
+let dismissPrompt = null
+
+function confirmDismiss() {
+  const ask = selectedAsk()
+  if (!ask) return
+  dismissPrompt = ask.ticket
+  setFooter(`close ${ask.ticket} without answering? x again to close · any other key keeps it`)
+  render()
+}
+
+function cancelDismiss(quiet = false) {
+  dismissPrompt = null
+  if (quiet) setFooter('')
+  else setFooter('kept')
+  render()
+}
+
 async function mintLink() {
   try {
     const result = await api('/api/links', { ttl_seconds: 3600 })
@@ -536,6 +602,16 @@ process.on('SIGWINCH', render)
 stdin.on('keypress', async (_text, key) => {
   if (busy) return
   if ((key.ctrl && key.name === 'c') || key.name === 'q') { restore(); process.exit(0) }
+  if (dismissPrompt) {
+    const ticket = dismissPrompt
+    dismissPrompt = null
+    if (key.name === 'x') return void dismiss()
+    if (key.name === 'escape') return cancelDismiss()
+    // Every other key — Enter included — was already something else. Drop the
+    // confirmation and fall through so the key does its normal job.
+    setFooter('')
+    if (ticket !== selectedAsk()?.ticket) { render(); return }
+  }
   if (passphrasePrompt) {
     if (key.name === 'return' || key.name === 'enter') {
       const { buf, after } = passphrasePrompt
@@ -576,27 +652,40 @@ stdin.on('keypress', async (_text, key) => {
   const fields = ask ? unansweredFields(ask) : []
 
   if (expanded === ask?.ticket && fields.length) {
+    // fieldIndex === fields.length is the "no field focused" seat: the place
+    // you tab to when you are done typing. It exists because a focused text
+    // field must own every printable key, `s` included — without a seat to
+    // leave it, the send key could never be reached after typing an answer.
+    const seats = fields.length + 1
     if (key.name === 'tab') {
-      fieldIndex = (fieldIndex + (key.shift ? -1 : 1) + fields.length) % fields.length
+      fieldIndex = (fieldIndex + (key.shift ? -1 : 1) + seats) % seats
       setFooter('')
       return render()
     }
     const field = fields[fieldIndex]
-    const stateKey = `${ask.ticket}:${field.name}`
-    const previous = states.get(stateKey) || { value: undefined }
-    const next = applyKey(previous, key, field)
-    if (next !== previous) {
-      const apply = () => {
-        states.set(stateKey, next)
-        finishEditingSoon()
-        scheduleDraft(ask, field)
-        setFooter('')
-        render()
+    // Send first: reachable from the no-field seat and from any field that does
+    // not capture text (choices, confirms). Approval sends still prove a human.
+    if (key.name === 's' && !capturesText(field)) {
+      if (isApproval(ask) && !needHuman(submit)) return
+      return void submit()
+    }
+    if (field) {
+      const stateKey = `${ask.ticket}:${field.name}`
+      const previous = states.get(stateKey) || { value: undefined }
+      const next = applyKey(previous, key, field)
+      if (next !== previous) {
+        const apply = () => {
+          states.set(stateKey, next)
+          finishEditingSoon()
+          scheduleDraft(ask, field)
+          setFooter('')
+          render()
+        }
+        // Editing an approval's verdict is an approval act: prove a person.
+        if (isApproval(ask) && !needHuman(apply)) return
+        apply()
+        return
       }
-      // Editing an approval's verdict is an approval act: prove a person.
-      if (isApproval(ask) && !needHuman(apply)) return
-      apply()
-      return
     }
   }
 
@@ -624,6 +713,7 @@ stdin.on('keypress', async (_text, key) => {
     fieldIndex = 0
     manualScroll = null
   } else if (key.name === 's') return void submit()
+  else if (key.name === 'x') return void confirmDismiss()
   else if (key.name === 'r') return void refresh()
   else if (key.name === 'p') { profile = profile === '*' ? (activeScope || '*') : '*'; return void refresh() }
   else if (key.name === 'l') return void mintLink()

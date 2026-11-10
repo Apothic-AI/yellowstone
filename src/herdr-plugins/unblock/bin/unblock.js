@@ -138,21 +138,39 @@ function flags(args, allowed) {
 function count(n) { return `${n} ${n === 1 ? 'question' : 'questions'}` }
 
 async function list(args) {
-  const { rest, opts } = flags(args, { '--all': false, '--aside': false, '--project': true })
-  if (rest.length) fail('usage: unblock list [--all] [--project P] [--json]')
+  const { rest, opts } = flags(args, { '--all': false, '--aside': false, '--weekly': false, '--project': true })
+  if (rest.length) fail('usage: unblock list [--all] [--aside|--weekly] [--project P] [--json]')
+  if (opts['--aside'] && opts['--weekly']) fail('--aside and --weekly select different bands; pick one')
   const { asks } = await request(`/api/asks?profile=*&includeClosed=${opts['--all'] ? 'true' : 'false'}`)
   const cutoff = Date.now() - 7 * 86400000
+  // Three ways an open ask can be out of today's deck, and every one of them has
+  // to be reachable by name. A band that cannot be listed is a place asks go to
+  // be forgotten: the weekly list was computed, never shown, and nothing could
+  // bring an ask back from it.
+  const band = opts['--weekly'] ? 'weekly' : opts['--aside'] ? 'aside' : 'today'
   const shown = asks.filter((ask) =>
     (ask.status === 'open' || (opts['--all'] && ['answered', 'cancelled'].includes(ask.status) &&
       (ask.closed_at ?? ask.answered_at ?? 0) >= cutoff)) &&
-    (opts['--aside'] ? ask.set_aside_at != null : ask.set_aside_at == null && ask.weekly_at == null) &&
+    (band === 'weekly' ? ask.weekly_at != null
+      : band === 'aside' ? ask.set_aside_at != null
+        : ask.set_aside_at == null && ask.weekly_at == null) &&
     (!opts['--project'] || project(ask) === opts['--project']))
     // Open asks lead; closed ones under --all are context, not work.
     .sort((a, b) => (a.status === 'open' ? 0 : 1) - (b.status === 'open' ? 0 : 1))
+  const weeklyCount = asks.filter((ask) => ask.status === 'open' && ask.weekly_at != null).length
   const health = await request('/api/health')
   if (json) return output({ asks: shown.map((ask) => ({ ...safe(ask), link: stable(health, ask.ticket) })) })
   const open = shown.filter((ask) => ask.status === 'open').length
-  console.log(open ? `${open} waiting on you` : 'Nothing is waiting on you.')
+  if (band === 'weekly') console.log(open ? `${open} on the weekly decide-or-drop list` : 'The weekly list is empty.')
+  else if (open) {
+    console.log(`${open} waiting on you`)
+    // The deck is not the whole queue; say so rather than implying it is.
+    if (weeklyCount) console.log(`  ${weeklyCount} more on the weekly decide-or-drop list — unblock list --weekly`)
+  }
+  // Silence is the defect: a clear today's deck must still say what it is not
+  // showing, or the operator reads "nothing to do" while 18 asks sit parked.
+  else if (weeklyCount) console.log(`Nothing waiting today · ${weeklyCount} on the weekly decide-or-drop list — unblock list --weekly`)
+  else console.log('Nothing is waiting on you.')
   const groups = new Map()
   for (const ask of shown) {
     const name = project(ask)
@@ -167,6 +185,7 @@ async function list(args) {
       console.log(`             ${[ask.status === 'open' ? null : ask.status, kindWord(ask),
         ask.kind === 'park' && ask.status === 'open' ? 'agent stopped' : null,
         ask.set_aside_at ? `set aside: ${ask.set_aside_reason}` : null,
+        ask.weekly_at ? 'weekly decide-or-drop' : null,
         ask.status === 'open' ? count(required(ask).length) : null, age(ask.created_at), ask.origin?.agent].filter(Boolean).join(' · ')}`)
       if (ask.minutes) console.log(`             ~${ask.minutes} min`)
       if (ask.blocks) console.log(`             unblocks: ${ask.blocks}`)
