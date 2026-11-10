@@ -72,7 +72,7 @@ done < <(find "$root" -maxdepth 4 -name .git \( -type d -o -type f \) 2>/dev/nul
 # ~/Code/herdr/.pi/extensions/ and declares it in pi-profile.json while its 25 package sources are
 # all inside src/. That is a fourth component behind the same precondition.
 python3 - "$repo" <<'PY2'
-import json, os, glob, re, sys
+import json, os, glob, re, subprocess, sys
 base = sys.argv[1].rstrip(os.sep)
 # "Inside the repo" has TWO spellings, not one: the main checkout at <base>/src/ and
 # every worktree at <base>-wt/<name>/src/. Matching only the main checkout reports a
@@ -124,4 +124,45 @@ for n, found in rows:
         comps.add(c)
         print(f"    [{fn}] {c}")
 print(f"  distinct outer paths: {len(comps)}")
+
+# LINKED - what npm's GLOBAL bin dir points at.
+#
+# The LOOSE scan above reads settings.json and pi-profile.json, which is where pi
+# records packages. The launcher is neither: `pi-profile-switch` is resolved through
+# npm's global bin dir and appears in no instance file. That is why this instrument
+# reported "0 of 48" for the entire migration while the launcher was loading from
+# ~/Code — the most load-bearing component was outside the population it measured.
+#
+# Three verdicts, and they are not the same thing:
+#   inward    the link resolves inside <repo>[/-wt/<name>]/src/ — a component loaded
+#             from the tree
+#   installed the link resolves into our own install prefix (~/.local/share/yellowstone),
+#             which is a copy npm made from our git pin. Derived, not a checkout.
+#   LOOSE     anything else — a link into a checkout outside the repo, which is the
+#             state that makes `git subrepo pull` a lie for that component.
+root = subprocess.run(["npm", "root", "-g"], capture_output=True, text=True).stdout.strip()
+installed_prefix = os.path.expanduser("~/.local/share/yellowstone")
+linked_rows = []
+if root and os.path.isdir(root):
+    for entry in sorted(os.listdir(root)):
+        full = os.path.join(root, entry)
+        if not os.path.islink(full):
+            continue
+        target = os.path.realpath(full)
+        if inward.match(target + os.sep) or inward.match(target):
+            verdict = "inward"
+        elif target.startswith(installed_prefix + os.sep):
+            verdict = "installed"
+        else:
+            verdict = "LOOSE"
+        linked_rows.append((entry, target, verdict))
+print()
+print("LINKED - what npm's global bin dir resolves to")
+if not linked_rows:
+    print("        (no linked packages)")
+loose_links = [r for r in linked_rows if r[2] == "LOOSE"]
+for entry, target, verdict in linked_rows:
+    mark = "LOOSE" if verdict == "LOOSE" else "ok   "
+    print(f"  {mark} {entry:26} {verdict:9} {target}")
+print(f"        {len(loose_links)} of {len(linked_rows)} links point outside the repo")
 PY2
