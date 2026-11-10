@@ -74,7 +74,10 @@ interface Component {
   render(width: number): string[];
 }
 
-const ansi = (text: string): string => text.replace(/\u001b\[[0-9;]*m/g, "");
+const ansi = (text: string): string =>
+  text
+    .replace(/\u001b\[[0-9;]*m/g, "")
+    .replace(/\u001b\][^\u0007]*\u0007/g, "");
 
 /** Synthetic markup, modelled on the documented shape — no incident content. */
 const TOOL_SHAPE = [
@@ -212,4 +215,60 @@ test("thinking text is not wrapped by the registered transformer", async () => {
   const text = ansi(component.render(80).join("\n"));
   assert.ok(!text.includes("inert, not replayed"), "assistant-thinking content must be untouched");
   assert.match(text, /weighing two options/);
+});
+
+// D1 (acceptance of 542b668d4): when the closing tag is not preceded by a newline, the closing
+// fence must still start a line. Otherwise the block never terminates, the prose that follows is
+// rendered as code, and a literal fence is flushed at the end of the message.
+test("a mid-line closer does not fold trailing prose into the code block", async () => {
+  const pi = await loadPi();
+  const { AssistantMessageComponent, getMarkdownTheme } = pi;
+
+  const PROSE = "TRAILING PROSE must stay prose.";
+  const text = `<tool_call>\n bash\n {"a":1}</tool_call> ${PROSE}`;
+  const message = {
+    role: "assistant" as const,
+    content: [{ type: "text" as const, text }],
+    stopReason: "stop" as const,
+    timestamp: 1_700_000_000_000,
+    usage: { input: 1, output: 1 },
+  };
+
+  const render = (transformers: unknown[]) =>
+    ansi(
+      (
+        new AssistantMessageComponent(
+          message as never,
+          true,
+          getMarkdownTheme(),
+          "Thinking...",
+          1,
+          transformers as never[],
+        ) as Component
+      )
+        .render(80)
+        .join("\n"),
+    );
+
+  const rendered = render([transformAssistantMarkdown]);
+  const lines = rendered.split("\n").map((line) => line.trimEnd());
+  const openAt = lines.findIndex((line) => /^\s*```text\s*$/.test(line));
+  const closeAt = lines.findIndex(
+    (line, index) => index > openAt && line.trim() === "```",
+  );
+  const proseLine = lines.findIndex((line) => line.includes(PROSE));
+
+  assert.ok(openAt >= 0, "a fenced block opens");
+  assert.ok(closeAt > openAt, "the closing fence is on its own line");
+  assert.ok(proseLine >= 0, "the trailing prose must still be rendered");
+  assert.ok(closeAt < proseLine, "prose renders after the closing fence, outside the block");
+
+  // The markup is inside the block; the prose is not, and no fence marker leaks afterwards.
+  const inBlock = lines.slice(openAt, closeAt).join("\n");
+  assert.ok(inBlock.includes("bash"), "markup body stays inside the fence");
+  assert.ok(!inBlock.includes(PROSE), "trailing prose is not inside the fence");
+  assert.ok(
+    !lines.slice(closeAt + 1).some((line) => line.trim() === "```"),
+    "no fence marker leaks after the block",
+  );
 });

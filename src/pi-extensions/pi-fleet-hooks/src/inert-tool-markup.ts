@@ -171,8 +171,11 @@ export function fenceFor(body: string): string {
 /**
  * Rewrites every accepted span as a labelled, fenced block; everything else is preserved.
  *
- * Idempotent by construction: the rewritten tags sit inside a fence, so a second pass masks them
- * and returns its input unchanged.
+ * The body is preserved verbatim; the only insertion is a newline before the closing fence when the
+ * body does not already end with one, so the fence always starts a line.
+ *
+ * Idempotent by construction: on a second pass the fenced block masks the markup it contains and the
+ * text returns unchanged.
  */
 export function renderInertMarkdown(markdown: string): string {
   const spans = findInertSpans(markdown);
@@ -183,7 +186,14 @@ export function renderInertMarkdown(markdown: string): string {
   for (const span of spans) {
     if (span.start > cursor) out += markdown.slice(cursor, span.start);
     const body = markdown.slice(span.bodyStart, span.bodyEnd);
-    out += `${LABEL[span.family]}\n${fenceFor(body)}text\n${body}${fenceFor(body)}\n`;
+    const fence = fenceFor(body);
+    // The closing fence must start a line. The classifier deliberately accepts a closer anywhere,
+    // so a body can end mid-line (`{...}</tool_call>`); emitting the fence directly after it would
+    // produce `{"..."}``` `, leaving the block unterminated and folding the rest of the message —
+    // including a literal fence — into code. One newline is added only when the body does not
+    // already end with one.
+    const closingBreak = body.endsWith("\n") ? "" : "\n";
+    out += `${LABEL[span.family]}\n${fence}text\n${body}${closingBreak}${fence}\n`;
     cursor = span.end;
   }
   out += markdown.slice(cursor);

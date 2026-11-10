@@ -46,8 +46,14 @@ unchanged.
 | `analysis`, `summary` | reasoning | "inert, not replayed" |
 
 An accepted span is replaced by a label line and a fenced block (info string `text`, fence longer
-than any backtick run inside, body byte-identical). Everything outside spans is preserved in order,
-byte for byte.
+than any backtick run inside, body preserved verbatim apart from the newline described below).
+Everything outside spans is preserved in order, byte for byte.
+
+The closing fence must start a line, so one newline is inserted before it when the body does not
+already end with one. The classifier deliberately accepts a closing tag anywhere — `{...}</tool_call>`
+is a real shape — and a fence glued to the last body line would leave the block unterminated, folding
+the rest of the message (prose, a second span, a literal fence) into code. That single inserted
+newline is the only byte added to the body, and it is invisible inside a code block.
 
 Acceptance rules, all conservative:
 

@@ -249,6 +249,50 @@ test("fence length grows past backticks inside the markup", () => {
   assert.equal(fenceFor("a `` b ``` c"), "````");
 });
 
+// D1 (acceptance of 542b668d4): a closer that is not preceded by a newline used to glue the
+// closing fence to the last body line, leaving the block unterminated and folding the rest of the
+// message into code. The classifier accepts a closer anywhere, so the renderer must cope.
+
+test("a mid-line closer still produces a fence that starts its own line", () => {
+  const cases = [
+    ['compact tool_call', '<tool_call>\n bash\n {"a":1}</tool_call>'],
+    ['compact analysis', '<analysis>weighed both</analysis>'],
+    ['mid-line invoke closer', '<invoke name="read">\n<parameter name="path">a</parameter></invoke>'],
+    ['body ending without newline, no prose after', '<tool_answer>\n done</tool_answer>'],
+  ];
+  for (const [name, text] of cases) {
+    const spans = findInertSpans(text);
+    assert.equal(spans.length, 1, `${name}: one span`);
+    const body = text.slice(spans[0].bodyStart, spans[0].bodyEnd);
+    const out = renderInertMarkdown(text);
+
+    assert.ok(out.endsWith("\n```\n") || /\n```\n[^`]*$/.test(out), `${name}: fence line intact`);
+    assert.match(out, /\n```\n/, `${name}: closing fence starts a line`);
+    assert.ok(!/[^\n]```/.test(out), `${name}: no fence marker glued to prose`);
+    assert.ok(out.includes(body), `${name}: body preserved verbatim`);
+    assert.equal(renderInertMarkdown(out), out, `${name}: idempotent`);
+  }
+});
+
+test("prose after a mid-line closer stays outside the fence", () => {
+  const prose = "TRAILING PROSE must stay prose.";
+  const text = `<tool_call>\n bash\n {"a":1}</tool_call> ${prose}`;
+  const out = renderInertMarkdown(text);
+
+  const closeAt = out.indexOf("\n```\n");
+  assert.ok(closeAt >= 0, "closing fence must be on its own line");
+  const proseAt = out.indexOf(prose);
+  assert.ok(proseAt > closeAt, "prose follows the closing fence, not the body");
+  assert.ok(!out.slice(0, closeAt).includes(prose), "prose is not inside the block");
+  assert.equal((out.match(/\n```\n/g) ?? []).length, 1, "exactly one fence close");
+  assert.equal(renderInertMarkdown(out), out, "idempotent");
+
+  // A following span in the same message is still classified on its own, not swallowed.
+  const two = `<tool_call>\n a</tool_call> middle <summary>\n b</summary> tail`;
+  const out2 = renderInertMarkdown(two);
+  assert.equal((out2.match(/inert, not (executed|replayed)/g) ?? []).length, 1, "only block-initial openers");
+});
+
 test("only assistant text is transformed (FT-37 surface untouched)", () => {
   const transform = transformAssistantMarkdown;
   for (const messageType of ["assistant-thinking", "user"] as const) {
