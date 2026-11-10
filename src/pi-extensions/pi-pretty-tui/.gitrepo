@@ -5,7 +5,7 @@
 ;
 [subrepo]
 	remote = https://github.com/Apothic-AI/pi-pretty-tui
-	branch = test/composer-selection-on-apothic
+	branch = main
 	commit = 64e9ddd2c025bac888d541981361a63d1c9fffdb
 	parent = 0ce66c8bc6cf9d817507b468ade11ebe023244d6
 	method = merge

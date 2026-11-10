@@ -5,7 +5,7 @@
 ;
 [subrepo]
 	remote = https://github.com/bitnom/pi-cache-optimizer
-	branch = feat/opencode-cache-stats
+	branch = master
 	commit = ec7886dd81e16be9b52731fad41bd45b373d845b
 	parent = b8d55a2bd4ecf06e3be321a7ad34e028fe494705
 	method = merge
