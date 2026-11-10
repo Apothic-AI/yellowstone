@@ -20,10 +20,19 @@ cd "$(dirname -- "$0")/.."
 if [ "${1:-}" = gates ]; then
   rc=0
   # The count comes from the traversal, never from the narrator. This suite has been
-  # quoted as "7 gates", "8", "9" and "10" in one session — 10 was a grep counting the
-  # string "gate passed", and one script prints it twice. A suite that will not state its
-  # own size invites everyone to guess it, so it states it: the total below is computed
-  # from the calls actually made, not from a list in prose.
+  # quoted as "7 gates", "8", "9" and "10" in one session — every one a recollection,
+  # because until now it never printed its own size.
+  #
+  # The "10" is worth keeping as the example, and the first explanation of it was wrong.
+  # It came from `grep -c 'gate passed'` on a run log. That counts LINES, and the number
+  # of such lines a script prints is a property of that script's STATE, not of the suite:
+  # measured per script, eight print one line each and verify-mirror-live.sh prints two
+  # when every check passes and NONE when one fails. So the same nine gates produced 10
+  # matching lines on one run and 8 on another. There is no fixed "one script prints it
+  # twice" to point at — the string is simply not a count of anything stable.
+  #
+  # A suite that will not state its own size invites everyone to guess it, so it states
+  # it: the total below is computed from the calls actually made, not from prose.
   gates_run=0
   gates_failed=0
   gate() {

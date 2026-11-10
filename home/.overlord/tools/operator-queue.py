@@ -80,7 +80,8 @@ def read_asks() -> list[dict]:
                 "ticket": tk, "project": proj or "-", "title": title or "",
                 "kind": kind or "-", "age": _age(created), "created": _when(created),
                 "visible": hidden_by is None, "hidden_by": hidden_by,
-                "weekly_at": _when(weekly), "aside_reason": aside_reason,
+                "weekly_at": _when(weekly), "set_aside_at": _when(aside),
+                "aside_reason": aside_reason,
                 "kept_at": _when(kept),
             })
         return out
@@ -157,14 +158,27 @@ def main() -> int:
 
     print("OPERATOR QUEUE — union of both channels\n")
     print(f"asks   open={len(asks):<3} visible={len(visible):<3} hidden={len(hidden)}")
+    if hidden:
+        # Say HOW they are hidden. The two mechanisms are different findings: `weekly_at`
+        # is the weekly list working as designed, `set_aside_at` is the notice-transport bug
+        # (swarm-lyh). A bare total let the second hide behind the first.
+        from collections import Counter
+        split = Counter(a["hidden_by"] for a in hidden)
+        print("       " + " · ".join(f"{n} by {k}" for k, n in split.most_common()))
     print(f"gates  open={len(gates)}\n")
 
     if hidden:
         print(f"HIDDEN ASKS ({len(hidden)}) — invisible to `unblock list`, all still open:")
         print(f"  {'ticket':12}{'project':22}{'age':5}{'hidden_by':13}{'since':12}title")
         for a in sorted(hidden, key=lambda x: x["created"]):
+            # The `since` column must carry the timestamp of the mechanism that actually hides
+            # the row; printing weekly_at for a set-aside row leaves it blank and implies the
+            # wrong cause.
+            since = a["weekly_at"] if a["hidden_by"] == "weekly_at" else (a["set_aside_at"] or "-")
+            suffix = (f"  [{a['aside_reason']}]"
+                      if a["hidden_by"] == "set_aside_at" and a.get("aside_reason") else "")
             print(f"  {a['ticket']:12}{a['project'][:20]:22}{a['age']:5}"
-                  f"{str(a['hidden_by']):13}{a['weekly_at']:12}{a['title'][:56]}")
+                  f"{str(a['hidden_by']):13}{since:12}{a['title'][:56]}{suffix}")
         print()
 
     if visible:
