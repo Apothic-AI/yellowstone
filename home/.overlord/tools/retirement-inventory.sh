@@ -108,7 +108,15 @@ for i in insts:
             if p.startswith("{"):
                 continue
             for c in (s, s.replace('\\"', '"')):
-                if "Code/" in c and not inward.match(c) and ".pi/agent" not in c and os.sep + "Code" in c:
+                if "Code/" not in c or ".pi/agent" in c or os.sep + "Code" not in c:
+                    continue
+                # pi may record an in-tree package RELATIVE to the settings file
+                # that declares it ("../../../Code/yellowstone/src/pi-extensions/x"),
+                # which keeps the config portable. A relative string can never match
+                # an absolute prefix, so resolve it against the instance dir first or a
+                # correct source reads as LOOSE. Same defect the install gate had.
+                resolved = c if c.startswith("/") else os.path.normpath(os.path.join(i, c))
+                if not inward.match(resolved):
                     found.append((fn, c))
     if os.path.exists(os.path.join(i, "settings.json")):
         scanned += 1
