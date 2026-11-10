@@ -45,8 +45,8 @@
     "@YELLOWSTONE_REPO@/src/pi-extensions/pi-rooms",
     "@YELLOWSTONE_REPO@/src/pi-extensions/apothic-todo",
     "@YELLOWSTONE_REPO@/src/pi-extensions/pi-persist",
-    "@YELLOWSTONE_REPO@/src/pi-extensions/signalridge/packages/pi-goal",
-    "@YELLOWSTONE_REPO@/src/pi-extensions/tryinget/packages/pi-modes",
+    "@YELLOWSTONE_REPO@/src/pi-extensions/pi-goal",
+    "@YELLOWSTONE_REPO@/src/pi-extensions/pi-modes",
     "@YELLOWSTONE_REPO@/src/pi-extensions/pi-fleet-hooks"
   ],
   "enabledModels": [
