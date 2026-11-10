@@ -18,6 +18,9 @@
 set -uo pipefail
 cd "$(dirname -- "$0")/.."
 REPO="$(pwd)"
+# A push hook can export absolute caller repo/index/object/config paths. Scratch
+# git commands must discover their own repo, never mutate the pushing worktree.
+unset $(git rev-parse --local-env-vars)
 fail=0
 
 # build <case> — a scratch repo with one tool file and a synthetic live copy.
