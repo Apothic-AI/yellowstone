@@ -46,6 +46,14 @@ if [ "${1:-}" = gates ]; then
   # have created duplicate spaces rather than failing.
   ./test/verify-fleet-manifest.sh || rc=1
   echo
+  # Objective 2 has two halves and only the local one was checked. A development machine
+  # installs from src/; a fresh machine installs `git:Apothic-AI/<repo>@<sha>` from each
+  # component's .gitrepo, and until this gate existed `PI_EXTENSIONS_FROM` appeared in
+  # install.sh and in no test at all — implemented, never exercised, and the mode a new
+  # machine actually runs. It also catches the closed-list defect: install.sh iterates a
+  # hardcoded nine, so a tenth component would install locally and never in production.
+  ./test/verify-extensions-git-mode.sh || rc=1
+  echo
   # The mirror gate's own test: a reverted mirror, an uncommitted live edit and a
   # pending install must be told apart. Without it, that gate is verified only by
   # whatever happened to be true on this machine the day it was written — and its
