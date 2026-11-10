@@ -20,7 +20,7 @@ const sections = [
 const on = (id, quote) => anchorInSection(sections.find((s) => s.id === id), quote)
 const message = (from, text) => ({ from, text, at })
 const v2 = {
-  version: 2, slug: 'demo', title: 'Demo scope', pane: 'w5H:pT1', revision: 1, updated_at: at, doc: { sections },
+  version: 2, answerer: 'off', slug: 'demo', title: 'Demo scope', pane: 'w5H:pT1', revision: 1, updated_at: at, doc: { sections },
   threads: [
     { id: 'T1', anchor: on('plan', 'We build the page first'), author: 'agent', kind: 'question', status: 'open',
       recommendation: 'Page first', why: 'Voice needs the page.', messages: [message('agent', 'Page or voice first?')], created_at: at },

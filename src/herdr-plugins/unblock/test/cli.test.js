@@ -54,6 +54,7 @@ const common = {
 test('CLI files, lists, answers and closes asks through a real daemon', async () => {
   const daemon = await startDaemon({ port: 0 })
   process.env.UNBLOCK_PORT = String(daemon.port)
+  let parked
   try {
     const help = await run(['help'])
     assert.equal(help.status, 0, help.stderr)
@@ -117,12 +118,16 @@ test('CLI files, lists, answers and closes asks through a real daemon', async ()
     assert.equal(JSON.parse(collected.stdout).ask.status, 'collected')
     assert.match(collected.stdout, /collected value/)
 
-    const parked = await runDetached(['park', '--json'], JSON.stringify({
+    parked = await runDetached(['park', '--json'], JSON.stringify({
       ask: { ...common, title: 'Wait for an answer', fields: [{ name: 'answer', type: 'text', label: 'Answer', required: true }] },
       origin: { agent: 'cli', session_id: 'cli-park' },
     }))
     let parkTicket
-    for (let attempt = 0; attempt < 20 && !parkTicket; attempt++) {
+    // `park` is a fresh node process: it boots the CLI, reads stdin and files the ask before it
+    // blocks. That is ~900 ms measured here, so the old 500 ms window (20 x 25 ms) measured
+    // process startup rather than whether park filed an ask, and failed under load.
+    const parkedBy = Date.now() + 15000
+    while (!parkTicket && Date.now() < parkedBy) {
       const auth = JSON.parse(readFileSync(join(state, 'daemon.json'), 'utf8')).auth
       const response = await fetch(`http://127.0.0.1:${process.env.UNBLOCK_PORT}/api/asks?profile=*`, { headers: { authorization: `Bearer ${auth}` } })
       const asks = (await response.json()).asks ?? []
@@ -148,6 +153,11 @@ test('CLI files, lists, answers and closes asks through a real daemon', async ()
     assert.equal((await run(['answer'])).status, 2)
     assert.equal((await run(['file'], '{}')).status, 4)
   } finally {
+    // A parked CLI blocks until its ask is answered. If an assertion above throws, nothing
+    // answers it, and its piped stdio keeps this process alive past the runner's deadline —
+    // so the failure would be reported as a hang instead of the assertion that actually failed.
+    parked?.child.kill()
+    await parked?.done.catch(() => {})
     await daemon.close()
     rmSync(state, { recursive: true, force: true })
   }

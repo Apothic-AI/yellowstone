@@ -21,7 +21,7 @@ const after = [
   before[0],
   { id: 'build', heading: 'How it gets built', body_md: '| Piece | Runs on |\n|---|---|\n| Shared rules text | any box |\n| Machines file | any box |' },
 ]
-const scope = { version: 2, slug: 'lookback', title: 'Look back', pane: 'w5H:pT1', revision: 5, updated_at: at, doc: { sections: before }, threads: [] }
+const scope = { version: 2, answerer: 'off', slug: 'lookback', title: 'Look back', pane: 'w5H:pT1', revision: 5, updated_at: at, doc: { sections: before }, threads: [] }
 
 test('a comment on text the lane rewrote while Alex typed lands detached with his quote', async () => {
   process.env.UNBLOCK_ADMIN_RELAY_TOKEN = RELAY

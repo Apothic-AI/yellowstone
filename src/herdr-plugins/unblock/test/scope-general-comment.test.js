@@ -14,7 +14,7 @@ const sections = [
   { id: 'plan', heading: 'The plan', body_md: 'We build the page first. Then the voice.' },
 ]
 const scope = {
-  version: 2, slug: 'demo', title: 'Demo scope', pane: 'w5H:pT1', revision: 3, updated_at: at, doc: { sections },
+  version: 2, answerer: 'off', slug: 'demo', title: 'Demo scope', pane: 'w5H:pT1', revision: 3, updated_at: at, doc: { sections },
   threads: [
     // A plain highlight on the title text: it detaches when the title is renamed, as it does today.
     { id: 'T1', anchor: anchorInSection(sections[0], 'Demo scope'), author: 'alex', kind: 'comment', status: 'open',

@@ -94,10 +94,13 @@ function record(port, path) {
 }
 
 const laneScope = (slug) => ({ version: 2, slug, title: 'Rooms', pane: 'w5H:pQA', revision: 1, updated_at: at, doc: { sections }, threads: [] })
+// A plain scope answers through the responder by default, and an answerer's own item on the same
+// message would mask the lane path these tests exercise. The explainer test below keeps it on.
+const laneOnly = (scope) => ({ ...scope, answerer: 'off' })
 
 test('a lane reply refused at the 600-character cap ends the live item failed with the reason', async () => {
   const slug = 'live-refused'
-  const t = await boot(laneScope(slug))
+  const t = await boot(laneOnly(laneScope(slug)))
   const live = record(t.h.port, `/api/scope/${slug}/events`)
   try {
     await new Promise((r) => setTimeout(r, 200))
@@ -118,7 +121,7 @@ test('a lane reply refused at the 600-character cap ends the live item failed wi
 test('a lane stream that goes quiet ends failed instead of streaming forever', async () => {
   const slug = 'live-quiet'
   process.env.UNBLOCK_LIVE_STALE_MS = '1500'
-  const t = await boot(laneScope(slug))
+  const t = await boot(laneOnly(laneScope(slug)))
   const live = record(t.h.port, `/api/scope/${slug}/events`)
   try {
     await new Promise((r) => setTimeout(r, 200))
@@ -130,8 +133,13 @@ test('a lane stream that goes quiet ends failed instead of streaming forever', a
     })
     await t.until(() => live.items('T1').some((i) => i.status === 'streaming'), 'streaming item', 2000)
     await t.until(() => live.items('T1').at(-1)?.status === 'failed', 'failed item', 5000)
-    const last = live.items('T1').at(-1)
-    const lastChunk = live.items('T1').filter((i) => i.status === 'streaming').at(-1)
+    // Measure the quiet window on the lane's own item. More than one responder can own an item on
+    // one message, and taking the last `streaming` event across all of them measures another
+    // item's chunks — the same cross-id mixing that made the growth check in live-items.test.js lie.
+    const laneId = live.items('T1').filter((i) => i.status === 'failed').at(-1)?.id
+    const laneItems = live.items('T1').filter((i) => i.id === laneId)
+    const last = laneItems.at(-1)
+    const lastChunk = laneItems.filter((i) => i.status === 'streaming').at(-1)
     assert.ok(killedAt > 0 && last.t - lastChunk.t >= 1200, `it waits for the quiet window after the last chunk, not the first gap (${last.t - lastChunk.t} ms)`)
     assert.ok(typeof last.error === 'string' && last.error.length > 0 && last.error.length <= 200, 'a short reason')
   } finally { delete process.env.UNBLOCK_LIVE_STALE_MS; live.close(); await t.h.close() }
@@ -139,7 +147,7 @@ test('a lane stream that goes quiet ends failed instead of streaming forever', a
 
 test('a lane stream past 12000 characters is refused and ends failed; the text never grows past the cap', async () => {
   const slug = 'live-capped'
-  const t = await boot(laneScope(slug))
+  const t = await boot(laneOnly(laneScope(slug)))
   const live = record(t.h.port, `/api/scope/${slug}/events`)
   try {
     await new Promise((r) => setTimeout(r, 200))
@@ -170,7 +178,7 @@ test('an explainer answer never shows any part of a NEEDS_OWNER line while it st
 
 test('a typing link is trimmed before it is checked and stored; blank or non-http links are refused', async () => {
   const slug = 'live-link-trim'
-  const t = await boot(laneScope(slug))
+  const t = await boot(laneOnly(laneScope(slug)))
   const live = record(t.h.port, `/api/scope/${slug}/events`)
   try {
     await new Promise((r) => setTimeout(r, 200))

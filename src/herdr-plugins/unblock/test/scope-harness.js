@@ -126,7 +126,10 @@ export async function startScopeHarness(initial) {
   async function close() {
     for (const handle of streams) handle.close()
     await daemon.close()
-    rmSync(temp, { recursive: true, force: true })
+    // The answerer is a child process: closing the daemon does not join it, so it can still be
+    // creating files under temp when this runs. `force` only suppresses ENOENT, so without the
+    // retries a teardown that races its own writer throws ENOTEMPTY under load.
+    rmSync(temp, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
   }
 
   return { request, stream, until, paneLines, writeScope, bearer, close, restart, get port() { return daemon.port } }

@@ -116,11 +116,11 @@ test('an explainer answer streams as one live item: thinking with what it reads,
     assert.ok(items[0].by, 'names who is answering')
     const thread = (await t.get()).scope.threads[0]
     const alexAt = thread.messages[0].at
-    for (const i of items) { assert.equal(i.id, `T1@${alexAt}`); assert.equal(i.to, alexAt) }
+    for (const i of items) { assert.ok(i.id.startsWith(`T1@${alexAt}`), 'the item names the message it answers'); assert.equal(i.to, alexAt) }
     assert.ok(items.some((i) => i.doing?.text === 'Reading FINDINGS.md'), 'the Read tool call shows as the activity line')
     const texts = [...new Set(items.filter((i) => i.status === 'streaming').map((i) => i.text))]
     assert.ok(texts.length >= 3, `the text grows in at least three steps, saw ${texts.length}`)
-    for (let i = 1; i < texts.length; i++) assert.ok(texts[i].startsWith(texts[i - 1]) && texts[i].length > texts[i - 1].length, 'each step extends the last')
+    for (let i = 1; i < texts.length; i++) assert.ok(texts[i].startsWith(texts[i - 1]) && texts[i].length > texts[i - 1].length, 'first reply: each step extends the last')
     assert.equal(items.at(-1).status, 'done')
     assert.equal(items.at(-1).text, FINAL)
     const answer = thread.messages.find((m) => m.from === 'agent')
@@ -166,6 +166,7 @@ test('a lane shows what it is doing, streams its reply from stdin, and a finishe
     const human403 = await t.h.request(`/api/scope/${slug}/threads/T1/typing`, { method: 'POST', headers: human, body: { doing: 'spoof' } })
     assert.equal(human403.status, 403, 'only lanes post typing')
 
+    const before = live.items('T1').length
     const streamed = await cli(['scope', 'reply', slug, 'T1', '--stream'], (stdin) => {
       let i = 0
       const tick = () => { if (i < CHUNKS.length) { stdin.write(CHUNKS[i++]); setTimeout(tick, 300) } else stdin.end() }
@@ -175,9 +176,24 @@ test('a lane shows what it is doing, streams its reply from stdin, and a finishe
     await t.until(() => live.items('T1').some((i) => i.status === 'done'), 'done item')
     const items = live.items('T1')
     checkForward(items)
-    const texts = [...new Set(items.filter((i) => i.status === 'streaming').map((i) => i.text))]
+    // Only the reply this post streamed. T1 already carries earlier replies on the same
+    // thread, and a later, shorter text can never be a prefix of an earlier, longer one —
+    // so an unscoped collection fails the growth check no matter how correctly the reply
+    // streamed. Scoping it is what makes the assertion mean "this reply grew".
+    // One reply, one chain. A message may be answered by more than one responder — the lane
+    // streaming here and the explainer answering the same comment — and each now owns its own
+    // item id. Collecting across ids interleaves two independently-correct chains and fails
+    // on the boundary between them, so group by id and assert on the chain that ends at FINAL.
+    const chains = new Map()
+    for (const i of items) {
+      if (i.status !== 'streaming' || !FINAL.startsWith(i.text)) continue
+      if (!chains.has(i.id)) chains.set(i.id, [])
+      const chain = chains.get(i.id)
+      if (chain.at(-1) !== i.text) chain.push(i.text)
+    }
+    const texts = [...chains.values()].find((c) => c.at(-1) === FINAL) ?? []
     assert.ok(texts.length >= 3, `the reply grows in at least three steps, saw ${texts.length}`)
-    for (let i = 1; i < texts.length; i++) assert.ok(texts[i].startsWith(texts[i - 1]), 'each step extends the last')
+    for (let i = 1; i < texts.length; i++) assert.ok(texts[i].startsWith(texts[i - 1]), 'streamed reply: each step extends the last')
     assert.equal(items.at(-1).text, FINAL)
     const thread = (await t.get()).scope.threads[0]
     assert.equal(thread.messages.filter((m) => m.from === 'agent').at(-1)?.text, FINAL, 'the full reply lands in the comment')

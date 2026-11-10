@@ -26,7 +26,11 @@ export function createLiveItems({ emit }) {
 
   function upsert(slug, patch, { staleMs } = {}) {
     prune(slug)
-    const id = patch.id ?? `${patch.thread}@${patch.to}`
+    // A reply item belongs to the responder that streams it. The id used to be
+    // `${thread}@${to}` alone, so two responders answering one message shared an item and
+    // each appended onto the other's text — the explainer rebuilds with trimEnd(), so the
+    // lane's next chunk landed on a trimmed string and the reply corrupted itself.
+    const id = patch.id ?? (patch.by ? `${patch.thread}@${patch.to}@${patch.by}` : `${patch.thread}@${patch.to}`)
     const items = scopes.get(slug) ?? new Map()
     const previous = items.get(id)
     if (!(patch.status in ranks)) throw new Error('invalid live item status')

@@ -18,7 +18,7 @@ import { createScopeVoiceSession } from '../src/scope-voice.js'
 
 const at = '2026-09-30T01:00:00Z'
 const scope = {
-  version: 2, slug: 'demo', title: 'Demo scope', pane: 'w5H:pT1', revision: 1, updated_at: at,
+  version: 2, answerer: 'off', slug: 'demo', title: 'Demo scope', pane: 'w5H:pT1', revision: 1, updated_at: at,
   doc: { sections: [
     { id: 'title', heading: 'Demo scope', body_md: 'A small page.' },
     { id: 'plan', heading: 'The plan', body_md: 'We ship the page first.' },

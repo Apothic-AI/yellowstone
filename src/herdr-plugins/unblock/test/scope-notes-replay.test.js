@@ -16,7 +16,7 @@ const sections = [
   { id: 'title', heading: 'Hands-free dev', body_md: 'Talk to a lane while it works.' },
   { id: 'flow', heading: 'The flow', body_md: 'Alex talks. The lane listens and edits the doc.' },
 ]
-const scope = { version: 2, slug: 'handsfree-dev', title: 'Hands-free dev', pane: 'w5H:pHG', revision: 8, updated_at: at, doc: { sections }, threads: [] }
+const scope = { version: 2, answerer: 'off', slug: 'handsfree-dev', title: 'Hands-free dev', pane: 'w5H:pHG', revision: 8, updated_at: at, doc: { sections }, threads: [] }
 
 // Seconds after 17:15:35 ET, and whether the note was a reply to an earlier comment (ids 22 and 32 replied; 27 was an own answer).
 const REPLAY = [[0], [100], [144], [205], [245], [336, 'reply'], [370], [402], [447], [541], [585, 'reply'], [640], [675], [709],

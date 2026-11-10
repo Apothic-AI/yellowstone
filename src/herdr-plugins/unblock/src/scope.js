@@ -461,8 +461,14 @@ export function createScopeRoutes({ store, webRoot, sendJson, sendText, readJson
       if (write && status >= 400 && status < 500 && req.method === 'POST' && parts.length === 4 && parts[1] === 'threads' && THREAD_ID.test(parts[2]) && parts[3] === 'reply' && !proxyIdentity(req) && !relayIdentity(req)) {
         const thread = readScope(parts[0])?.scope?.threads.find(t => t.id === parts[2])
         const to = thread?.messages.filter(m => m.from === 'alex').at(-1)?.at
-        const item = liveItems.list(parts[0]).find(i => i.id === `${parts[2]}@${to}`)
-        if (item && ['thinking', 'streaming'].includes(item.status)) liveItems.upsert(parts[0], { id: item.id, status: 'failed', error: String(message).slice(0, 200), doing: null })
+        // A message may be answered by more than one responder, and each owns its own item
+        // (`thread@to@by`). A refused reply is a refusal for the turn that made the request, which
+        // this handler cannot tell apart from the others — so fail every open item on the message
+        // rather than the first one found. An item left `streaming` here never finishes, which is
+        // exactly what this path exists to prevent.
+        for (const item of liveItems.list(parts[0]).filter(i => i.id.startsWith(`${parts[2]}@${to}`))) {
+          if (['thinking', 'streaming'].includes(item.status)) liveItems.upsert(parts[0], { id: item.id, status: 'failed', error: String(message).slice(0, 200), doing: null })
+        }
       }
       if (write && status >= 400 && status < 500) console.error(`unblock: scope write refused slug=${parts[0]} comment=${parts[1] === 'threads' && THREAD_ID.test(parts[2]) ? parts[2] : '-'} verb=${parts[3] || parts[1] || '-'} status=${status} error=${String(message).replace(/[\r\n]/g, ' ')}`)
     }
@@ -655,7 +661,7 @@ export function createScopeRoutes({ store, webRoot, sendJson, sendText, readJson
         if (!thread) bad('no such comment', 404)
         const to = [...thread.messages].reverse().find(m => m.from === 'alex')?.at
         if (!to) bad('no Alex message')
-        const current = liveItems.list(slug).find(item => item.id === `${threadId}@${to}`)
+        const current = liveItems.list(slug).find(item => item.id === `${threadId}@${to}@${by}`)
         const patch = { thread: threadId, to, by }
         if (verb === 'stream' && (current?.text ?? '').length + body.chunk.length > MAX_TEXT) {
           const error = 'The reply is too long to stream (12000 characters max)'
@@ -1455,8 +1461,8 @@ export function createScopeRoutes({ store, webRoot, sendJson, sendText, readJson
       const to = [...thread.messages].reverse().find(message => message.from === 'alex')?.at
       // Never wait on herdr here: the turn's item already names the lane; a reply with no item uses the cached name or the pane.
       if (to) {
-        const existing = liveItems.list(slug).find((item) => item.id === `${thread.id}@${to}`)
-        liveItems.upsert(slug, { thread: thread.id, to, ...(existing ? {} : { by: paneNames.get(scope.pane)?.name ?? scope.pane }), status: 'done', doing: null, text: thread.messages.at(-1).text })
+        const existing = liveItems.list(slug).find((item) => item.id.startsWith(`${thread.id}@${to}`))
+        liveItems.upsert(slug, { ...(existing ? { id: existing.id } : {}), thread: thread.id, to, ...(existing ? {} : { by: paneNames.get(scope.pane)?.name ?? scope.pane }), status: 'done', doing: null, text: thread.messages.at(-1).text })
       }
     }
     if (noteData) {

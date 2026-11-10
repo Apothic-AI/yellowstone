@@ -124,7 +124,11 @@ export function migrateV1(input, now = '1970-01-01T00:00:00.000Z') {
   }
   for (const section of sections) section.body_md = section.body_md.trim()
   if (v1.unverified) sections.push({ id: 'unverified', heading: 'Not verified yet', body_md: Array.isArray(v1.unverified) ? v1.unverified.join('\n') : String(v1.unverified) })
-  const scope = { version: 2, slug: v1.slug ?? '', title, pane: v1.pane ?? '', ...(v1.host === undefined ? {} : { host: v1.host }), revision: 1, updated_at: at, doc: { sections }, threads: [] }
+  // A v1 scope was written before the answerer existed, so its lane was always told when Alex
+  // said something. Migration preserves the behaviour it migrated from: without this, every
+  // pre-existing scope silently stops telling its lane that a human spoke (kindOf falls back to
+  // 'scope', whose DOC_KINDS default has answerer on). New docs keep the kind default.
+  const scope = { version: 2, answerer: 'off', slug: v1.slug ?? '', title, pane: v1.pane ?? '', ...(v1.host === undefined ? {} : { host: v1.host }), revision: 1, updated_at: at, doc: { sections }, threads: [] }
   const titleAnchor = () => anchorInSection(sections[0], title)
   const resolution = (decision, words, by, time) => ({ decision, alex_words: words, by, at: time, confirmed_at: time, revision: 1 })
   for (const q of v1.questions ?? []) {

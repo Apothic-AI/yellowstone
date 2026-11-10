@@ -16,7 +16,7 @@ import { human, startScopeHarness } from './scope-harness.js'
 const run = promisify(execFile)
 const at = '2026-09-29T21:00:00Z'
 const v2 = {
-  version: 2, slug: 'demo', title: 'Demo scope', pane: 'w5H:pT1', revision: 1, updated_at: at,
+  version: 2, answerer: 'off', slug: 'demo', title: 'Demo scope', pane: 'w5H:pT1', revision: 1, updated_at: at,
   doc: { sections: [{ id: 'title', heading: 'Demo scope', body_md: 'A small page.' }, { id: 'plan', heading: 'The plan', body_md: 'We ship the page first. Voice comes last.' }] },
   threads: [
     { id: 'T1', anchor: { section: 'plan', quote: 'Voice comes last', prefix: 'page first. ', suffix: '.' }, author: 'agent', kind: 'question', status: 'open',
