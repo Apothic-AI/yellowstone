@@ -72,8 +72,15 @@ done < <(find "$root" -maxdepth 4 -name .git \( -type d -o -type f \) 2>/dev/nul
 # ~/Code/herdr/.pi/extensions/ and declares it in pi-profile.json while its 25 package sources are
 # all inside src/. That is a fourth component behind the same precondition.
 python3 - "$repo" <<'PY2'
-import json, os, glob, sys
-want = os.path.join(sys.argv[1], "src") + os.sep
+import json, os, glob, re, sys
+base = sys.argv[1].rstrip(os.sep)
+# "Inside the repo" has TWO spellings, not one: the main checkout at <base>/src/ and
+# every worktree at <base>-wt/<name>/src/. Matching only the main checkout reports a
+# CORRECT migration as incomplete — the closed-list defect inside the tool that exists
+# to find it, and the unsatisfiable-gate failure that follows: a gate whose zero is
+# unreachable trains people to ignore it. herdr-leader hit exactly this case, moving to
+# yellowstone-wt/herdr-lane/src/apps/herdr and still reading LOOSE.
+inward = re.compile("^" + re.escape(base) + r"(-wt/[^/]+)?/src/")
 def walk(o, path=""):
     if isinstance(o, str):
         yield path, o
@@ -101,14 +108,14 @@ for i in insts:
             if p.startswith("{"):
                 continue
             for c in (s, s.replace('\\"', '"')):
-                if "Code/" in c and not c.startswith(want) and ".pi/agent" not in c and os.sep + "Code" in c:
+                if "Code/" in c and not inward.match(c) and ".pi/agent" not in c and os.sep + "Code" in c:
                     found.append((fn, c))
     if os.path.exists(os.path.join(i, "settings.json")):
         scanned += 1
     if found:
         rows.append((name, sorted(set(found))))
 print()
-print(f"LOOSE - instances loading a component from outside {want}")
+print(f"LOOSE - instances loading a component from outside {base}[/-wt/<name>]/src/")
 print(f"        {len(rows)} of {scanned} instances")
 comps = set()
 for n, found in rows:
