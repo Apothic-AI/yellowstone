@@ -97,6 +97,14 @@ if [ "${1:-}" = gates ]; then
   # first version passed the revert case for an hour, in production, green.
   gate ./test/verify-revert-detection.sh
   echo
+  # The accepted vendor payload's provenance. The container suite grants a lint
+  # exemption to a payload member by membership AND matching bytes, which is only
+  # meaningful if the manifest itself cannot be rewritten — so this gate binds the
+  # manifest and the four provenance artifacts to the committed blobs and to pinned
+  # hashes, and proves its own negatives still fail. Host-side because the oracle is
+  # git, and it never regenerates the manifest.
+  gate ./test/verify-vendor-provenance.sh
+  echo
   # The revert-detection gate's own environment test, which existed and that nothing
   # ran. It runs that script under the Git environment a push hook exports
   # (GIT_DIR, GIT_INDEX_FILE, GIT_OBJECT_DIRECTORY, GIT_COMMON_DIR, …) and requires

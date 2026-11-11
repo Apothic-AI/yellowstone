@@ -41,6 +41,55 @@ printf '#!/usr/bin/env bash\nexit 1\n' > "$P/test/verify-mirror-live.sh"
 ( cd "$P" && bash scripts/githooks/pre-push ) >/dev/null 2>&1; rc=$?
 [ "$rc" != 0 ] && ok "hook blocks when a check fails" \
   || bad "hook passed with a failing check — it is not a control"
+
+# A ABSENT check is not a PASSING check. This is the durable half of the hook fix:
+# `[ -f "$t" ] || continue` made a renamed or deleted dependency exit 0, so the hook
+# kept reporting success for a push it never checked. Each case below must fail, and
+# must name what is missing, because a silent non-zero sends a lane hunting the
+# wrong thing.
+restore_checks() {
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$P/test/verify-revert-detection.sh"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$P/test/verify-mirror-live.sh"
+}
+restore_checks
+
+rm -f "$P/test/verify-revert-detection.sh"
+out="$( cd "$P" && bash scripts/githooks/pre-push 2>&1 )"; rc=$?
+[ "$rc" != 0 ] && ok "hook blocks when ONE check (revert-detection) is missing" \
+  || bad "hook passed with verify-revert-detection.sh missing — a skipped check reads as coverage"
+case "$out" in
+  *"verify-revert-detection.sh"*"missing"*) ok "…and names the missing revert-detection check" ;;
+  *) bad "missing-check failure did not name verify-revert-detection.sh: $(printf '%s' "$out" | tail -2 | tr '\n' ' ')" ;;
+esac
+
+restore_checks
+rm -f "$P/test/verify-mirror-live.sh"
+out="$( cd "$P" && bash scripts/githooks/pre-push 2>&1 )"; rc=$?
+[ "$rc" != 0 ] && ok "hook blocks when ONE check (mirror-live) is missing" \
+  || bad "hook passed with verify-mirror-live.sh missing"
+case "$out" in
+  *"verify-mirror-live.sh"*"missing"*) ok "…and names the missing mirror-live check" ;;
+  *) bad "missing-check failure did not name verify-mirror-live.sh" ;;
+esac
+
+restore_checks
+rm -f "$P/test/verify-revert-detection.sh" "$P/test/verify-mirror-live.sh"
+out="$( cd "$P" && bash scripts/githooks/pre-push 2>&1 )"; rc=$?
+[ "$rc" != 0 ] && ok "hook blocks when BOTH checks are missing" \
+  || bad "hook passed with both checks missing — verifying nothing is not verifying"
+both=0
+case "$out" in *"verify-revert-detection.sh"*) both=$((both + 1)) ;; esac
+case "$out" in *"verify-mirror-live.sh"*) both=$((both + 1)) ;; esac
+[ "$both" = 2 ] && ok "…and names both missing checks, not just the last one" \
+  || bad "both-missing failure named $both of 2 checks"
+
+# A present check is still trusted over a missing one: restoring must return to green,
+# or the new failure mode would be indistinguishable from "this hook always fails".
+restore_checks
+( cd "$P" && bash scripts/githooks/pre-push ) >/dev/null 2>&1; rc=$?
+[ "$rc" = 0 ] && ok "hook passes again once both checks are restored" \
+  || bad "hook stayed red after restoring both checks (rc=$rc)"
+
 rm -rf "$P"
 
 if [ "$fail" = 0 ]; then

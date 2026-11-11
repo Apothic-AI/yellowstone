@@ -227,3 +227,25 @@ byte-identical after both a passing run and a forced failure.
 The pre-push hook carries the same rule in miniature: a check it names but cannot
 find is a **failure**, not a `continue`. A hook that skips a missing script still
 exits 0, which reads as "checked" when it means "checked nothing".
+`test/verify-pre-push-hook.sh` asserts that durably, for one missing check, the other
+missing check, both missing, and both restored.
+
+### The accepted payload's provenance is an oracle, not a claim
+
+`test/verify-vendor-provenance.sh` exists because the container suite grants a lint
+exemption to a vendored file by *membership in the accepted manifest **and** a
+matching sha256*. That is only worth something if the manifest itself cannot be
+rewritten: edit a payload file, regenerate the manifest from the edit, and every
+check agrees with itself. So this gate asserts, host-side where git is the oracle:
+
+- all 106 members match the manifest **in the working tree and in the committed
+  blob** (`git cat-file blob HEAD:…`),
+- the payload tree holds exactly those files plus `ft20-provenance/`,
+- the four provenance artifacts match their pins in `test/lib-vendor.sh` and their
+  committed blobs, and the single exempt recorded patch matches its own pin,
+- and its negatives still fail: a modified member, a manifest doctored to cover that
+  edit, and an unlisted new patch are each rejected in a throwaway copy.
+
+It never regenerates the 106-line manifest — the count is asserted *as* 106 so a
+generated list fails here rather than silently replacing the reviewed one — and it
+checks the manifest's hash is unchanged at the end of its own run.

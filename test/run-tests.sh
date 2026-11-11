@@ -93,49 +93,23 @@ fingerprint() {
 }
 
 # ------------------------------------------------------------ lint scope ----
-# Which lint applies to which half of the tree.
+# Which lint applies to which half of the tree, and the ONE authority for it: the
+# predicate functions live in test/lib-vendor.sh, so the container suite here and
+# the host gate test/verify-vendor-provenance.sh cannot drift apart. Read that file
+# for the rule; the short form is that an exemption needs provenance *and* bytes —
+# an accepted manifest member whose sha256 matches the recorded one, one of four
+# pinned provenance artifacts, or the single recorded patch named in the lib.
 #
-# `vendor/` holds two different things and treating them alike damages both ways:
-# pointing the style or path lint at the accepted payload would demand edits to
-# files that directory forbids editing, and a blanket `--exclude-dir=vendor` would
-# stop the credential scan from looking at third-party bytes at all — where a real
-# secret is hardest to notice. So the split follows **provenance**, and membership
-# is read from a manifest rather than inferred from a prefix:
-#
-#   vendor/pi-hermes-memory-0.10.0-ft20/       accepted third-party payload; a file
-#       is in it iff ft20-provenance/ACCEPTED-13ce3cc6a.sha256 lists that exact path.
-#       Style lint is about how we write docs, so it does not apply to bytes we did
-#       not write, and neither does the developer-path lint: one accepted script
-#       carries its author's TSC_BIN default, which vendor/ft20-portable/ overrides.
-#   .../ft20-provenance/patches/               our recorded diffs of those bytes;
-#       a patch has to quote the accepted line it changes, so it inherits the same
-#       developer-path exemption and nothing else.
-#   vendor/ft20-portable/                      Yellowstone tooling. Linted as source.
-#
-# The credential scan gets no path exemption at all — see credential_findings().
-# vendor/README.md states this contract for a reader; this block implements it.
-VENDOR_PAYLOAD_REL="vendor/pi-hermes-memory-0.10.0-ft20"
-
-is_accepted_vendor() {  # $1 = repo root, $2 = path relative to it
-  local root="$1" rel="$2" manifest
-  case "$rel" in "$VENDOR_PAYLOAD_REL"/*) ;; *) return 1 ;; esac
-  manifest="$root/$VENDOR_PAYLOAD_REL/ft20-provenance/ACCEPTED-13ce3cc6a.sha256"
-  [ -f "$manifest" ] || return 1
-  # The manifest's second column is the path relative to the payload root, with no
-  # `./` prefix (unlike BASE-MANIFEST.sha256, which uses one — checked, not assumed).
-  awk -v p="${rel#"$VENDOR_PAYLOAD_REL"/}" '$2 == p { found = 1 } END { exit !found }' "$manifest"
-}
-
-is_vendor_provenance() {  # $1 = path relative to the repo root
-  case "$1" in "$VENDOR_PAYLOAD_REL"/ft20-provenance/patches/*) return 0 ;; esac
-  return 1
-}
+# What this block owns is the credential side, which is deliberately exempt from
+# path-based reasoning altogether (see CREDENTIAL_TOKEN_SYNTHETIC).
+. "$REPO/test/lib-vendor.sh"
 
 # The vendor fixtures stand in for a credential with this one literal token. The
 # exemption is the token, never the file and never the directory: a real secret
 # written into a fixture, into the accepted payload, or into a file added under
-# vendor/ later still matches. Findings are printed as paths only — in the failing
-# case the match IS the credential, and a gate log is not the place for it.
+# vendor/ later still matches, and a modified member of the payload keeps no
+# exemption to hide in. Findings are printed as paths only — in the failing case
+# the match IS the credential, and a gate log is not the place for it.
 CREDENTIAL_TOKEN_SYNTHETIC='sk-SYNTHETICCREDENT1AL0123456789'
 CREDENTIAL_RE='sk-[a-z0-9]{20,}|ghp_[a-z0-9]{20,}|gho_[a-z0-9]{20,}|AIza[0-9a-z_-]{30,}|BEGIN [A-Z ]*PRIVATE KEY'
 
@@ -157,16 +131,19 @@ developer_path_findings() {  # $1 = root; prints each unexempted path once
       | grep -v '^\./\.git:' | cut -d: -f1 | sed 's|^\./||' | LC_ALL=C sort -u ) \
   | while IFS= read -r rel; do
       [ -n "$rel" ] || continue
-      # Exact, named exemptions. Both are tools that MEASURE a loose checkout, so
-      # their text has to contain the prefix they search for; excluding them by
-      # name keeps the exemption visible, where laundering the pattern would hide
-      # it. Anything else that hardcodes a checkout is a defect.
+      # Exact, named source exemptions. Both are tools that MEASURE a loose
+      # checkout, so their text has to contain the prefix they search for;
+      # excluding them by name keeps the exemption visible, where laundering the
+      # pattern would hide it. Anything else that hardcodes a checkout is a defect.
       case "$rel" in
         home/.overlord/tools/relaunch-lane-monorepo.sh) continue ;;
         home/.overlord/tools/unit-path-refs.sh) continue ;;
       esac
+      # Third-party and recorded provenance: membership AND matching bytes, from
+      # the shared lib — not a directory prefix, and not a `patches/*` wildcard.
       is_accepted_vendor "$root" "$rel" && continue
-      is_vendor_provenance "$rel" && continue
+      is_provenance_oracle "$root" "$rel" && continue
+      is_provenance_patch_exempt "$root" "$rel" && continue
       printf '%s\n' "$rel"
     done
 }
@@ -496,15 +473,36 @@ suite_smoke() {
   # would have hidden them, so the plant is the direct test of "no blanket vendor
   # exclusion". The planted tokens are assembled at run time so this file contains
   # no matching literal of its own.
+  #
+  # Every fixture copy below is FAIL-CLOSED: `cp … 2>/dev/null || true` made the
+  # two "stays exempt" assertions pass when the copy silently failed, because an
+  # absent file has no findings. A fixture that did not arrive is now its own
+  # failure, and the exact synthetic token is asserted present, so "not a finding"
+  # means "present and correctly exempted" rather than "absent".
   local plant; plant="$(mktemp -d)"
-  mkdir -p "$plant/$VENDOR_PAYLOAD_REL/scripts" "$plant/$VENDOR_PAYLOAD_REL/ft20-provenance" \
+  local fixture_ok=1
+  mkdir -p "$plant/$VENDOR_PAYLOAD_REL/scripts" \
+           "$plant/$VENDOR_PAYLOAD_REL/ft20-provenance/patches" \
            "$plant/vendor/ft20-portable"
-  cp "$REPO/$VENDOR_PAYLOAD_REL/ft20-provenance/ACCEPTED-13ce3cc6a.sha256" \
-     "$plant/$VENDOR_PAYLOAD_REL/ft20-provenance/"
-  # An accepted-payload file: its upstream TSC default must stay exempt.
-  cp "$REPO/$VENDOR_PAYLOAD_REL/scripts/verify.sh" "$plant/$VENDOR_PAYLOAD_REL/scripts/" 2>/dev/null || true
+  plant_fixture() {  # $1 = repo-relative source, $2 = plant-relative dest
+    mkdir -p "$(dirname "$plant/$2")"
+    cp "$REPO/$1" "$plant/$2" 2>/dev/null || { fixture_ok=0; bad "fixture copy failed: $1"; }
+  }
+  plant_fixture "$VENDOR_ACCEPTED_REL" "$VENDOR_ACCEPTED_REL"
+  # An accepted-payload member: its upstream TSC default must stay exempt, and only
+  # because the bytes still match the recorded hash.
+  plant_fixture "$VENDOR_PAYLOAD_REL/scripts/verify.sh" "$VENDOR_PAYLOAD_REL/scripts/verify.sh"
   # Our own tooling: its synthetic sentinels must stay exempt too.
-  cp "$REPO/vendor/ft20-portable/probes/actual-probes.mjs" "$plant/vendor/ft20-portable/" 2>/dev/null || true
+  plant_fixture "vendor/ft20-portable/probes/actual-probes.mjs" "vendor/ft20-portable/actual-probes.mjs"
+  # The one recorded patch that is exempt by exact name and hash.
+  local patch_rel; patch_rel="${VENDOR_PATCH_EXEMPT_PIN% *}"
+  plant_fixture "$patch_rel" "$patch_rel"
+  check_eq "every negative-test fixture copy landed" 1 "$fixture_ok"
+  check "the synthetic-token fixture carries the exact synthetic token" \
+    grep -qF -- "$CREDENTIAL_TOKEN_SYNTHETIC" "$plant/vendor/ft20-portable/actual-probes.mjs"
+  check "the accepted-payload fixture carries a developer path to exempt" \
+    grep -qE "$DEV_PATH_RE" "$plant/$VENDOR_PAYLOAD_REL/scripts/verify.sh"
+
   printf 'const k = "%s%s";\n' 'sk-' 'L1VERealCredential0123456789' \
     > "$plant/vendor/ft20-portable/planted.txt"
   printf '# %s/%s/Code/checkout\n' /home stranger > "$plant/planted-path.txt"
@@ -512,13 +510,50 @@ suite_smoke() {
     "vendor/ft20-portable/planted.txt" "$(credential_findings "$plant" | tr '\n' ' ' | sed 's/ $//')"
   check_eq "a planted developer path outside the allowlist is still caught" \
     "planted-path.txt" "$(developer_path_findings "$plant" | tr '\n' ' ' | sed 's/ $//')"
-  # And the exemption still works: the synthetic fixture token is not a finding.
+  # The exemption still works, and works for the stated reason.
   check_eq "the synthetic fixture token itself is not a finding" 0 \
     "$(credential_findings "$plant" | grep -c 'actual-probes' || true)"
-  # Nor is the accepted-payload TSC default, which is why the planted path above had
-  # to be planted somewhere else to be caught.
-  check_eq "the accepted payload's developer path stays exempt by provenance" 0 \
+  check_eq "the accepted payload's developer path stays exempt by matching bytes" 0 \
     "$(developer_path_findings "$plant" | grep -c 'scripts/verify.sh' || true)"
+  check_eq "the one recorded exempt patch's developer path stays exempt" 0 \
+    "$(developer_path_findings "$plant" | grep -c 'patches/0001-' || true)"
+
+  # Membership alone is not an exemption. Append a developer path to an accepted
+  # member: the bytes no longer match the recorded hash, so the file must fall out
+  # of the exemption and be reported. This is the exact defect the first version had
+  # — it keyed on the path, so a modified member kept its exemption forever.
+  printf 'WorkingDirectory=%s/%s/Code/tampered\n' /home intruder \
+    >> "$plant/$VENDOR_PAYLOAD_REL/scripts/verify.sh"
+  check_eq "a modified manifest member loses its exemption" 1 \
+    "$(developer_path_findings "$plant" | grep -c 'scripts/verify.sh' || true)"
+  plant_fixture "$VENDOR_PAYLOAD_REL/scripts/verify.sh" "$VENDOR_PAYLOAD_REL/scripts/verify.sh"
+
+  # A NEW patch under patches/ inherits nothing. The blanket `patches/*` this
+  # replaced would have exempted it unread.
+  printf 'WorkingDirectory=%s/%s/Code/unlisted\n' /home stranger \
+    > "$plant/$VENDOR_PAYLOAD_REL/ft20-provenance/patches/0005-unreviewed.patch"
+  check_eq "an unlisted new patch inherits no exemption" 1 \
+    "$(developer_path_findings "$plant" | grep -c '0005-unreviewed' || true)"
+
+  # And the token exemption is the token, not the file: change one character of the
+  # synthetic sentinel and the same fixture becomes a finding.
+  sed 's/SYNTHETICCREDENT1AL/SYNTHETICCREDENT1AX/' \
+    "$plant/vendor/ft20-portable/actual-probes.mjs" > "$plant/vendor/ft20-portable/mutated.mjs"
+  check_eq "a mutated sentinel in the same fixture becomes a finding" 1 \
+    "$(credential_findings "$plant" | grep -c 'mutated.mjs' || true)"
+
+  # The four provenance records are pinned by hash. Doctoring the accepted manifest
+  # so it re-exempts a modified file must fail the pin, not be read as truth.
+  check_eq "the four provenance artifacts match their pinned hashes" 0 \
+    "$(printf '%s\n' "$VENDOR_ORACLE_PINS" | while IFS= read -r pin; do
+         [ -n "$pin" ] || continue
+         vendor_pin_matches "$REPO" "$pin" || printf '%s\n' "$pin"
+       done | grep -c . || true)"
+  printf '0000000000000000000000000000000000000000000000000000000000000000  scripts/verify.sh\n' \
+    >> "$plant/$VENDOR_ACCEPTED_REL"
+  check_eq "a doctored accepted manifest fails its pin" 1 \
+    "$(vendor_pin_matches "$plant" "$VENDOR_ACCEPTED_REL $(vendor_oracle_pin "$VENDOR_ACCEPTED_REL")"; echo $?)"
+  rm -rf "$plant"
   rm -rf "$plant"
 
   # Match any concrete developer home directory rather than one literal path, so
