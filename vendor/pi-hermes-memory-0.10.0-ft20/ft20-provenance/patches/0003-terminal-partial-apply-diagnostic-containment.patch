@@ -1,0 +1,715 @@
+diff --git a/scripts/link-local-deps.sh b/scripts/link-local-deps.sh
+index 257ae3568..403733f9a 100755
+--- a/scripts/link-local-deps.sh
++++ b/scripts/link-local-deps.sh
+@@ -7,12 +7,16 @@
+ # the extension install root).
+ #
+ # Override with:
+-#   SDK_ROOT   directory containing @earendil-works/pi-coding-agent (+ siblings)
+-#   NPM_ROOT   the extension install root (typebox, strip-ansi, ...)
++#   HOST_ROOT       actual deployed pi-coding-agent package directory
++#   SDK_ROOT        host dependency directory (@earendil-works siblings, typebox)
++#   NODE_TYPES_ROOT installed @types/node package directory
++#   NPM_ROOT        extension dependency directory (strip-ansi)
+ set -euo pipefail
+ 
+ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+-SDK_ROOT="${SDK_ROOT:-/home/bitnom/.local/share/mise/installs/node/22.23.3/lib/node_modules/@earendil-works/pi-coding-agent/node_modules}"
++HOST_ROOT="${HOST_ROOT:-/home/bitnom/.local/share/mise/installs/node/22.23.3/lib/node_modules/@earendil-works/pi-coding-agent}"
++SDK_ROOT="${SDK_ROOT:-$HOST_ROOT/node_modules}"
++NODE_TYPES_ROOT="${NODE_TYPES_ROOT:-$HOST_ROOT/node_modules/@types/node}"
+ NPM_ROOT="${NPM_ROOT:-/home/bitnom/.pi/agent/npm/node_modules}"
+ 
+ link() {
+@@ -22,11 +26,19 @@ link() {
+     return 1
+   fi
+   mkdir -p "$HERE/node_modules/$(dirname "$name")"
+-  ln -sfn "$target" "$HERE/node_modules/$name"
++  ln -sfnT "$target" "$HERE/node_modules/$name"
+   echo "linked $name -> $target"
+ }
+ 
+-link "@earendil-works" "$SDK_ROOT/@earendil-works"
++# Older versions linked the whole scope, which omits the host itself. Remove
++# only that local symlink, never create links inside the installed SDK scope.
++if [ -L "$HERE/node_modules/@earendil-works" ]; then
++  rm "$HERE/node_modules/@earendil-works"
++fi
++link "@earendil-works/pi-coding-agent" "$HOST_ROOT"
++link "@earendil-works/pi-ai" "$SDK_ROOT/@earendil-works/pi-ai"
++link "@earendil-works/pi-tui" "$SDK_ROOT/@earendil-works/pi-tui"
++link "@types/node" "$NODE_TYPES_ROOT"
+ link "typebox" "$SDK_ROOT/typebox"
+ link "strip-ansi" "$NPM_ROOT/strip-ansi"
+ 
+diff --git a/src/handlers/auto-consolidate.ts b/src/handlers/auto-consolidate.ts
+index bb0ca2296..ee9d698a0 100644
+--- a/src/handlers/auto-consolidate.ts
++++ b/src/handlers/auto-consolidate.ts
+@@ -34,7 +34,7 @@ import {
+ import type { ConsolidationResult, MemoryConfig } from "../types.js";
+ import { AGENT_ROOT } from "../paths.js";
+ import { cleanChildStderr, execChildPrompt } from "./pi-child-process.js";
+-import { runDirectMemoryCompletion, usesDirectTransport, type DirectReviewContext } from "./review-memory-ops.js";
++import { runDirectMemoryCompletion, usesDirectTransport, isTerminalPartialReview, partialReviewWarning, type DirectReviewContext } from "./review-memory-ops.js";
+ import { AtomicLockCoordinator } from "../store/atomic-lock-coordinator.js";
+ 
+ type MemoryTarget = "memory" | "user" | "failure";
+@@ -362,6 +362,9 @@ export async function triggerConsolidation(
+         dbManager,
+         projectName,
+       );
++      if (isTerminalPartialReview(directResult)) {
++        return { consolidated: false, error: partialReviewWarning(directResult) };
++      }
+       // Consolidation only did its job if it actually freed space — unlike
+       // review/flush/correction, an empty or fully-skipped result here is a
+       // failure worth falling back to subprocess for, not a normal outcome.
+diff --git a/src/handlers/background-review.ts b/src/handlers/background-review.ts
+index aade90548..89810758b 100644
+--- a/src/handlers/background-review.ts
++++ b/src/handlers/background-review.ts
+@@ -19,7 +19,7 @@ import type { MemoryConfig } from "../types.js";
+ import type { EnsureMemoryReady } from "../memory-initialization.js";
+ import { applyRecentMessageLimit, collectMessageParts } from "./message-parts.js";
+ import { cleanChildStderr, execChildPrompt, resolveChildPiModel } from "./pi-child-process.js";
+-import { REVIEW_COMPLETION_TIMEOUT_MS, runDirectMemoryCompletion, usesDirectTransport, type DirectReviewResult, type ReviewDiagnostics } from "./review-memory-ops.js";
++import { REVIEW_COMPLETION_TIMEOUT_MS, runDirectMemoryCompletion, usesDirectTransport, containReviewDiagnostics, isTerminalPartialReview, partialReviewWarning, type DirectReviewResult, type ReviewDiagnostics } from "./review-memory-ops.js";
+ 
+ import { resolveProjectName, resolveProjectStore, type ProjectNameRef, type ProjectStoreRef } from "../project-context.js";
+ export interface BackgroundReviewOptions {
+@@ -122,6 +122,7 @@ function diagnosticDetail(value: unknown): string {
+  * no memory text, no credentials, no endpoint. */
+ export function describeDiagnostics(diagnostics: ReviewDiagnostics | undefined): string {
+   if (!diagnostics) return "";
++  diagnostics = containReviewDiagnostics(diagnostics);
+   const parts = [
+     `model=${diagnostics.model}`,
+     `stopReason=${diagnostics.stopReason}`,
+@@ -135,7 +136,7 @@ export function describeDiagnostics(diagnostics: ReviewDiagnostics | undefined):
+   if (diagnostics.reasonCodes && diagnostics.reasonCodes.length > 0) {
+     parts.push(`reasons=${diagnostics.reasonCodes.join("+")}`);
+   }
+-  return parts.join(" ");
++  return parts.join(" ").slice(0, 512);
+ }
+ 
+ /** Shutdown wait only. Review still uses its own 120s timeout; 1s covers abort
+@@ -252,7 +253,7 @@ export function setupBackgroundReview(
+     const notifyIfSaved = (saved: boolean) => {
+       if (sessionCancelled()) return;
+       if (saved) {
+-        ctx.ui.notify("💾 Memory auto-reviewed and updated", "info");
++        try { ctx.ui.notify("💾 Memory auto-reviewed and updated", "info"); } catch { /* A stale UI must not turn saved writes into fallback. */ }
+       }
+     };
+ 
+@@ -316,6 +317,11 @@ export function setupBackgroundReview(
+ 
+           if (sessionCancelled()) return;
+ 
++          if (isTerminalPartialReview(directResult)) {
++            try { ctx.ui?.notify(partialReviewWarning(directResult), "warning"); } catch { /* Never retry a mutation because notification failed. */ }
++            return;
++          }
++
+           if (directResult.ok) {
+             notifyIfSaved(shouldNotifyDirect(directResult));
+             return;
+diff --git a/src/handlers/correction-detector.ts b/src/handlers/correction-detector.ts
+index 3c84cd709..81832d6f2 100644
+--- a/src/handlers/correction-detector.ts
++++ b/src/handlers/correction-detector.ts
+@@ -26,7 +26,7 @@ import type { EnsureMemoryReady } from "../memory-initialization.js";
+ import { getMessageText } from "../types.js";
+ import { execChildPrompt, resolveChildPiModel } from "./pi-child-process.js";
+ import { resolveProjectName, resolveProjectStore, type ProjectNameRef, type ProjectStoreRef } from "../project-context.js";
+-import { runDirectMemoryCompletion, usesDirectTransport } from "./review-memory-ops.js";
++import { runDirectMemoryCompletion, usesDirectTransport, isTerminalPartialReview, partialReviewWarning } from "./review-memory-ops.js";
+ 
+ /**
+  * Extract the directive part from a correction message.
+@@ -264,6 +264,10 @@ export function setupCorrectionDetector(
+             dbManager,
+             activeProjectName,
+           );
++          if (isTerminalPartialReview(directResult)) {
++            try { ctx.ui?.notify(partialReviewWarning(directResult), "warning"); } catch { /* Never retry a mutation because notification failed. */ }
++            return; // Also suppress the extra failure-memory write on partial outcome.
++          }
+           if (directResult.ok) {
+             savedViaLlm = directResult.appliedCount > 0;
+             handledDirect = true;
+diff --git a/src/handlers/review-memory-ops.ts b/src/handlers/review-memory-ops.ts
+index a649724bf..139ef2143 100644
+--- a/src/handlers/review-memory-ops.ts
++++ b/src/handlers/review-memory-ops.ts
+@@ -23,6 +23,9 @@ export interface ApplyReviewOperationsResult {
+   skippedCount: number;
+   error?: string;
+   aborted?: boolean;
++  /** A throwing store call may have committed before throwing. Counts below
++   * remain confirmed successes; this bounds the additional unknown writes. */
++  unknownMutationCount?: number;
+ }
+ 
+ /** Fixed vocabulary for why a review payload was refused. Never carries model
+@@ -55,7 +58,11 @@ export interface ReviewDiagnostics {
+ export interface DirectReviewResult {
+   ok: boolean;
+   appliedCount: number;
+-  fallbackReason?: "no_model" | "no_auth" | "aborted" | "parse_error" | "invalid_operations" | "provider_error" | "empty" | "empty_response";
++  fallbackReason?: "no_model" | "no_auth" | "aborted" | "parse_error" | "invalid_operations" | "provider_error" | "empty" | "empty_response" | "partial_apply";
++  /** Terminal: never retry through another model or mutating transport. */
++  terminalPartial?: boolean;
++  /** appliedCount is a confirmed lower bound when this is present. */
++  unknownMutationCount?: number;
+   error?: string;
+   diagnostics?: ReviewDiagnostics;
+ }
+@@ -697,10 +704,16 @@ export async function applyReviewOperations(
+       failureReason: operation.failure_reason,
+       project: target === "failure" ? projectName ?? undefined : undefined,
+     }));
+-    const result = await activeStore.applyMutationPlan(memoryTarget, mutationOperations, {
+-      requireShrink: true,
+-      signal: options.signal,
+-    });
++    let result;
++    try {
++      result = await activeStore.applyMutationPlan(memoryTarget, mutationOperations, {
++        requireShrink: true,
++        signal: options.signal,
++      });
++    } catch {
++      return { appliedCount: 0, skippedCount: 0, unknownMutationCount: operations.length,
++        error: "Store mutation outcome unknown." };
++    }
+     if (options.signal?.aborted && !result.success) {
+       return { appliedCount: 0, skippedCount: operations.length, aborted: true };
+     }
+@@ -732,64 +745,72 @@ export async function applyReviewOperations(
+     const activeStore = rawTarget === "project" ? projectStore! : store;
+ 
+     let result: MemoryResult;
+-    switch (op.action) {
+-      case "add": {
+-        if (!op.content?.trim()) {
+-          skippedCount++;
+-          continue;
++    try {
++      switch (op.action) {
++        case "add": {
++          if (!op.content?.trim()) {
++            skippedCount++;
++            continue;
++          }
++          if (rawTarget === "failure") {
++            const category = op.category ?? "failure";
++            result = await activeStore.addFailure(op.content, {
++              category,
++              failureReason: op.failure_reason,
++              project: projectName ?? undefined,
++              signal: options.signal,
++            });
++            if (result.success) {
++              appliedCount++;
++            } else {
++              skippedCount++;
++            }
++          } else {
++            result = await activeStore.add(memoryTarget, op.content, options.signal);
++            if (result.success) {
++              appliedCount++;
++            } else {
++              skippedCount++;
++            }
++          }
++          break;
+         }
+-        if (rawTarget === "failure") {
+-          const category = op.category ?? "failure";
+-          result = await activeStore.addFailure(op.content, {
+-            category,
+-            failureReason: op.failure_reason,
+-            project: projectName ?? undefined,
+-            signal: options.signal,
+-          });
++        case "replace": {
++          if (!op.old_text || !op.content?.trim()) {
++            skippedCount++;
++            continue;
++          }
++          result = await activeStore.replace(memoryTarget, op.old_text, op.content, options.signal);
+           if (result.success) {
+             appliedCount++;
+           } else {
+             skippedCount++;
+           }
+-        } else {
+-          result = await activeStore.add(memoryTarget, op.content, options.signal);
++          break;
++        }
++        case "remove": {
++          if (!op.old_text) {
++            skippedCount++;
++            continue;
++          }
++          result = await activeStore.remove(memoryTarget, op.old_text, options.signal);
+           if (result.success) {
+             appliedCount++;
+           } else {
+             skippedCount++;
+           }
++          break;
+         }
+-        break;
+-      }
+-      case "replace": {
+-        if (!op.old_text || !op.content?.trim()) {
++        default:
+           skippedCount++;
+           continue;
+-        }
+-        result = await activeStore.replace(memoryTarget, op.old_text, op.content, options.signal);
+-        if (result.success) {
+-          appliedCount++;
+-        } else {
+-          skippedCount++;
+-        }
+-        break;
+       }
+-      case "remove": {
+-        if (!op.old_text) {
+-          skippedCount++;
+-          continue;
+-        }
+-        result = await activeStore.remove(memoryTarget, op.old_text, options.signal);
+-        if (result.success) {
+-          appliedCount++;
+-        } else {
+-          skippedCount++;
+-        }
+-        break;
+-      }
+-      default:
+-        skippedCount++;
+-        continue;
++
++    } catch {
++      // Do not throw away the earlier successful writes, or claim that a
++      // throwing call made no mutation. Stop before touching another entry.
++      return { appliedCount, skippedCount, unknownMutationCount: 1,
++        error: "Store mutation outcome unknown." };
+     }
+ 
+     if (options.signal?.aborted) {
+@@ -839,14 +860,50 @@ const defaultProviderNoticeState = { logged: false };
+  * provider's server-side thinking default is swallowing the output (the #197
+  * report), so thinking-channel recovery is a workaround for a
+  * misconfiguration, not a feature to rely on. */
+-/** `provider/id` when both are known, otherwise the literal `"unknown"`. Used
+- * only for redacted diagnostics, so it never carries a response body. */
++/** Provider/model names are user/provider controlled, including syntactically
++ * plausible secret strings. Use a fixed opaque label, not a hash of secrets. */
+ function modelIdentifier(model: { provider?: unknown; id?: unknown }): string {
+   return typeof model?.provider === "string" && typeof model?.id === "string"
+-    ? `${model.provider}/${model.id}`
++    ? "redacted"
+     : "unknown";
+ }
+ 
++const STOP_REASONS = ["stop", "length", "toolUse", "error", "aborted"] as const;
++const PARSE_REASONS: ReviewParseReason[] = ["not_an_object", "missing_action", "unknown_action",
++  "missing_target", "unknown_target", "missing_content", "missing_old_text"];
++const boundedCount = (value: unknown): number => typeof value === "number" && Number.isFinite(value)
++  ? Math.min(Number.MAX_SAFE_INTEGER, Math.max(0, Math.floor(value))) : 0;
++
++/** Runtime containment, also used at rendering seams. All fields have fixed
++ * bounds before return: no untrusted strings or coercion/toString hooks. */
++export function containReviewDiagnostics(diagnostics: ReviewDiagnostics): ReviewDiagnostics {
++  return {
++    model: diagnostics.model === "unknown" ? "unknown" : "redacted",
++    stopReason: STOP_REASONS.find((reason) => reason === diagnostics.stopReason) ?? "unknown",
++    responseChars: boundedCount(diagnostics.responseChars),
++    promptChars: boundedCount(diagnostics.promptChars),
++    ...(diagnostics.invalidOperationCount === undefined ? {} : {
++      invalidOperationCount: boundedCount(diagnostics.invalidOperationCount),
++    }),
++    ...(Array.isArray(diagnostics.reasonCodes) ? {
++      reasonCodes: PARSE_REASONS.filter((reason) => diagnostics.reasonCodes!.includes(reason)),
++    } : {}),
++  };
++}
++
++export function isTerminalPartialReview(result: DirectReviewResult): boolean {
++  return result.terminalPartial === true || result.fallbackReason === "partial_apply"
++    || (!result.ok && (result.appliedCount > 0 || (result.unknownMutationCount ?? 0) > 0));
++}
++
++export function partialReviewWarning(result: DirectReviewResult): string {
++  const count = boundedCount(result.appliedCount);
++  const unknown = boundedCount(result.unknownMutationCount);
++  return `Memory review partially applied: ${count} confirmed operation(s)`
++    + (unknown > 0 ? `; up to ${unknown} additional mutation(s) have unknown outcome` : "")
++    + ". No retry or fallback attempted; inspect before retrying.";
++}
++
+ function notifyThinkingChannelProvider(
+   model: { provider?: unknown; id?: unknown },
+   deps: { onProviderNotice?: (message: string) => void; providerNoticeState?: { logged: boolean } },
+@@ -854,9 +911,7 @@ function notifyThinkingChannelProvider(
+   const state = deps.providerNoticeState ?? defaultProviderNoticeState;
+   if (state.logged) return;
+   state.logged = true;
+-  const modelRef = typeof model?.provider === "string" && typeof model?.id === "string"
+-    ? `${model.provider}/${model.id}`
+-    : "the active model";
++  const modelRef = modelIdentifier(model);
+   const sink = deps.onProviderNotice ?? ((message: string) => console.warn(message));
+   sink(
+     `[pi-hermes-memory] Provider misconfiguration: ${modelRef} returned the whole answer in its thinking channel and left the answer channel empty. `
+@@ -936,7 +991,7 @@ export async function runDirectMemoryCompletion(
+         ok: false,
+         appliedCount: 0,
+         fallbackReason: "no_auth",
+-        error: auth.ok ? `No request authentication for ${model.provider}` : auth.error,
++        error: "Request authentication unavailable.",
+       };
+       if (mi < models.length - 1) continue;
+       return lastResult;
+@@ -1065,12 +1120,12 @@ export async function runDirectMemoryCompletion(
+         }
+       }
+ 
+-      const diagnostics: ReviewDiagnostics = {
++      const diagnostics = containReviewDiagnostics({
+         model: modelIdentifier(model),
+-        stopReason: String(response.stopReason ?? "unknown"),
++        stopReason: response.stopReason,
+         responseChars: text.length,
+         promptChars: options.userPrompt.length,
+-      };
++      });
+       if (invalidOperations) {
+         diagnostics.invalidOperationCount = invalidOperations.invalidCount;
+         diagnostics.reasonCodes = invalidOperations.reasonCodes;
+@@ -1141,6 +1196,18 @@ export async function runDirectMemoryCompletion(
+           signal: options.signal,
+         },
+       );
++      if ((applied.unknownMutationCount ?? 0) > 0
++        || (applied.appliedCount > 0 && (applied.error || applied.skippedCount > 0 || applied.aborted))) {
++        return {
++          ok: false,
++          appliedCount: applied.appliedCount,
++          unknownMutationCount: applied.unknownMutationCount,
++          terminalPartial: true,
++          fallbackReason: "partial_apply",
++          error: "Memory operations did not complete; retry suppressed.",
++          diagnostics,
++        };
++      }
+       if (applied.aborted && applied.appliedCount === 0) {
+         return aborted();
+       }
+@@ -1149,7 +1216,7 @@ export async function runDirectMemoryCompletion(
+           ok: false,
+           appliedCount: applied.appliedCount,
+           fallbackReason: "provider_error",
+-          error: applied.error,
++          error: "Memory operation plan failed.",
+           diagnostics,
+         };
+         if (mi < models.length - 1) { clearTimeout(timeout); continue; }
+@@ -1182,7 +1249,9 @@ export async function runDirectMemoryCompletion(
+           ok: false,
+           appliedCount: 0,
+           fallbackReason: "provider_error",
+-          error: withHostUpgradeHint(err instanceof Error ? err.message : String(err), hostCanStream),
++          error: withHostUpgradeHint(
++            /No API provider registered for api/i.test(err instanceof Error ? err.message : "")
++              ? "No API provider registered for api" : "Provider request failed.", hostCanStream),
+         };
+       }
+       if (mi < models.length - 1) { clearTimeout(timeout); continue; }
+diff --git a/src/handlers/session-flush.ts b/src/handlers/session-flush.ts
+index 0d21a8f58..9f0f4c27c 100644
+--- a/src/handlers/session-flush.ts
++++ b/src/handlers/session-flush.ts
+@@ -39,7 +39,7 @@ import type { EnsureMemoryReady } from "../memory-initialization.js";
+ import { measureLifecycle } from "../lifecycle-timing.js";
+ import { collectMessageParts } from "./message-parts.js";
+ import { execChildPrompt, resolveChildPiModel } from "./pi-child-process.js";
+-import { runDirectMemoryCompletion, usesDirectTransport } from "./review-memory-ops.js";
++import { runDirectMemoryCompletion, usesDirectTransport, isTerminalPartialReview, partialReviewWarning } from "./review-memory-ops.js";
+ import { resolveProjectName, resolveProjectStore, type ProjectNameRef, type ProjectStoreRef } from "../project-context.js";
+ 
+ /** Do not spawn pi -p when leftover time is below this, floored by the budget itself. */
+@@ -211,6 +211,10 @@ export function setupSessionFlush(
+               dbManager,
+               activeProjectName,
+             );
++            if (isTerminalPartialReview(directResult)) {
++              try { ctx.ui?.notify(partialReviewWarning(directResult), "warning"); } catch { /* Never retry a mutation because notification failed. */ }
++              return;
++            }
+             if (directResult.ok) return;
+           } catch {
+             // Fall through with leftover, not a copied ceiling.
+diff --git a/test/correction-r1-r2.test.mjs b/test/correction-r1-r2.test.mjs
+new file mode 100644
+index 000000000..a8e7d7d65
+--- /dev/null
++++ b/test/correction-r1-r2.test.mjs
+@@ -0,0 +1,221 @@
++// Synthetic, offline production-entry regressions. No provider, process or disk store.
++// FT20_DIST selects the exact rejected candidate for negative controls.
++import assert from 'node:assert/strict';
++import { test } from 'node:test';
++import { pathToFileURL } from 'node:url';
++const dist = process.env.FT20_DIST ? pathToFileURL(process.env.FT20_DIST + '/') : new URL('../dist/', import.meta.url);
++const load = (name) => import(new URL(`src/handlers/${name}.js`, dist));
++const { runDirectMemoryCompletion } = await load('review-memory-ops');
++const { setupBackgroundReview, describeDiagnostics } = await load('background-review');
++const { setupSessionFlush } = await load('session-flush');
++const { setupCorrectionDetector } = await load('correction-detector');
++const { triggerConsolidation } = await load('auto-consolidate');
++const primary = { provider: 'test-provider', id: 'primary', api: 'test-api', reasoning: false };
++const fallback = { ...primary, id: 'fallback' };
++const config = { llmModelOverride: 'test-provider/primary', llmFallbackModels: ['test-provider/fallback'] };
++const branch = Array.from({ length: 4 }, (_, i) => ({ type: 'message', message: {
++  role: i % 2 ? 'assistant' : 'user', content: 'synthetic public fixture ' + i,
++} }));
++function ctx(models = [primary, fallback]) {
++  const notices = [];
++  return { notices, model: models[0], cwd: '/synthetic',
++    modelRegistry: { getAll: () => models, getApiKeyAndHeaders: async () => ({ ok: true, apiKey: 'synthetic', headers: {}, env: {} }) },
++    sessionManager: { getSessionId: () => 'synthetic', getBranch: () => branch },
++    ui: { notify: (...args) => notices.push(args) },
++  };
++}
++const add = { action: 'add', target: 'memory', content: 'synthetic durable fact' };
++const remove = { action: 'remove', target: 'memory', old_text: 'absent' };
++const payload = JSON.stringify({ operations: [add, remove] });
++function storeDouble(mode = 'skip') {
++  const calls = [];
++  return { calls, getMemoryEntries: () => [], getUserEntries: () => [],
++    add: async () => { calls.push('add'); if (mode === 'first-throw') throw Error('STORE-PRIVATE-SENTINEL'); return { success: true }; },
++    remove: async () => { calls.push('remove'); if (mode === 'throw') throw Error('STORE-PRIVATE-SENTINEL'); return { success: false }; },
++    addFailure: async () => { calls.push('addFailure'); return { success: true }; },
++    applyMutationPlan: async () => { calls.push('atomic'); throw Error('STORE-PRIVATE-SENTINEL'); },
++  };
++}
++function runner(text = payload, stopReason = 'stop') {
++  const attempts = [];
++  const run = (c, s, p, options, db, project) => runDirectMemoryCompletion(c, s, p, options, db, project, {
++    completeSimple: async (model) => { attempts.push(model.id); return { stopReason, content: [{ type: 'text', text }] }; },
++  });
++  return { run, attempts };
++}
++async function direct(mode, { atomic = false, signal, text = payload, models, stopReason } = {}) {
++  const c = ctx(models), s = storeDouble(mode), r = runner(text, stopReason);
++  const result = await r.run(c, s, null, { userPrompt: 'synthetic', systemPrompt: 'synthetic', config: models ? {} : config,
++    requireAtomicShrink: atomic, signal });
++  return { result, calls: s.calls, attempts: r.attempts };
++}
++for (const [mode, confirmed, unknown] of [['skip', 1, 0], ['throw', 1, 1], ['first-throw', 0, 1]]) {
++  test(`R1 ${mode}: terminal partial, truthful lower bound, no second model`, async () => {
++    const { result, calls, attempts } = await direct(mode);
++    assert.equal(result.fallbackReason, 'partial_apply');
++    assert.equal(result.terminalPartial, true);
++    assert.equal(result.ok, false);
++    assert.equal(result.appliedCount, confirmed);
++    assert.equal(result.unknownMutationCount ?? 0, unknown);
++    assert.deepEqual(attempts, ['primary']);
++    assert.deepEqual(calls, mode === 'first-throw' ? ['add'] : ['add', 'remove']);
++    assert.ok(!JSON.stringify(result).includes('STORE-PRIVATE-SENTINEL'));
++  });
++}
++test('R1 atomic throwing call is bounded unknown, not zero-write failure/retry', async () => {
++  const { result, calls, attempts } = await direct('throw', { atomic: true });
++  assert.equal(result.terminalPartial, true);
++  assert.equal(result.appliedCount, 0);
++  assert.equal(result.unknownMutationCount, 2);
++  assert.deepEqual(calls, ['atomic']);
++  assert.deepEqual(attempts, ['primary']);
++});
++test('R1 abort after confirmed write retains count and is terminal', async () => {
++  const c = ctx(), s = storeDouble(), r = runner(), ac = new AbortController();
++  s.add = async () => { s.calls.push('add'); ac.abort(); return { success: true }; };
++  const result = await r.run(c, s, null, { userPrompt: 'synthetic', systemPrompt: 'synthetic', config, signal: ac.signal });
++  assert.equal(result.terminalPartial, true);
++  assert.equal(result.appliedCount, 1);
++  assert.deepEqual(s.calls, ['add']);
++  assert.deepEqual(r.attempts, ['primary']);
++});
++test('R1 zero-write skipped operation still permits configured model retry', async () => {
++  const { result, calls, attempts } = await direct('skip', { text: JSON.stringify({ operations: [remove] }) });
++  assert.equal(result.fallbackReason, 'invalid_operations');
++  assert.equal(result.appliedCount, 0);
++  assert.deepEqual(calls, ['remove', 'remove']);
++  assert.deepEqual(attempts, ['primary', 'fallback']);
++});
++async function background(c, s, runDirectReview, { childCode = 0 } = {}) {
++  const handlers = new Map(), childCalls = [];
++  let settle;
++  const settled = new Promise(resolve => { settle = resolve; });
++  const pi = { on: (name, fn) => handlers.set(name, fn) };
++  setupBackgroundReview(pi, s, null, { ...config, reviewEnabled: true, nudgeInterval: 1, nudgeToolCalls: 1, reviewRecentMessages: 0 }, {
++    deps: { runDirectReview, execChildPrompt: async () => { childCalls.push('child'); return { code: childCode, stderr: 'synthetic child failure' }; }, onReviewSettled: settle },
++  });
++  for (let i = 0; i < 3; i++) await handlers.get('message_end')({ message: { role: 'user' } }, c);
++  await handlers.get('turn_end')({ message: { role: 'assistant', content: [] } }, c);
++  await settled;
++  await handlers.get('session_shutdown')();
++  return childCalls;
++}
++for (const mode of ['skip', 'throw', 'first-throw']) for (const caller of ['background', 'compact-flush', 'shutdown-flush', 'correction', 'consolidation']) {
++  test(`R1 actual ${caller} ${mode} entry honors terminal result and suppresses mutating fallback`, async () => {
++    const c = ctx(), s = storeDouble(mode), r = runner(), childCalls = [];
++    s.getStorageIdentity = async () => { s.calls.push('FORBIDDEN-lock'); throw Error('forbidden lock access'); };
++    const handlers = new Map();
++    const pi = { on: (name, fn) => handlers.set(name, fn), exec: async () => {
++      childCalls.push('child'); throw Error('FORBIDDEN subprocess reached stub');
++    } };
++    let warning;
++    if (caller === 'background') {
++      childCalls.push(...await background(c, s, r.run));
++    } else if (caller.endsWith('flush')) {
++      setupSessionFlush(pi, s, null, { ...config, flushMinTurns: 1, flushOnCompact: true, flushOnShutdown: true }, null, null,
++        { runDirectMemoryCompletion: r.run });
++      await handlers.get('message_end')({ message: { role: 'user' } }, c);
++      await handlers.get(caller === 'compact-flush' ? 'session_before_compact' : 'session_shutdown')({ reason: 'exit' }, c);
++    } else if (caller === 'correction') {
++      setupCorrectionDetector(pi, s, null, { ...config, correctionDetection: true, correctionStrongPatterns: ['^synthetic correction'], correctionNegativePatterns: [] }, null, null,
++        { runDirectMemoryCompletion: r.run });
++      await handlers.get('message_end')({ message: { role: 'user', content: 'synthetic correction use safe values' } }, c);
++      await handlers.get('turn_end')({}, c);
++    } else {
++      const result = await triggerConsolidation(pi, s, 'memory', undefined, 1000, 'memory', config, c, null, null,
++        { runDirectMemoryCompletion: r.run });
++      assert.equal(result.consolidated, false);
++      warning = result.error;
++    }
++    assert.deepEqual(childCalls, []);
++    assert.deepEqual(r.attempts, ['primary']);
++    assert.deepEqual(s.calls, caller === 'consolidation' ? ['atomic'] : mode === 'first-throw' ? ['add'] : ['add', 'remove']);
++    warning ??= c.notices.find(([, kind]) => kind === 'warning')?.[0];
++    assert.match(warning, /partially applied: [01] confirmed operation/);
++    assert.match(warning, /No retry or fallback attempted/);
++    if (caller === 'consolidation') assert.match(warning, /up to 2 additional mutation/);
++    else if (mode !== 'skip') assert.match(warning, /up to 1 additional mutation/);
++  });
++}
++for (const caller of ['background', 'flush', 'correction']) {
++  test(`R1 ${caller}: notification exception cannot trigger fallback or extra writes`, async () => {
++    const c = ctx(), s = storeDouble(), r = runner();
++    c.ui.notify = () => { throw Error('synthetic stale UI'); };
++    let children = 0;
++    const handlers = new Map(), pi = { on: (name, fn) => handlers.set(name, fn), exec: async () => { children++; throw Error('forbidden child stub'); } };
++    if (caller === 'background') assert.deepEqual(await background(c, s, r.run), []);
++    if (caller === 'flush') {
++      setupSessionFlush(pi, s, null, { ...config, flushMinTurns: 1, flushOnCompact: true }, null, null, { runDirectMemoryCompletion: r.run });
++      await handlers.get('message_end')({ message: { role: 'user' } }, c);
++      await handlers.get('session_before_compact')({}, c);
++    }
++    if (caller === 'correction') {
++      setupCorrectionDetector(pi, s, null, { ...config, correctionDetection: true, correctionStrongPatterns: ['synthetic'], correctionNegativePatterns: [] }, null, null, { runDirectMemoryCompletion: r.run });
++      await handlers.get('message_end')({ message: { role: 'user', content: 'synthetic correction' } }, c);
++      await handlers.get('turn_end')({}, c);
++    }
++    assert.equal(children, 0);
++    assert.deepEqual(r.attempts, ['primary']);
++    assert.deepEqual(s.calls, ['add', 'remove']);
++  });
++}
++test('R1 background successful writes plus stale UI cannot trigger fallback', async () => {
++  const c = ctx(), s = storeDouble(), r = runner(JSON.stringify({ operations: [add] }));
++  c.ui.notify = () => { throw Error('synthetic stale UI'); };
++  assert.deepEqual(await background(c, s, r.run), []);
++  assert.deepEqual(s.calls, ['add']);
++  assert.deepEqual(r.attempts, ['primary']);
++});
++const hostile = 'PRIVATE-SENTINEL https://endpoint.invalid/private sk-KEY-SENTINEL /private/PATH-SENTINEL \n\u001b' + 'x'.repeat(4096);
++for (const metadata of ['stopReason', 'provider', 'id', 'plausible-id']) {
++  test(`R2 ${metadata}: no sentinel in returned diagnostics or actual background warning`, async () => {
++    const models = [{ ...primary }];
++    if (metadata === 'provider' || metadata === 'id') models[0][metadata] = hostile;
++    if (metadata === 'plausible-id') models[0].id = 'sk-KEY-SENTINEL';
++    const c = ctx(models), s = storeDouble(), r = runner('synthetic unparsable prose', metadata === 'stopReason' ? hostile : 'stop');
++    const result = await r.run(c, s, null, { userPrompt: 'PROMPT-SENTINEL', systemPrompt: 'synthetic', config: {} });
++    const encoded = JSON.stringify(result), rendered = describeDiagnostics(result.diagnostics);
++    assert.ok(encoded.length < 900);
++    assert.ok(rendered.length <= 512);
++    assert.equal(result.diagnostics.stopReason, metadata === 'stopReason' ? 'unknown' : 'stop');
++    await background(c, s, async () => result, { childCode: 1 });
++    assert.equal(c.notices.length, 1);
++    const warning = c.notices[0][0];
++    for (const output of [encoded, rendered, warning]) for (const sentinel of ['PRIVATE-SENTINEL', 'KEY-SENTINEL', 'PATH-SENTINEL', 'endpoint.invalid', 'PROMPT-SENTINEL', '\u001b', '\n']) {
++      assert.ok(!output.includes(sentinel), `leaked ${sentinel}`);
++    }
++    assert.ok(warning.length < 800);
++    assert.deepEqual(s.calls, []);
++  });
++}
++test('R2 renderer recontains hostile injected diagnostics including counts and reason codes', () => {
++  const rendered = describeDiagnostics({ model: hostile, stopReason: hostile, responseChars: hostile, promptChars: Infinity,
++    invalidOperationCount: -1, reasonCodes: [hostile, ...Array(1000).fill('unknown_action')] });
++  assert.ok(rendered.length <= 512);
++  assert.ok(!rendered.includes('SENTINEL'));
++  assert.match(rendered, /stopReason=unknown/);
++  assert.match(rendered, /responseChars=0 promptChars=0/);
++});
++test('R2 stop reasons use only the fixed runtime vocabulary', async () => {
++  for (const stopReason of ['stop', 'length', 'toolUse', 'error', 'aborted', 'unknown', {}, null, 'STOP', 'length\\n']) {
++    const { result } = await direct('skip', { text: 'synthetic prose', stopReason });
++    if (result.diagnostics) assert.equal(result.diagnostics.stopReason,
++      ['stop', 'length', 'toolUse', 'error', 'aborted'].includes(stopReason) ? stopReason : 'unknown');
++  }
++});
++test('R2 thinking provider notice cannot echo hostile model metadata', async () => {
++  const c = ctx([{ ...primary, provider: hostile, id: hostile }]), notices = [];
++  const result = await runDirectMemoryCompletion(c, storeDouble(), null,
++    { userPrompt: 'synthetic', systemPrompt: 'synthetic', config: {} }, null, null,
++    { completeSimple: async () => ({ stopReason: 'stop', content: [{ type: 'thinking', thinking: 'synthetic prose' }] }),
++      onProviderNotice: message => notices.push(message), providerNoticeState: { logged: false } });
++  assert.equal(notices.length, 1);
++  assert.ok(!JSON.stringify([result, notices]).includes('SENTINEL'));
++});
++test('R2 provider-error response cannot echo secret metadata via error field', async () => {
++  const c = ctx(), s = storeDouble();
++  const result = await runDirectMemoryCompletion(c, s, null, { userPrompt: 'synthetic', systemPrompt: 'synthetic', config: {} }, null, null,
++    { completeSimple: async () => ({ stopReason: 'error', errorMessage: hostile, content: [] }) });
++  assert.equal(result.fallbackReason, 'provider_error');
++  assert.ok(!JSON.stringify(result).includes('SENTINEL'));
++});
+diff --git a/test/review-parser.test.mjs b/test/review-parser.test.mjs
+index 517adaf78..10da71805 100644
+--- a/test/review-parser.test.mjs
++++ b/test/review-parser.test.mjs
+@@ -305,7 +305,7 @@ test("diagnostics carry counts and lengths only — never text, never secrets",
+   const rendered = describeDiagnostics(result.diagnostics);
+ 
+   // Present and useful.
+-  assert.match(rendered, /model=test-provider\/test-model/);
++  assert.match(rendered, /model=redacted/);
+   assert.match(rendered, /stopReason=stop/);
+   assert.match(rendered, /responseChars=\d+/);
+   assert.match(rendered, /promptChars=\d+/);
+diff --git a/tsconfig.build.json b/tsconfig.build.json
+index fcbb99930..78830a876 100644
+--- a/tsconfig.build.json
++++ b/tsconfig.build.json
+@@ -7,6 +7,9 @@
+   "include": [
+     "src/handlers/review-memory-ops.ts",
+     "src/handlers/background-review.ts",
++    "src/handlers/session-flush.ts",
++    "src/handlers/correction-detector.ts",
++    "src/handlers/auto-consolidate.ts",
+     "src/tools/schema-compat.ts"
+   ]
+ }

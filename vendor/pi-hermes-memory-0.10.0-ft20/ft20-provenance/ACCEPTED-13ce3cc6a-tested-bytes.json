@@ -1,0 +1,429 @@
+{
+  "verified": 106,
+  "entries": {
+    "src/pi-extensions/pi-hermes-memory-review-fix/.gitignore": {
+      "blob": "f4e2c6d6b88c7ae6274995debbd9393e3444c5d9",
+      "sha256": "61022f949eb49fe0ee5b774835be844845b3d71d9001f676d9ac82bd433e49a7"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/BASE-MANIFEST.sha256": {
+      "blob": "034e8ac605e46613f37a98e882b263edbc0cd491",
+      "sha256": "4b0c2ac3f97458a41305bc6494970e05d81d61f7be43bd4314c501dabba4680b"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/LICENSE": {
+      "blob": "4d7b3348972bba41c35504bbd01f37b3e26a893e",
+      "sha256": "c0faef811db707d2c0e22a334343c58ee120c5041bd65e958d7e84a76cead49f"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/PROVENANCE.md": {
+      "blob": "fa78a2ebb753e98ce0d28a0d61442c38bd767979",
+      "sha256": "cb9ad683846fa3367b43d504f38039eaace1d01b0befaee2f891d00c117c71a2"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/README.md": {
+      "blob": "1dd99913d6c8c9c08fb59b80f4067596f9de3fa3",
+      "sha256": "b7cda16954dfa84595b06e543451598866911cea6c3d36617b84d52cdbc36439"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/docs/0.1/TASKS.md": {
+      "blob": "9f42fd3f2471afc24e807901ff748a805845b857",
+      "sha256": "e87061671938e5b2cd713bbe0ef9bcb0587f53135f8f709b7ef10dc71701b244"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/docs/0.2/PLAN.md": {
+      "blob": "64797367e842f987ff84a7c302112d43a4ca6419",
+      "sha256": "5dd8f30a3d32eba3fec7057922c2799c7ee4908c74ae9a77f3a5c8ebdad7e45e"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/docs/0.2/TASKS.md": {
+      "blob": "e4640e0c0b2ef111bac4931ff75d098573debb8e",
+      "sha256": "2cc887c30b8eefc201d49025de97f9b02457bd1bf4462475d237a87251ba6922"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/docs/0.2/TEST-PLAN.md": {
+      "blob": "f261a21d95a15d2d22c4d4aff8cfaa268701655a",
+      "sha256": "af595bf49131533d6b558c3b9d1fef01f2302f3c5953fb454b2f3c4064e32c00"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/docs/0.3/PLAN.md": {
+      "blob": "c07424b0e92db98e9eba3f493b53a9b1fa136e29",
+      "sha256": "78ed1e191bf279582c2c6f1427210ae8c18576640930b472da47efadf3882957"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/docs/0.3/TASKS.md": {
+      "blob": "37dfa9c337102cd5a553fa1c3bfe09d85e136f0a",
+      "sha256": "30c8d706f7ed340e5cbaf8af8822ed00789d1e09b92afab465e7e93f4c61b041"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/docs/0.4/PLAN.md": {
+      "blob": "687d431e1e44b629d8ee8eb5e9e6f32d1dcba9a4",
+      "sha256": "653ca50bb134e4e4d1ef829633509b27abdcb031bd2176cb438a51b26ee762fe"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/docs/0.4/TASKS.md": {
+      "blob": "df53727f6c1ba44729506f684f162f44bf9213ba",
+      "sha256": "65276d8e6cab6c7e64f524dd76c002224294db0ca1177e6b6886591fb5fe8e9b"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/docs/0.6/CHANGELOG.md": {
+      "blob": "b5cabb305b48ff8bb96de3348cb9073537c4830c",
+      "sha256": "d72550ced1779d1e1cdf1cbef258987d5973e95847618a8a91c81ee1b1031f30"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/docs/0.6/PLAN.md": {
+      "blob": "c88e87a88f3a03baf9c147dc41388b1b3e4c759b",
+      "sha256": "9c36931c067fb0319005530aaf6dd8b5d023be9ae45fbd4a41a6837ff6d25765"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/docs/0.6/TASKS.md": {
+      "blob": "d0adabb476416f5bb71edb9705aeb5474c61f5c1",
+      "sha256": "80e90aab19d2bac0258634e8f4c745d541f1beebd035fafa4094283f5d7c2e40"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/docs/0.7/PLAN.md": {
+      "blob": "32485f7293737d515ad7089a8b16af270b9b1344",
+      "sha256": "b9806095bab2c9ba98a2d1b5cc01cfbf0858a2cb44f95c0dae32a7dfb839b0d3"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/docs/0.7/TASKS.md": {
+      "blob": "ba469c3c027637d268b0d9390d57bf526450cdb2",
+      "sha256": "43de1b41e066a4b4231abe5a1b2ccca319b8ef720392a376cae730f42fac9240"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/docs/PUBLISHING.md": {
+      "blob": "c432a4fbb0d3d2104ed57458569b2d9e267494d9",
+      "sha256": "ec256a027fa64dbd8bbbabae5c6f27414ea495fab440047f8ce72ee6cd344f52"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/docs/ROADMAP.md": {
+      "blob": "a470857c82c265ca29b7679f457f484d2df57407",
+      "sha256": "7306c73d816b480f3c5dc6914848cc749edd308f7beb5706550a621d32e0127c"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/docs/images/memory-architecture.svg": {
+      "blob": "f4e8f96bb123bd9e1b52da0ca3d3e034bad86306",
+      "sha256": "e427f4254dc9893c46a31cd0364ab3a813cdd6ad897e507b4b0d10d6b1831d3a"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/docs/images/pi-logo.svg": {
+      "blob": "ed14b63805790cd1931f34f7dcef8ccbc10d762d",
+      "sha256": "2d43cb4f6a239ac70416214ac05842be34175339f761001fab3e8d01459bec69"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/docs/images/pi_memory.png": {
+      "blob": "5a085c0e3faee93a1102e9da0027490d2497d6bd",
+      "sha256": "518b7a68960208954461c8ec24500e7544d389270b7ec00dee8bd439798b1dcc"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/docs/images/pi_memory.svg": {
+      "blob": "be124b0dac283cdfddb29a2b7e392dfc66efdba5",
+      "sha256": "1ba630822d7742683a3dfd64c502d5c01a4fa659d1869a438fc68a7fa934c50d"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/docs/images/security-flow.svg": {
+      "blob": "8f12c565e66a8a48dae8d2ada4393f0f4ea93de3",
+      "sha256": "14ecc1adec85ac154a8a11fdbe8de88d263551f764c45b6a0e11206b3db7bb93"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/docs/images/session-lifecycle.svg": {
+      "blob": "e798343b631d7156b34845cb3e330c2b2a1f27aa",
+      "sha256": "b11cb0d8565e250862eed647b0003d4f1464fe37018c734e54decebb9da18cf6"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/docs/images/source-architecture.svg": {
+      "blob": "c887e94aef522f6eeeb3a8b223290c1c2711ce36",
+      "sha256": "9ffda261419a5de23db122275bdb3ae80ec69e216289c404788d6889c056e9e2"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/docs/mermaid/memory-architecture.mmd": {
+      "blob": "37d70ab6f4b5d3d4d2edd43858c3221c08ebc3bf",
+      "sha256": "eedc08b667066f12e57bd6d12eaad2c2f8ae68071e6e0f4c62046242b26bd347"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/docs/mermaid/security-flow.mmd": {
+      "blob": "241ee5170b2be156fb18e596548e3b6887a45eb6",
+      "sha256": "dcac0b33a0211567a11e77c3bebe36179fbdb0d6e8c72978cfa472e40a6acb28"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/docs/mermaid/session-lifecycle.mmd": {
+      "blob": "17650a79722986d4c5caae3987e71299a5177095",
+      "sha256": "80120b90820903ff40939c3f8302263e0fb2a133c77bce890189ce20db9daa71"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/docs/mermaid/source-architecture.mmd": {
+      "blob": "063998dfb9e770be3d79ed7029f5c56a429f5bb4",
+      "sha256": "7872df8bcd6f0ce747097539f9dd1ba32e76fe89d30a774039992b6e8f2c80d2"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/package.json": {
+      "blob": "1872cba2a8d8cc32fa956f6535a8f22f89c8ffc9",
+      "sha256": "807890328a441a7313818abb15e6296d1439daa9e06b17cddfb3b94c0f52b0cb"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/scripts/benchmark-memory-startup.mjs": {
+      "blob": "ad00022f4bbb68c35a092f54afd22590d2146a5a",
+      "sha256": "53dac213138df6f1af6ed9b07809277a750bd1286f73886a4d196124ae578fe2"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/scripts/check-min-sdk.mjs": {
+      "blob": "1c5524d969ce2db8bf0ee10c6f3e387ad1a5b5f0",
+      "sha256": "619f228554dc452718fa3db9bdacbbc5693c4a005cf007d849f2898bb758a5fe"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/scripts/check-production-install.mjs": {
+      "blob": "71e9d905e7ebb3edd976d6c2e10c9a8f1b1c7d61",
+      "sha256": "03543325b72fc9098a7a0ce1adc9972e4005d446eda9d9d60fa0858e27afcde8"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/scripts/ensure-dev.mjs": {
+      "blob": "038b803ecfd44c758b62e6102235febbdc73e2fc",
+      "sha256": "0ad788a504372acbbb093f5b7468e510ba54f293285778a8b00ec6189382d1dc"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/scripts/link-local-deps.sh": {
+      "blob": "403733f9a20ca8c064b84701f64fb1b795c0ff4f",
+      "sha256": "8552a09a740829b3d698f2f35d2be17845098ddaa2d6a8434bd8435279c204b3"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/scripts/promote-changelog.mjs": {
+      "blob": "6956d249b9828f04bbaf49fb9ae784f2e0bc488b",
+      "sha256": "b4eb2204960d9b2c9c3966f2f2c08ead3a58eb1cfbfd134b0b2b4fb3a35b0e61"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/scripts/release-notes.mjs": {
+      "blob": "c076f5de925e4785360c70ff0b2289b66ae425df",
+      "sha256": "483ea1142dd69a2650634467eba507bec48ede93790be2f597102c49283dfd03"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/scripts/verify.sh": {
+      "blob": "0ccb1cf808529a7c92d65572e7989cbe47e58747",
+      "sha256": "91c2a598f2fc9588c11c0484b302e34892ff52da834842635e0bb7a162b291aa"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/auto-consolidation-warning.ts": {
+      "blob": "f9338d34a62c99cd02ed5324dfcee85297e4aa89",
+      "sha256": "8b17e8d3e2417a17ab02fe887218735a44f132cac33c14455a790340a5b22c8c"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/config.ts": {
+      "blob": "e4f9e4a34c9755479a48c3309228d94bda27b0cb",
+      "sha256": "c78af4679c9af0d004054861fc5007b58e0601e753f3cf8892774eecde709738"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/constants.ts": {
+      "blob": "71db9f0174d08339d8b901cee1c498a0c0df4acc",
+      "sha256": "1eb169eedab4b0c5dec6729b85f3c6b02fe1d7fa441b3588849eca7ed83d07d1"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/extension-root-migration.ts": {
+      "blob": "534430a397d92ba3085edcc7a6f94969dfa8c23c",
+      "sha256": "2c0111f9ed56639c9e191ccc43afc05eab6d6adba717fc13a324578441d83560"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/handlers/auto-consolidate.ts": {
+      "blob": "49dd9214546ecd6cae270b227a232a6d0185ce30",
+      "sha256": "cce8d4d1cdf605d7131574037664e63510a5678a98cacd010c7420afa7211fc8"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/handlers/background-review.ts": {
+      "blob": "0dd5fa2e96708d7d857571d49f40f77ae52a548a",
+      "sha256": "593277dfcd85116091116800d7447865503cb32be36aca7dbc29a23acdefcf80"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/handlers/child-process-watchdog.mjs": {
+      "blob": "f8475b31df633b4c8487656b9b52402723448f96",
+      "sha256": "040f4b9f963ef2ed7850d47cb457368333e0f76b6086b81f3f13ae4de4e52d3b"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/handlers/correction-detector.ts": {
+      "blob": "81832d6f28f08684751b51d0d026f9eb3e2613c4",
+      "sha256": "b3c78ab7e70d02c51117728bc9b8282d0a432c30e4d0f9e4974c6a6cc4d0138b"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/handlers/index-sessions.ts": {
+      "blob": "f75da401e8419bb0289a474ddbe6b2d6554d9b77",
+      "sha256": "0bd7fcfb5dc5618a5a9582fc0ad87289315cc98603bffd840333072b50fc5875"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/handlers/insights.ts": {
+      "blob": "e41259eeef189a24b63da2f5557391cc1c350e16",
+      "sha256": "6aa530be6135b985af4584f6e76f07dcd9599ed7fd9dc996ce4b37a19bfdbecc"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/handlers/interview.ts": {
+      "blob": "7dbe08289a62b83f97c0994b29f5260661351764",
+      "sha256": "f14781a21f381815e1b497d22995bb256db560e5ae3750077f5ad9d4ef3d4985"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/handlers/learn-memory.ts": {
+      "blob": "21443fb5163fb78105d1417a265fe120979f9d33",
+      "sha256": "ecd79d6de990c054516548885e2e25d6702bd0a9c58d37cd12f93090163c7309"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/handlers/message-parts.ts": {
+      "blob": "123dce9a05168c751e22d3dcb045ae9c44ee159c",
+      "sha256": "3a75f48cd7b27db384efd4b4d402d749a9c96b1fe05df0d4b3052bb0cd0b9357"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/handlers/pi-child-process.ts": {
+      "blob": "02a89a71273931d84f42846a6f8caf463056dee8",
+      "sha256": "76f23dc85025b12b979255f50a6a6c4dc3fd18908629e3211b978fbf71609276"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/handlers/preview-context.ts": {
+      "blob": "c02f4e644d48e9e10c5de148b4e63ec6575f1188",
+      "sha256": "3645a1f5353cca63233c6b531d41bcbcc05d383a7b6abdb6fedb05f814499b94"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/handlers/review-memory-ops.ts": {
+      "blob": "139ef21437c041f922bc4088e5b5137c89607df5",
+      "sha256": "98c728682cad918c0d4016b8037c770c254e27c672c15d6ed26ba97c63787622"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/handlers/session-backfill.ts": {
+      "blob": "97864ea4a05896eb82bb9c717b515c80c5463407",
+      "sha256": "7332d6d5f95ba55d50f9a139a63bec9012d8a298961e5ce0e440972bec758b95"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/handlers/session-flush.ts": {
+      "blob": "9f0f4c27c1863414517e42703f7b04c252eca264",
+      "sha256": "ad4c3e41842edc98db9d4aa839ad5daecc9481d104814b192211f50b13464461"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/handlers/session-live-index.ts": {
+      "blob": "95fc7d1bda59a7d39c058624e9d09c3570d0be69",
+      "sha256": "8ffbfc65cdcbc9c64f29f83ad950e2e464ccd70fba706dcfec69ab85b8eb492a"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/handlers/skills-command.ts": {
+      "blob": "50d97da53abe09f207cd68a4fc2b14e307e96440",
+      "sha256": "9a5b2a4874fac5d9a5ef9fb8376357aff9a94fa1b5d199998e5b172874e9dd8d"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/handlers/standing-pin.ts": {
+      "blob": "8dca0a321ee84678097bd6e1ed888fd64a73b8e2",
+      "sha256": "44767bc776f6459383ce4059bcb82f291028b027007b0ad0c119eb18a5272008"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/handlers/switch-project.ts": {
+      "blob": "211798baba2812182d575d5d7c37e8183695c0ab",
+      "sha256": "86b438d903dabe13726e539f79a86843e61cf184c50d9fd91b6df506054ab7b7"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/handlers/sync-markdown-memories.ts": {
+      "blob": "41d2cf338b1c4db534ab5d936c36a5cfc6984ce7",
+      "sha256": "dca297e7467d4b9bd22ba9b570ca5cc62185053008139e957af34b30dacde91f"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/index.ts": {
+      "blob": "5f16395d3f57f06943b3eac8891b786058e517e1",
+      "sha256": "50b84b1088ead5c470923a1ede30abc221c462949813d7a5e64b489e329dedea"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/lifecycle-timing.ts": {
+      "blob": "56e5a79ae00498398d30def0e1ae9c534ca2db84",
+      "sha256": "d35fec91b7d67c764333573635f3256a3d32fa882728e05a6934c0c36974e86a"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/memory-initialization.ts": {
+      "blob": "ac424e3f9d62f88bc51c768b48b7cefc06ba9e66",
+      "sha256": "2a3bba7a4a3c79965eb833e27603d93f30d4ca311de6842834eab6abea1d82bd"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/paths.ts": {
+      "blob": "ccc1b7183731564d1bc9b723f89abe375237a682",
+      "sha256": "8632324f3f8008bdf15525e3c821c6d3c33fc0d6763d52fe7a0c8318880c4a4e"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/project-context.ts": {
+      "blob": "e0817914e30224d6a83ca71abb5880cb0c42d248",
+      "sha256": "e47512f90f5a7e7dbef022e8dc3e367170567e6020d48774271d9a5da8f81cb1"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/project-memory-migration.ts": {
+      "blob": "01da00af14dfb116127a3732f1df1e84ad7543e3",
+      "sha256": "f290a5030e233f00f20484679c76e0595cf00644e1b675d4602f8edbec9e1457"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/project.ts": {
+      "blob": "012bf5dc62679d4ab17f5c6944dab4247b3573ce",
+      "sha256": "da18f76ba0cc1ea1dd2e732cef665137fcf07e8f43e2df58d923eae6c8e9bd63"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/prompt-context.ts": {
+      "blob": "73855ea29002d94bf263eb00ce6823227cc96540",
+      "sha256": "74b18746fdb38c20d1d3f6542269501ee577ba4ceb37c9f5715824f4659d5cd2"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/store/atomic-lock-coordinator.ts": {
+      "blob": "aa18e48a1f2b05155c96551ee903c9b326035f5d",
+      "sha256": "f7362397ba8390e231bbc139803430b1af9daa5509322b3d3b9f5fb1a0224bf9"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/store/canonical-storage-path.ts": {
+      "blob": "6f1d1b254f2c8775520f9291942830e17a42741c",
+      "sha256": "a5bcf46f43a579bcb2a870ef2219b854efcdb40e46812a87c51cd10a043746aa"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/store/content-scanner.ts": {
+      "blob": "793ae5473fa357f1e06d4f6f862fa2bd07fedf94",
+      "sha256": "de007079d5d510c1ed0f01165e86be1b15262dca6f36093e4a57a4b185e0701a"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/store/db.ts": {
+      "blob": "66a4c61f6d572298b8307c0aa25275a7c286cb25",
+      "sha256": "c1564d454b31af43d3ca1b26a258d17642050a2e8b83910737bdcc348f24d11b"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/store/fts-query.ts": {
+      "blob": "d3a3c12a7065dccf5ee980476cd1a54a0f6d4ca5",
+      "sha256": "89b448365e9a308da837dda23c9c8e16e125d83eb2bc14e929bc7cc87a0fadfa"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/store/markdown-mutation-lock.ts": {
+      "blob": "1f4ebe20c7d2b7bc7b3b2787cc9f47725814c593",
+      "sha256": "405fd467c5bdac6bdd2323aacfc8b03beca617100bd53de2f3fd4eeddbbf1c7b"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/store/memory-lookup.ts": {
+      "blob": "ea00864f7d18fd22fe6c2eca0dcb432e78f342c4",
+      "sha256": "8a930aa8328d0a850903d30faad4fdc8efac7f9d288cca6a4b8bf7f9dc16731d"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/store/memory-store.ts": {
+      "blob": "8ddb2fff12be43a1103868403096846d5fb8f381",
+      "sha256": "1b0ed5ed108e060073658669ea5789c5cfaef6fce85a80820ceda181f29a4673"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/store/recovery-maintenance.ts": {
+      "blob": "2dd1506a44b3f11a837a70b3b2dad9b6f175b94e",
+      "sha256": "8dab0f80e5f290bf68c4d41620cfa8db56d1ea131c9cc32c9cfe477bf87ab1bf"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/store/schema.ts": {
+      "blob": "eb0ccc04d512dc6369db62a6d35b8b43ae124d35",
+      "sha256": "c5ce68aaac40e5213449179c9976a5b72294affcee6f23f15e18fb8faddf5bd3"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/store/session-anchor-search.ts": {
+      "blob": "6a7d338092b346f3e8c07b303b7bf95933ddedc5",
+      "sha256": "1cf85303896b1e4582f36c4ad6f17204d0ffaf60d9eb2ee3d33f5be242992162"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/store/session-indexer.ts": {
+      "blob": "725c4b6eb1252cdaa2489892d4599269d90a9a7a",
+      "sha256": "0bf23afe1f3aef8f94f32ed2031e0b3b12924feb5abf2e0d95e790b1a5808540"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/store/session-parser.ts": {
+      "blob": "50504d20e109d0365a1ceb881a940fc04a41c117",
+      "sha256": "a12dc967bf2bbeb4c44f8787e9f6ecaaa8bdc5543ebf83bcdcdc5419d3fe1c9a"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/store/session-search.ts": {
+      "blob": "b47f6fe507f36fd6903293e0eba0f8f94144a213",
+      "sha256": "d3ca27865a52ffbf287f48daa82a8d33fdb940458c12dd33211a3740f3e89f8b"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/store/skill-store.ts": {
+      "blob": "d22419ece25d2090af172c1bf184d6be0f90b772",
+      "sha256": "b2be395196a748f0ff058efc7ed358f2d4b5944dc175c9bfbf7f618814071232"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/store/skill-utils.ts": {
+      "blob": "3b92d009a1e5d791e659cb3a4d17a18e2575c117",
+      "sha256": "8ed60d980ae0e4c9ef6f4be17c65dc69cc6756173b333e605ceefebeabcfe054"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/store/sqlite-memory-store.ts": {
+      "blob": "bb2852a13cb0b5b7e82196e9985e82c527c7ba78",
+      "sha256": "bb8ebc23e6f415b9a9ab46c8efce13e7d259c95d664f5f95bef54d5ce2832476"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/store/sqlite-native.ts": {
+      "blob": "9c121167cfbdb6fb9f8d5d771ba33da8025ea060",
+      "sha256": "626880fbcaa1d298aa69fea73a6c8ed186125c6bb66993c823c455eacf886ce5"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/store/standing-instructions.ts": {
+      "blob": "759a6be4307c062f88f173375bd90389a461bdda",
+      "sha256": "a595106d253706ee3fd51dd44eae259ccbe9493ec36b41f0972b43043081acd2"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/tools/memory-search-tool.ts": {
+      "blob": "dac571a973b938fad536447d81ba96b2ffa755ff",
+      "sha256": "f482e31e5a41a30f87728ef041c3b8175d0f63eb8cad85f55ada0fc0dd1861bb"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/tools/memory-tool.ts": {
+      "blob": "605777accf440361078306a07f35818e444c7025",
+      "sha256": "ee6814facbe40fb3c5b70c384b88a5a437599cf3465882aa88e1d2d360b72bde"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/tools/schema-compat.ts": {
+      "blob": "55baaf32f89114428815b310caa7a1a184cf3398",
+      "sha256": "0eb43f7bc640bb4a40058b062a085c4804155fef36c560889016fa4ac38edfd1"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/tools/session-search-tool.ts": {
+      "blob": "697372a54e57590c90dc3c811a98bce94b586f7d",
+      "sha256": "5a268280393e20bf89c48b1173893600bf51fb1ed4ea5ee4c5903f9035bbcf8c"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/tools/shared-output-view.ts": {
+      "blob": "ab7fe594f7a7d004bcbf0cbab0b2b45dca0f078b",
+      "sha256": "afbe9228c7bd53d77c3e9bbf2f021880c2f5da79eb2473299afafa750212cb8f"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/tools/skill-tool.ts": {
+      "blob": "25f7267b9489d5748b8293dcd4427b3571c7da06",
+      "sha256": "7c7fe5ca6ef9d1ee2d097a4e300bb1cea7f776e2330495d2dfd9bc91d1f36cf6"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/tools/tool-result-views.ts": {
+      "blob": "e7e3993f88e3ef8bf40cd5bce2acd16680232275",
+      "sha256": "df84f3881d8b3ddd3549d28ccc86e902135a73f783342488d80f3531f1128ef4"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/src/types.ts": {
+      "blob": "fb5562d43ca9cd1668880e481c27c34c21aa5ba5",
+      "sha256": "d5e298177e6aea47d9fa7b9292776ef9c9c3e60917d2b8983b5d73bc896377c7"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/test/api-compat.test.mjs": {
+      "blob": "f9950dcb1e8b23d02f36c3d6b50592b629ed7afc",
+      "sha256": "477a1056b05ed89eb31570e8f53160a541fa903d214b73bbd4bbeb833c970614"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/test/base-control.mjs": {
+      "blob": "20a27b4e0798c4bbe1dce095f8d8eab16ea62086",
+      "sha256": "0780ca324b48c610eedc0caa4ca794d707c7e6663df2f33133dc845a0519bbd8"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/test/correction-r1-r2.test.mjs": {
+      "blob": "a8e7d7d65a16a01924e087422ec1e0df69e3af5f",
+      "sha256": "d8c624cd9a13120d39c4aabb691512a0bc8860f92f1acf40fbfaffd144ad666f"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/test/output-boundary-r2.test.mjs": {
+      "blob": "791565f0b2de7e1d190dbee7103a16f00e346e2b",
+      "sha256": "1a974f967a5565443cb7bc53f85ea26c4daf891cf486cffd5e148e5bffb436aa"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/test/review-parser.test.mjs": {
+      "blob": "10da71805fa9fb628dd6ae0e2c20d8542f4fa9fa",
+      "sha256": "dfe2cd0d2da115ef91802f91ab9d7f9c0a44e869db3e9df05312f3057f0a5fd5"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/test/types/api-compat.assert.ts": {
+      "blob": "c6afb6ce6ff7a0ca30c10f68b804d97a7eb55768",
+      "sha256": "4d0b443a6bac445b753a59a95ad0c56d739d9a6cec60b5d4dccf0bc8124b5445"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/tsconfig.build.json": {
+      "blob": "78830a876cec7be87f1f52503dfb646751f739bc",
+      "sha256": "a10bb3d8602b2cff768c5d81454b685b7638b17b2394765a8c111fca165c4a19"
+    },
+    "src/pi-extensions/pi-hermes-memory-review-fix/tsconfig.json": {
+      "blob": "e27be2a3819e32c2db34730cf7056ecfd4ffeb7b",
+      "sha256": "3bc2eb809982a374deff953ed50f6c14c6ad3b987c54eb067a61130a0ed66e0f"
+    }
+  }
+}

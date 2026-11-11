@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "noEmitOnError": true
+  },
+  "include": [
+    "src/handlers/review-memory-ops.ts",
+    "src/handlers/background-review.ts",
+    "src/handlers/session-flush.ts",
+    "src/handlers/correction-detector.ts",
+    "src/handlers/auto-consolidate.ts",
+    "src/tools/schema-compat.ts"
+  ]
+}

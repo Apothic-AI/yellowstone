@@ -1,0 +1,1041 @@
+diff --git a/.gitignore b/.gitignore
+new file mode 100644
+index 000000000..f4e2c6d6b
+--- /dev/null
++++ b/.gitignore
+@@ -0,0 +1,3 @@
++node_modules/
++dist/
++*.tsbuildinfo
+diff --git a/scripts/link-local-deps.sh b/scripts/link-local-deps.sh
+new file mode 100755
+index 000000000..257ae3568
+--- /dev/null
++++ b/scripts/link-local-deps.sh
+@@ -0,0 +1,34 @@
++#!/usr/bin/env bash
++# Link the local dependency set this component type-checks and tests against.
++#
++# No install, no network, no package fetch: every entry is a symlink to a copy
++# that is already on this machine, which is how the extension resolves them at
++# runtime anyway (Pi injects its own host SDK; the package's other deps live in
++# the extension install root).
++#
++# Override with:
++#   SDK_ROOT   directory containing @earendil-works/pi-coding-agent (+ siblings)
++#   NPM_ROOT   the extension install root (typebox, strip-ansi, ...)
++set -euo pipefail
++
++HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
++SDK_ROOT="${SDK_ROOT:-/home/bitnom/.local/share/mise/installs/node/22.23.3/lib/node_modules/@earendil-works/pi-coding-agent/node_modules}"
++NPM_ROOT="${NPM_ROOT:-/home/bitnom/.pi/agent/npm/node_modules}"
++
++link() {
++  local name="$1" target="$2"
++  if [ ! -e "$target" ]; then
++    echo "MISSING: $target" >&2
++    return 1
++  fi
++  mkdir -p "$HERE/node_modules/$(dirname "$name")"
++  ln -sfn "$target" "$HERE/node_modules/$name"
++  echo "linked $name -> $target"
++}
++
++link "@earendil-works" "$SDK_ROOT/@earendil-works"
++link "typebox" "$SDK_ROOT/typebox"
++link "strip-ansi" "$NPM_ROOT/strip-ansi"
++
++echo
++echo "node_modules is gitignored; nothing here is committed."
+diff --git a/scripts/verify.sh b/scripts/verify.sh
+new file mode 100755
+index 000000000..06a805925
+--- /dev/null
++++ b/scripts/verify.sh
+@@ -0,0 +1,82 @@
++#!/usr/bin/env bash
++# FT-20 candidate verification. Deterministic, offline, no provider, no agent.
++#
++#   scripts/verify.sh            full run (link, typecheck x2, build, tests, base control)
++#
++# Exit codes: 0 green · 1 a test or control failed · 2 a setup/dependency problem.
++set -uo pipefail
++
++HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
++cd "$HERE"
++
++TSC_BIN="${TSC_BIN:-/home/bitnom/Code/codex-mcp-server/node_modules/typescript/bin/tsc}"
++TSC="node $TSC_BIN"
++BASE_COMMIT="${BASE_COMMIT:-5a1446c2a}"
++WORK="$(mktemp -d)"
++trap 'rm -rf "$WORK"' EXIT
++
++say() { printf '%s\n' "$@"; }
++hr() { printf '%s\n' "------------------------------------------------------------"; }
++
++[ -x "$TSC_BIN" ] || { echo "no TypeScript compiler at $TSC_BIN (set TSC_BIN)"; exit 2; }
++
++hr; say "1. link local deps (no install, no network)"; hr
++./scripts/link-local-deps.sh >/dev/null || exit 2
++say "   ok"
++
++hr; say "2. typecheck: candidate vs committed base (differential gate)"; hr
++# The published tarball ships no tsconfig and no devDependencies, and its own
++# guard refuses to run `check` from an installed package. So typecheck here is
++# a differential gate: the base's pre-existing errors must be exactly the
++# candidate's, i.e. the fix introduces none.
++$TSC --noEmit -p tsconfig.json 2>&1 | grep -E '^src/.*error TS' | sort > "$WORK/candidate-types.txt"
++CAND_TYPE_ERRORS=$(wc -l < "$WORK/candidate-types.txt")
++
++# git archive resolves pathspecs relative to the invoking directory, so run it
++# from the worktree top.
++
++git -C "$(git rev-parse --show-toplevel)" archive "$BASE_COMMIT" \
++  src/pi-extensions/pi-hermes-memory-review-fix | tar -x -C "$WORK" 2>/dev/null
++BASE_DIR="$WORK/src/pi-extensions/pi-hermes-memory-review-fix"
++if [ -d "$BASE_DIR" ]; then
++  cp tsconfig.json "$BASE_DIR/tsconfig.json"
++  ln -sfn "$HERE/node_modules" "$BASE_DIR/node_modules"
++  ( cd "$BASE_DIR" && $TSC --noEmit -p tsconfig.json 2>&1 | grep -E '^src/.*error TS' | sort > "$WORK/base-types.txt" )
++  BASE_TYPE_ERRORS=$(wc -l < "$WORK/base-types.txt")
++  say "   base type errors:      $BASE_TYPE_ERRORS"
++  say "   candidate type errors: $CAND_TYPE_ERRORS"
++  if ! diff -q "$WORK/base-types.txt" "$WORK/candidate-types.txt" >/dev/null; then
++    say "   FAIL: the fix changed the type-error set"
++    diff "$WORK/base-types.txt" "$WORK/candidate-types.txt" | sed 's/^/     /'
++    exit 1
++  fi
++  if [ "$CAND_TYPE_ERRORS" -ne 0 ]; then
++    say "   note: $CAND_TYPE_ERRORS pre-existing error(s), identical in base and candidate:"
++    sed 's/^/     /' "$WORK/candidate-types.txt"
++  fi
++  say "   ok — no new type errors"
++else
++  say "   FAIL: could not export base commit $BASE_COMMIT"; exit 2
++fi
++
++hr; say "3. build the changed modules"; hr
++rm -rf dist
++$TSC -p tsconfig.build.json || { say "   FAIL: build"; exit 1; }
++say "   ok"
++
++hr; say "4. deterministic test suite (no provider, no network, no store)"; hr
++node --test test/*.test.mjs 2>&1 | tail -9
++TEST_STATUS=${PIPESTATUS[0]}
++[ "$TEST_STATUS" -eq 0 ] || { say "   FAIL: tests"; exit 1; }
++
++hr; say "5. base fail control (the defect, on the published base)"; hr
++BASE_BUILD="$WORK/base-build"
++mkdir -p "$BASE_BUILD"
++cp tsconfig.build.json "$BASE_DIR/tsconfig.build.json"
++sed -i 's#"outDir": "dist"#"outDir": "'"$BASE_BUILD"'"#' "$BASE_DIR/tsconfig.build.json"
++# The base build lives outside this tree, so give it the same linked deps.
++ln -sfn "$HERE/node_modules" "$WORK/node_modules"
++( cd "$BASE_DIR" && $TSC -p tsconfig.build.json ) || { say "   FAIL: base build"; exit 1; }
++node test/base-control.mjs "$BASE_BUILD" "$HERE/dist" || exit 1
++
++hr; say "GREEN"; hr
+diff --git a/src/handlers/background-review.ts b/src/handlers/background-review.ts
+index 914d328ca..aade90548 100644
+--- a/src/handlers/background-review.ts
++++ b/src/handlers/background-review.ts
+@@ -19,7 +19,7 @@ import type { MemoryConfig } from "../types.js";
+ import type { EnsureMemoryReady } from "../memory-initialization.js";
+ import { applyRecentMessageLimit, collectMessageParts } from "./message-parts.js";
+ import { cleanChildStderr, execChildPrompt, resolveChildPiModel } from "./pi-child-process.js";
+-import { REVIEW_COMPLETION_TIMEOUT_MS, runDirectMemoryCompletion, usesDirectTransport, type DirectReviewResult } from "./review-memory-ops.js";
++import { REVIEW_COMPLETION_TIMEOUT_MS, runDirectMemoryCompletion, usesDirectTransport, type DirectReviewResult, type ReviewDiagnostics } from "./review-memory-ops.js";
+ 
+ import { resolveProjectName, resolveProjectStore, type ProjectNameRef, type ProjectStoreRef } from "../project-context.js";
+ export interface BackgroundReviewOptions {
+@@ -117,6 +117,27 @@ function diagnosticDetail(value: unknown): string {
+   return detail.replace(/\s+/g, " ").slice(0, 300);
+ }
+ 
++/** Bounded, redacted one-line description of a review attempt, for the warning
++ * the user may paste into an issue. Counts and lengths only: no response text,
++ * no memory text, no credentials, no endpoint. */
++export function describeDiagnostics(diagnostics: ReviewDiagnostics | undefined): string {
++  if (!diagnostics) return "";
++  const parts = [
++    `model=${diagnostics.model}`,
++    `stopReason=${diagnostics.stopReason}`,
++    // JS `.length` — UTF-16 code units, not bytes, not code points.
++    `responseChars=${diagnostics.responseChars}`,
++    `promptChars=${diagnostics.promptChars}`,
++  ];
++  if (typeof diagnostics.invalidOperationCount === "number") {
++    parts.push(`invalidOps=${diagnostics.invalidOperationCount}`);
++  }
++  if (diagnostics.reasonCodes && diagnostics.reasonCodes.length > 0) {
++    parts.push(`reasons=${diagnostics.reasonCodes.join("+")}`);
++  }
++  return parts.join(" ");
++}
++
+ /** Shutdown wait only. Review still uses its own 120s timeout; 1s covers abort
+  * listener + cancel-file write without hanging Pi's awaited session_shutdown. */
+ const SESSION_REVIEW_SHUTDOWN_GRACE_MS = 1000;
+@@ -306,6 +327,7 @@ export function setupBackgroundReview(
+           directFailure = [
+             directResult.fallbackReason ?? "failed",
+             directResult.error,
++            describeDiagnostics(directResult.diagnostics),
+           ].filter(Boolean).join(": ");
+         } catch (error) {
+           if (sessionCancelled()) return;
+diff --git a/src/handlers/review-memory-ops.ts b/src/handlers/review-memory-ops.ts
+index 9a8c502a9..a649724bf 100644
+--- a/src/handlers/review-memory-ops.ts
++++ b/src/handlers/review-memory-ops.ts
+@@ -25,11 +25,39 @@ export interface ApplyReviewOperationsResult {
+   aborted?: boolean;
+ }
+ 
++/** Fixed vocabulary for why a review payload was refused. Never carries model
++ * text: it is derived from the shape of the parsed payload only, so it is safe
++ * to surface in a warning the user can paste into an issue (FT-20). */
++export type ReviewParseReason =
++  | "not_an_object"
++  | "missing_action"
++  | "unknown_action"
++  | "missing_target"
++  | "unknown_target"
++  | "missing_content"
++  | "missing_old_text";
++
++/** Bounded, redacted measurement of one completion attempt. Counts and
++ * lengths only — no response text, no memory text, no credentials, no
++ * endpoints. `responseChars` and `promptChars` are JS string `.length`, i.e.
++ * UTF-16 code units, not bytes and not code points. */
++export interface ReviewDiagnostics {
++  model: string;
++  stopReason: string;
++  responseChars: number;
++  promptChars: number;
++  /** Number of entries in a parsed `operations` array that were refused. */
++  invalidOperationCount?: number;
++  /** De-duplicated, sorted subset of ReviewParseReason. */
++  reasonCodes?: ReviewParseReason[];
++}
++
+ export interface DirectReviewResult {
+   ok: boolean;
+   appliedCount: number;
+-  fallbackReason?: "no_model" | "no_auth" | "aborted" | "parse_error" | "provider_error" | "empty" | "empty_response";
++  fallbackReason?: "no_model" | "no_auth" | "aborted" | "parse_error" | "invalid_operations" | "provider_error" | "empty" | "empty_response";
+   error?: string;
++  diagnostics?: ReviewDiagnostics;
+ }
+ 
+ export interface RunDirectMemoryCompletionOptions {
+@@ -481,29 +509,106 @@ function isReviewAction(value: unknown): value is ReviewMemoryOperation["action"
+   return value === "add" || value === "replace" || value === "remove";
+ }
+ 
+-export function parseReviewOperations(text: string): ReviewMemoryOperation[] | null {
++/** Discriminated result of parsing one completion's text.
++ *
++ * `declined` and `empty_payload` are the only two silent-success outcomes, and
++ * they are deliberately narrow: the literal five-word decline the model is told
++ * to use, and a literal `{"operations":[]}`. Everything else that is not a
++ * fully valid operations payload is `unparsable` or `invalid_operations`, i.e.
++ * a reported failure. Prose can therefore never be mistaken for a decline by
++ * shape alone (FT-20 review, BLOCK on the broad non-JSON→empty proposal). */
++export type ReviewOperationsParse =
++  | { kind: "declined" }
++  | { kind: "empty_payload" }
++  | { kind: "operations"; operations: ReviewMemoryOperation[] }
++  | { kind: "invalid_operations"; invalidCount: number; reasonCodes: ReviewParseReason[] }
++  | { kind: "unparsable" };
++
++export function parseReviewOperationsDetailed(text: string): ReviewOperationsParse {
+   if (/nothing to save/i.test(text) && !text.includes("{")) {
+-    return [];
++    return { kind: "declined" };
+   }
+ 
+   const payload = extractJsonPayload(text);
+   if (!payload) {
+-    return null;
++    return { kind: "unparsable" };
+   }
+ 
+-  return mapOperationsArray(payload.operations);
++  if (!Array.isArray(payload.operations)) {
++    return { kind: "unparsable" };
++  }
++
++  // Canonical empty plan: a real "nothing to save" answer, not a malformed one.
++  if (payload.operations.length === 0) {
++    return { kind: "empty_payload" };
++  }
++
++  const { operations, reasonCodes } = mapOperationsArrayStrict(payload.operations);
++  if (reasonCodes.length > 0 || operations.length === 0) {
++    // Fail closed. A non-empty `operations` array that contains anything we
++    // cannot faithfully apply is refused as a whole so that a mixed array
++    // cannot produce a partial write.
++    return {
++      kind: "invalid_operations",
++      invalidCount: Math.max(reasonCodes.length, 1),
++      reasonCodes: [...new Set(reasonCodes)].sort(),
++    };
++  }
++
++  return { kind: "operations", operations };
+ }
+ 
+-/** Map a candidate `operations` array to validated review operations; null
+- * means the payload is not an operations payload at all. */
+-function mapOperationsArray(operations: unknown): ReviewMemoryOperation[] | null {
+-  if (!Array.isArray(operations)) return null;
++/** Preserved entry point: operations, or null for "not a usable payload".
++ * Note this collapses decline and failure, so callers that need to tell them
++ * apart (the review transport, which must not silence a failure) use
++ * `parseReviewOperationsDetailed` instead. */
++export function parseReviewOperations(text: string): ReviewMemoryOperation[] | null {
++  const parsed = parseReviewOperationsDetailed(text);
++  switch (parsed.kind) {
++    case "operations":
++      return parsed.operations;
++    case "declined":
++    case "empty_payload":
++      return [];
++    default:
++      return null;
++  }
++}
+ 
++/** Map a candidate `operations` array to validated review operations.
++ * Unlike the previous implementation this does not silently drop entries: any
++ * entry that cannot be applied faithfully contributes a reason code, which the
++ * caller turns into a fail-closed result. */
++function mapOperationsArrayStrict(operations: unknown[]): {
++  operations: ReviewMemoryOperation[];
++  reasonCodes: ReviewParseReason[];
++} {
+   const parsed: ReviewMemoryOperation[] = [];
++  const reasonCodes: ReviewParseReason[] = [];
++
+   for (const item of operations) {
+-    if (!item || typeof item !== "object") continue;
++    if (!item || typeof item !== "object" || Array.isArray(item)) {
++      reasonCodes.push("not_an_object");
++      continue;
++    }
+     const op = item as Record<string, unknown>;
+-    if (!isReviewAction(op.action) || !isReviewTarget(op.target)) continue;
++
++    if (typeof op.action !== "string") {
++      reasonCodes.push("missing_action");
++      continue;
++    }
++    if (!isReviewAction(op.action)) {
++      reasonCodes.push("unknown_action");
++      continue;
++    }
++    if (typeof op.target !== "string") {
++      reasonCodes.push("missing_target");
++      continue;
++    }
++    if (!isReviewTarget(op.target)) {
++      reasonCodes.push("unknown_target");
++      continue;
++    }
+ 
+     const operation: ReviewMemoryOperation = {
+       action: op.action,
+@@ -513,10 +618,26 @@ function mapOperationsArray(operations: unknown): ReviewMemoryOperation[] | null
+     if (typeof op.old_text === "string") operation.old_text = op.old_text;
+     if (isMemoryCategory(op.category)) operation.category = op.category;
+     if (typeof op.failure_reason === "string") operation.failure_reason = op.failure_reason;
++
++    // Fields the appliers require. Checked here so the refusal happens before
++    // anything is written, rather than as a silent skip inside the apply loop.
++    if (operation.action === "add" && !operation.content?.trim()) {
++      reasonCodes.push("missing_content");
++      continue;
++    }
++    if (operation.action === "replace" && (!operation.old_text || !operation.content?.trim())) {
++      reasonCodes.push(operation.old_text ? "missing_content" : "missing_old_text");
++      continue;
++    }
++    if (operation.action === "remove" && !operation.old_text) {
++      reasonCodes.push("missing_old_text");
++      continue;
++    }
++
+     parsed.push(operation);
+   }
+ 
+-  return parsed;
++  return { operations: parsed, reasonCodes };
+ }
+ 
+ export async function applyReviewOperations(
+@@ -718,6 +839,14 @@ const defaultProviderNoticeState = { logged: false };
+  * provider's server-side thinking default is swallowing the output (the #197
+  * report), so thinking-channel recovery is a workaround for a
+  * misconfiguration, not a feature to rely on. */
++/** `provider/id` when both are known, otherwise the literal `"unknown"`. Used
++ * only for redacted diagnostics, so it never carries a response body. */
++function modelIdentifier(model: { provider?: unknown; id?: unknown }): string {
++  return typeof model?.provider === "string" && typeof model?.id === "string"
++    ? `${model.provider}/${model.id}`
++    : "unknown";
++}
++
+ function notifyThinkingChannelProvider(
+   model: { provider?: unknown; id?: unknown },
+   deps: { onProviderNotice?: (message: string) => void; providerNoticeState?: { logged: boolean } },
+@@ -896,16 +1025,25 @@ export async function runDirectMemoryCompletion(
+       // move.
+       let operations: ReviewMemoryOperation[] | null;
+       let unparsableThinking = false;
++      let invalidOperations: { invalidCount: number; reasonCodes: ReviewParseReason[] } | undefined;
+       if (source === "thinking") {
+         const extraction = extractThinkingOperations(text);
+         if (extraction) {
+-          operations = mapOperationsArray(extraction.payload.operations) ?? [];
++          const mapped = mapOperationsArrayStrict(extraction.payload.operations as unknown[]);
++          operations = mapped.operations;
++          if (mapped.reasonCodes.length > 0) {
++            operations = null;
++            invalidOperations = {
++              invalidCount: mapped.reasonCodes.length,
++              reasonCodes: [...new Set(mapped.reasonCodes)].sort(),
++            };
++          }
+           // A candidate that is not trailing is draft-grade: apply only its
+           // adds. Trusting a draft's replace/remove — or reaching back to an
+           // earlier candidate when the trailing one is empty — would execute
+           // operations the model may have rejected; a missed save is
+           // recoverable, a wrong deletion is not.
+-          if (!extraction.trailing) {
++          if (operations && !extraction.trailing) {
+             operations = operations.filter((operation) => operation.action === "add");
+           }
+         } else {
+@@ -913,7 +1051,29 @@ export async function runDirectMemoryCompletion(
+           unparsableThinking = true;
+         }
+       } else {
+-        operations = parseReviewOperations(text);
++        const parsed = parseReviewOperationsDetailed(text);
++        if (parsed.kind === "operations") {
++          operations = parsed.operations;
++        } else if (parsed.kind === "invalid_operations") {
++          operations = null;
++          invalidOperations = {
++            invalidCount: parsed.invalidCount,
++            reasonCodes: parsed.reasonCodes,
++          };
++        } else {
++          operations = parsed.kind === "unparsable" ? null : [];
++        }
++      }
++
++      const diagnostics: ReviewDiagnostics = {
++        model: modelIdentifier(model),
++        stopReason: String(response.stopReason ?? "unknown"),
++        responseChars: text.length,
++        promptChars: options.userPrompt.length,
++      };
++      if (invalidOperations) {
++        diagnostics.invalidOperationCount = invalidOperations.invalidCount;
++        diagnostics.reasonCodes = invalidOperations.reasonCodes;
+       }
+ 
+       // A clean stop with no usable output — nothing in either channel, or
+@@ -926,23 +1086,49 @@ export async function runDirectMemoryCompletion(
+       // Truncated responses (stopReason "length") still fall through to
+       // parse_error so the chain can retry them.
+       if ((!text.trim() || unparsableThinking) && response.stopReason === "stop") {
+-        lastResult = { ok: true, appliedCount: 0, fallbackReason: "empty_response" };
++        lastResult = { ok: true, appliedCount: 0, fallbackReason: "empty_response", diagnostics };
++        if (mi < models.length - 1) { clearTimeout(timeout); continue; }
++        return lastResult;
++      }
++      if (invalidOperations) {
++        lastResult = {
++          ok: false,
++          appliedCount: 0,
++          fallbackReason: "invalid_operations",
++          diagnostics,
++        };
+         if (mi < models.length - 1) { clearTimeout(timeout); continue; }
+         return lastResult;
+       }
+       if (operations === null) {
+-        lastResult = { ok: false, appliedCount: 0, fallbackReason: "parse_error" };
++        lastResult = { ok: false, appliedCount: 0, fallbackReason: "parse_error", diagnostics };
+         if (mi < models.length - 1) { clearTimeout(timeout); continue; }
+         return lastResult;
+       }
+       if (operations.length === 0) {
+         clearTimeout(timeout);
+-        return { ok: true, appliedCount: 0, fallbackReason: "empty" };
++        return { ok: true, appliedCount: 0, fallbackReason: "empty", diagnostics };
+       }
+       if (controller.signal.aborted || options.signal?.aborted) {
+         return aborted();
+       }
+ 
++      // Fail closed before writing: an operation that cannot be applied here
++      // must not turn into a silent skip beside operations that were applied.
++      const unavailableProjectTarget = operations.some(
++        (operation) => operation.target === "project" && !projectStore,
++      );
++      if (unavailableProjectTarget) {
++        lastResult = {
++          ok: false,
++          appliedCount: 0,
++          fallbackReason: "invalid_operations",
++          diagnostics: { ...diagnostics, invalidOperationCount: 1, reasonCodes: ["unknown_target"] },
++        };
++        if (mi < models.length - 1) { clearTimeout(timeout); continue; }
++        return lastResult;
++      }
++
+       const applied = await applyReviewOperations(
+         store,
+         projectStore,
+@@ -961,15 +1147,29 @@ export async function runDirectMemoryCompletion(
+       if (applied.error) {
+         lastResult = {
+           ok: false,
+-          appliedCount: 0,
++          appliedCount: applied.appliedCount,
+           fallbackReason: "provider_error",
+           error: applied.error,
++          diagnostics,
++        };
++        if (mi < models.length - 1) { clearTimeout(timeout); continue; }
++        return lastResult;
++      }
++      if (applied.skippedCount > 0) {
++        // The appliers can still skip (e.g. an entry that no longer matches its
++        // `old_text`). Report it instead of returning success for a partial
++        // application — the count is what makes the difference visible.
++        lastResult = {
++          ok: false,
++          appliedCount: applied.appliedCount,
++          fallbackReason: "invalid_operations",
++          diagnostics: { ...diagnostics, invalidOperationCount: applied.skippedCount },
+         };
+         if (mi < models.length - 1) { clearTimeout(timeout); continue; }
+         return lastResult;
+       }
+       clearTimeout(timeout);
+-      return { ok: true, appliedCount: applied.appliedCount };
++      return { ok: true, appliedCount: applied.appliedCount, diagnostics };
+     } catch (err) {
+       if (options.signal?.aborted) {
+         clearTimeout(timeout);
+diff --git a/test/base-control.mjs b/test/base-control.mjs
+new file mode 100644
+index 000000000..20a27b4e0
+--- /dev/null
++++ b/test/base-control.mjs
+@@ -0,0 +1,105 @@
++/**
++ * FT-20 base fail control.
++ *
++ * Proves the defect is real and that the fix changes it, by running the same
++ * payload through two builds:
++ *
++ *   base       pi-hermes-memory 0.10.0 as published   -> []  (silent "nothing to save")
++ *   candidate  this branch                             -> null (fail closed)
++ *
++ * Usage: node test/base-control.mjs <baseDistDir> <candidateDistDir>
++ * Both directories are build outputs of src/handlers/review-memory-ops.ts.
++ */
++
++import assert from "node:assert/strict";
++import { pathToFileURL } from "node:url";
++import { join, resolve } from "node:path";
++
++const [baseDir, candidateDir] = process.argv.slice(2);
++if (!baseDir || !candidateDir) {
++  console.error("usage: node test/base-control.mjs <baseDistDir> <candidateDistDir>");
++  process.exit(2);
++}
++
++const load = async (dir) => {
++  const file = join(resolve(dir), "src", "handlers", "review-memory-ops.js");
++  return import(pathToFileURL(file).href);
++};
++
++const base = await load(baseDir);
++const candidate = await load(candidateDir);
++
++/** The payload that 0.10.0 silently turned into a successful no-op. */
++const INVALID = '{"operations":[{"action":"delete","target":"memory"}]}';
++const MIXED = JSON.stringify({
++  operations: [
++    { action: "add", target: "memory", content: "a durable fact" },
++    { action: "remove", target: "memory" },
++  ],
++});
++
++const results = [];
++const check = (name, fn) => {
++  try {
++    fn();
++    results.push({ name, status: "PASS" });
++  } catch (error) {
++    results.push({ name, status: "FAIL", detail: error.message });
++  }
++};
++
++// --- The defect, asserted as the base's actual behaviour -----------------
++check("base: invalid non-empty operations are silently accepted as empty", () => {
++  assert.deepEqual(base.parseReviewOperations(INVALID), []);
++});
++
++check("base: mixed valid+invalid array is passed through, so the applier silently skips half", () => {
++  // 0.10.0 only validated `action` and `target`, so an operation missing
++  // `old_text` survived the parser and was then dropped by the apply loop's
++  // `skippedCount++ continue` — a partial write with no diagnostic.
++  const ops = base.parseReviewOperations(MIXED);
++  assert.equal(ops.length, 2, "both entries reach the applier in the base");
++  assert.equal(ops[1].action, "remove");
++  assert.equal(ops[1].old_text, undefined, "and the second one cannot be applied");
++});
++
++check("base: exposes no typed parse outcome and no diagnostics helper", () => {
++  assert.equal(base.parseReviewOperationsDetailed, undefined);
++  assert.equal(base.describeDiagnostics, undefined);
++});
++
++// --- The fix -------------------------------------------------------------
++check("candidate: invalid non-empty operations fail closed", () => {
++  assert.equal(candidate.parseReviewOperations(INVALID), null);
++  assert.equal(candidate.parseReviewOperationsDetailed(INVALID).kind, "invalid_operations");
++});
++
++check("candidate: mixed array is refused whole", () => {
++  assert.equal(candidate.parseReviewOperations(MIXED), null);
++  const parsed = candidate.parseReviewOperationsDetailed(MIXED);
++  assert.equal(parsed.kind, "invalid_operations");
++  assert.deepEqual(parsed.reasonCodes, ["missing_old_text"]);
++});
++
++check("candidate: the canonical empty plan is still a true empty", () => {
++  assert.deepEqual(candidate.parseReviewOperations('{"operations":[]}'), []);
++  assert.equal(candidate.parseReviewOperationsDetailed('{"operations":[]}').kind, "empty_payload");
++});
++
++check("candidate: the explicit decline phrase is still a decline", () => {
++  assert.deepEqual(candidate.parseReviewOperations("Nothing to save."), []);
++  assert.equal(candidate.parseReviewOperationsDetailed("Nothing to save.").kind, "declined");
++});
++
++check("candidate: prose is still a failure, never a decline", () => {
++  assert.equal(candidate.parseReviewOperations("Nothing new worth saving."), null);
++});
++
++// --- Report --------------------------------------------------------------
++const width = Math.max(...results.map((r) => r.name.length));
++for (const r of results) {
++  console.log(`  ${r.status.padEnd(4)}  ${r.name.padEnd(width)}${r.detail ? `   ${r.detail}` : ""}`);
++}
++const failed = results.filter((r) => r.status === "FAIL").length;
++console.log(`\nbase-control: ${results.length - failed}/${results.length} checks passed`);
++process.exit(failed === 0 ? 0 : 1);
+diff --git a/test/review-parser.test.mjs b/test/review-parser.test.mjs
+new file mode 100644
+index 000000000..517adaf78
+--- /dev/null
++++ b/test/review-parser.test.mjs
+@@ -0,0 +1,340 @@
++/**
++ * FT-20 minimal fix — deterministic regression tests.
++ *
++ * No provider, no network, no agent process, no store on disk. Every completion
++ * goes through a stub that either throws (proving the code cannot reach a real
++ * provider) or returns a canned response. Nothing here writes to the live
++ * memory store; the "store" objects are call counters.
++ *
++ * Run:  node --test test/
++ */
++
++import assert from "node:assert/strict";
++import { test } from "node:test";
++
++import {
++  parseReviewOperations,
++  parseReviewOperationsDetailed,
++} from "../dist/src/handlers/review-memory-ops.js";
++import { describeDiagnostics } from "../dist/src/handlers/background-review.js";
++
++/* ------------------------------------------------------------------ */
++/* Helpers                                                             */
++/* ------------------------------------------------------------------ */
++
++/** A completion stub that fails the test if anything ever tries to call a
++ * provider. Used for the pure-parser cases. */
++const forbiddenProvider = () => {
++  throw new Error("FATAL: a provider completion was attempted in a unit test");
++};
++
++/** Minimal model shape; `reasoning: false` keeps buildDirectReviewCompletionOptions
++ * from touching thinking options. */
++const fakeModel = { provider: "test-provider", id: "test-model", api: "test-api", reasoning: false };
++
++/** Canned completion result. Note: no `usage`, which the code tolerates. */
++const response = (text, stopReason = "stop") => ({
++  stopReason,
++  content: text === null ? [] : [{ type: "text", text }],
++});
++
++/** Call-counting store double: enough surface for applyReviewOperations. */
++function countingStore() {
++  const calls = [];
++  const record = (kind) => (...args) => {
++    calls.push({ kind, args: args.map((a) => (typeof a === "string" ? a.slice(0, 40) : a)) });
++    return Promise.resolve({ success: true });
++  };
++  return {
++    calls,
++    store: {
++      add: record("add"),
++      replace: record("replace"),
++      remove: record("remove"),
++      addFailure: record("addFailure"),
++      applyMutationPlan: record("applyMutationPlan"),
++    },
++  };
++}
++
++function fakeCtx() {
++  return {
++    model: fakeModel,
++    modelRegistry: {
++      getAll: () => [fakeModel],
++      getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "test-key", headers: {}, env: {} }),
++    },
++    sessionManager: { getSessionId: () => "test-session" },
++  };
++}
++
++const baseOptions = (text, stopReason) => ({
++  userPrompt: "PROMPT-SENTINEL-" + "p".repeat(100),
++  systemPrompt: "system",
++  config: {},
++  // The stub ignores the request; the payload comes from the closure.
++  deps: { completeSimple: async () => response(text, stopReason) },
++});
++
++/* ------------------------------------------------------------------ */
++/* 1. Parser contract: the defect and its fix                          */
++/* ------------------------------------------------------------------ */
++
++test("canonical empty operations payload is a true empty, not a failure", () => {
++  const parsed = parseReviewOperationsDetailed('{"operations": []}');
++  assert.equal(parsed.kind, "empty_payload");
++  // The legacy entry point keeps its old, permissive meaning.
++  assert.deepEqual(parseReviewOperations('{"operations": []}'), []);
++});
++
++test("the five-word decline is still accepted as a decline", () => {
++  assert.deepEqual(parseReviewOperationsDetailed("Nothing to save."), { kind: "declined" });
++});
++
++test("invalid non-empty operations fail closed instead of becoming silent empty", () => {
++  // THE DEFECT: 0.10.0 returned [] (= ok/empty) for this, so a malformed
++  // operation disappeared with no diagnostic and no applied count.
++  const parsed = parseReviewOperationsDetailed('{"operations":[{"action":"delete","target":"memory"}]}');
++  assert.equal(parsed.kind, "invalid_operations");
++  assert.deepEqual(parsed.reasonCodes, ["unknown_action"]);
++  // And the legacy entry point now refuses it rather than pretending it is empty.
++  assert.equal(parseReviewOperations('{"operations":[{"action":"delete","target":"memory"}]}'), null);
++});
++
++test("a mixed valid+invalid array is refused whole, never partially accepted", () => {
++  const mixed = JSON.stringify({
++    operations: [
++      { action: "add", target: "memory", content: "a durable fact" },
++      { action: "remove", target: "memory" }, // missing old_text
++    ],
++  });
++  const parsed = parseReviewOperationsDetailed(mixed);
++  assert.equal(parsed.kind, "invalid_operations");
++  assert.deepEqual(parsed.reasonCodes, ["missing_old_text"]);
++  assert.ok(!("operations" in parsed), "no operations may survive a refusal");
++});
++
++test("required-field and vocabulary failures each produce a named reason code", () => {
++  const cases = [
++    ['{"operations":[{"target":"memory","content":"x"}]}', "missing_action"],
++    ['{"operations":[{"action":"add","content":"x"}]}', "missing_target"],
++    ['{"operations":[{"action":"add","target":"nope","content":"x"}]}', "unknown_target"],
++    ['{"operations":[{"action":"add","target":"memory"}]}', "missing_content"],
++    ['{"operations":[{"action":"replace","target":"memory","content":"x"}]}', "missing_old_text"],
++    ['{"operations":[{"action":"replace","target":"memory","old_text":"x"}]}', "missing_content"],
++    ['{"operations":["not an object"]}', "not_an_object"],
++    ['{"operations":[null]}', "not_an_object"],
++  ];
++  for (const [text, expected] of cases) {
++    const parsed = parseReviewOperationsDetailed(text);
++    assert.equal(parsed.kind, "invalid_operations", text);
++    assert.deepEqual(parsed.reasonCodes, [expected], text);
++  }
++});
++
++test("prose, refusals, malformed and truncated JSON all stay failures — not declines", () => {
++  const failures = [
++    "Nothing new worth saving from this conversation.",
++    "No new durable memories to add.",
++    "I can't help with that.",
++    "Error: upstream 502 bad gateway",
++    '{"operations":[{"action":"add","target":"memory","content":"trunc',
++    '{"operations": "not an array"}',
++    "",
++  ];
++  for (const text of failures) {
++    const parsed = parseReviewOperationsDetailed(text);
++    assert.equal(parsed.kind, "unparsable", JSON.stringify(text));
++    assert.equal(parseReviewOperations(text), null, JSON.stringify(text));
++  }
++});
++
++test("valid full operations are preserved exactly as before", () => {
++  const parsed = parseReviewOperationsDetailed(JSON.stringify({
++    operations: [
++      { action: "add", target: "memory", content: "fact", category: "insight" },
++      { action: "replace", target: "user", old_text: "old", content: "new" },
++      { action: "remove", target: "project", old_text: "gone" },
++      { action: "add", target: "failure", content: "broke", category: "tool-quirk", failure_reason: "why" },
++    ],
++  }));
++  assert.equal(parsed.kind, "operations");
++  assert.equal(parsed.operations.length, 4);
++  assert.deepEqual(parsed.operations[3], {
++    action: "add",
++    target: "failure",
++    content: "broke",
++    category: "tool-quirk",
++    failure_reason: "why",
++  });
++});
++
++test("a fenced, complete payload still parses (extraction cascade untouched)", () => {
++  const parsed = parseReviewOperationsDetailed('Here you go:\n```json\n{"operations":[{"action":"add","target":"memory","content":"x"}]}\n```');
++  assert.equal(parsed.kind, "operations");
++  assert.equal(parsed.operations.length, 1);
++});
++
++/* ------------------------------------------------------------------ */
++/* 2. Transport behaviour: fail closed end to end, with no writes       */
++/* ------------------------------------------------------------------ */
++
++/** Drive runDirectMemoryCompletion through the stub. */
++async function runDirect(text, stopReason, { projectStore = null, signal } = {}) {
++  const { runDirectMemoryCompletion } = await import("../dist/src/handlers/review-memory-ops.js");
++  const { calls, store } = countingStore();
++  const result = await runDirectMemoryCompletion(
++    fakeCtx(),
++    store,
++    projectStore,
++    { ...baseOptions(text, stopReason), ...(signal ? { signal } : {}) },
++    null,
++    "Fleet",
++    { completeSimple: async () => response(text, stopReason) },
++  );
++  return { result, calls };
++}
++
++test("invalid operations: reported as invalid_operations, and NOTHING is written", async () => {
++  const { result, calls } = await runDirect('{"operations":[{"action":"delete","target":"memory"}]}');
++  assert.equal(result.ok, false);
++  assert.equal(result.fallbackReason, "invalid_operations");
++  assert.equal(result.appliedCount, 0);
++  assert.deepEqual(calls, [], "fail-closed must not touch the store");
++  assert.equal(result.diagnostics?.invalidOperationCount, 1);
++  assert.deepEqual(result.diagnostics?.reasonCodes, ["unknown_action"]);
++});
++
++test("mixed array end to end: reported, atomic, no partial apply", async () => {
++  const mixed = JSON.stringify({
++    operations: [
++      { action: "add", target: "memory", content: "a durable fact" },
++      { action: "remove", target: "memory" },
++    ],
++  });
++  const { result, calls } = await runDirect(mixed);
++  assert.equal(result.ok, false);
++  assert.equal(result.fallbackReason, "invalid_operations");
++  assert.deepEqual(calls, [], "the valid operation must not be applied either");
++});
++
++test("valid operations still apply, and the result stays ok", async () => {
++  const { result, calls } = await runDirect('{"operations":[{"action":"add","target":"memory","content":"fact"}]}');
++  assert.equal(result.ok, true);
++  assert.equal(result.appliedCount, 1);
++  assert.equal(calls.length, 1);
++  assert.equal(calls[0].kind, "add");
++});
++
++test("canonical empty plan stays a silent success and writes nothing", async () => {
++  const { result, calls } = await runDirect('{"operations": []}');
++  assert.equal(result.ok, true);
++  assert.equal(result.appliedCount, 0);
++  assert.equal(result.fallbackReason, "empty");
++  assert.deepEqual(calls, []);
++});
++
++test("the explicit decline phrase stays a silent success", async () => {
++  const { result, calls } = await runDirect("Nothing to save.");
++  assert.equal(result.ok, true);
++  assert.equal(result.appliedCount, 0);
++  assert.deepEqual(calls, []);
++});
++
++test("prose is still a parse_error (not swallowed), and writes nothing", async () => {
++  const { result, calls } = await runDirect("I reviewed the conversation and found nothing durable.");
++  assert.equal(result.ok, false);
++  assert.equal(result.fallbackReason, "parse_error");
++  assert.deepEqual(calls, []);
++  assert.equal(result.diagnostics?.stopReason, "stop");
++});
++
++test("truncation (stopReason length) is a parse_error and is marked as truncation", async () => {
++  const { result } = await runDirect('{"operations":[{"action":"add","target":"memory","content":"trunc', "length");
++  assert.equal(result.ok, false);
++  assert.equal(result.fallbackReason, "parse_error");
++  assert.equal(result.diagnostics?.stopReason, "length");
++});
++
++test("an empty clean stop is empty_response, an abort is aborted — both unchanged", async () => {
++  const empty = await runDirect(null, "stop");
++  assert.equal(empty.result.ok, true);
++  assert.equal(empty.result.fallbackReason, "empty_response");
++
++  const controller = new AbortController();
++  controller.abort();
++  const { runDirectMemoryCompletion } = await import("../dist/src/handlers/review-memory-ops.js");
++  const { calls, store } = countingStore();
++  const aborted = await runDirectMemoryCompletion(
++    fakeCtx(), store, null,
++    { userPrompt: "p", systemPrompt: "s", config: {}, signal: controller.signal },
++    null, null,
++    { completeSimple: forbiddenProvider },
++  );
++  assert.equal(aborted.fallbackReason, "aborted");
++  assert.deepEqual(calls, []);
++});
++
++test("a project operation without a project store fails closed instead of skipping", async () => {
++  const { result, calls } = await runDirect('{"operations":[{"action":"add","target":"project","content":"fact"}]}');
++  assert.equal(result.ok, false);
++  assert.equal(result.fallbackReason, "invalid_operations");
++  assert.deepEqual(calls, []);
++});
++
++test("a provider error response still surfaces as provider_error, not a parse failure", async () => {
++  const { runDirectMemoryCompletion } = await import("../dist/src/handlers/review-memory-ops.js");
++  const { store } = countingStore();
++  const result = await runDirectMemoryCompletion(
++    fakeCtx(), store, null,
++    { userPrompt: "p", systemPrompt: "s", config: {} },
++    null, null,
++    { completeSimple: async () => ({ stopReason: "error", errorMessage: "upstream 502", content: [] }) },
++  );
++  assert.equal(result.ok, false);
++  assert.equal(result.fallbackReason, "provider_error");
++});
++
++/* ------------------------------------------------------------------ */
++/* 3. Diagnostics: bounded, redacted, and safe to paste                 */
++/* ------------------------------------------------------------------ */
++
++test("diagnostics carry counts and lengths only — never text, never secrets", async () => {
++  const secretText = "sk-live-SECRET-DO-NOT-LEAK " + "MEMORYBODY".repeat(50);
++  const { result } = await runDirect(secretText);
++  const rendered = describeDiagnostics(result.diagnostics);
++
++  // Present and useful.
++  assert.match(rendered, /model=test-provider\/test-model/);
++  assert.match(rendered, /stopReason=stop/);
++  assert.match(rendered, /responseChars=\d+/);
++  assert.match(rendered, /promptChars=\d+/);
++
++  // Absent: the response body, the API key, the sentinels, any endpoint.
++  assert.ok(!rendered.includes("sk-live"), "a credential-shaped string leaked");
++  assert.ok(!rendered.includes("MEMORYBODY"), "response text leaked");
++  assert.ok(!rendered.includes("SECRET"), "response text leaked");
++  assert.ok(!rendered.includes("PROMPT-SENTINEL"), "prompt text leaked");
++  assert.ok(!/@|https?:|api\./i.test(rendered), "endpoint-shaped text leaked");
++
++  // Bounded: a long line is impossible by construction.
++  assert.ok(rendered.length < 240, `diagnostics were ${rendered.length} chars`);
++
++  // responseChars is JS string length (UTF-16 code units), stated as such.
++  assert.equal(result.diagnostics.responseChars, secretText.length);
++});
++
++test("reason codes are a fixed vocabulary with no free text from the model", async () => {
++  const hostile = JSON.stringify({
++    operations: [{ action: "sk-live-SECRET", target: "memory", content: "x" }],
++  });
++  const { result } = await runDirect(hostile);
++  const rendered = describeDiagnostics(result.diagnostics);
++  assert.deepEqual(result.diagnostics?.reasonCodes, ["unknown_action"]);
++  assert.ok(!rendered.includes("SECRET"));
++  assert.match(rendered, /reasons=unknown_action/);
++});
++
++test("describeDiagnostics tolerates a missing diagnostics object", () => {
++  assert.equal(describeDiagnostics(undefined), "");
++});
+diff --git a/tsconfig.build.json b/tsconfig.build.json
+new file mode 100644
+index 000000000..7bc24dea3
+--- /dev/null
++++ b/tsconfig.build.json
+@@ -0,0 +1,11 @@
++{
++  "extends": "./tsconfig.json",
++  "compilerOptions": {
++    "outDir": "dist",
++    "noEmitOnError": true
++  },
++  "include": [
++    "src/handlers/review-memory-ops.ts",
++    "src/handlers/background-review.ts"
++  ]
++}
+diff --git a/tsconfig.json b/tsconfig.json
+new file mode 100644
+index 000000000..88a964620
+--- /dev/null
++++ b/tsconfig.json
+@@ -0,0 +1,26 @@
++{
++  "compilerOptions": {
++    "target": "ES2022",
++    "lib": ["ES2022"],
++    "module": "NodeNext",
++    "moduleResolution": "NodeNext",
++    "types": ["node"],
++    "strict": true,
++    "noImplicitOverride": true,
++    "noUncheckedIndexedAccess": false,
++    "exactOptionalPropertyTypes": false,
++    "skipLibCheck": true,
++    "forceConsistentCasingInFileNames": true,
++    "resolveJsonModule": true,
++    "esModuleInterop": true,
++    "allowImportingTsExtensions": false,
++    "noEmit": false,
++    "declaration": false,
++    "sourceMap": false,
++    "outDir": "dist",
++    "rootDir": ".",
++    "verbatimModuleSyntax": false
++  },
++  "include": ["src/**/*.ts"],
++  "exclude": ["node_modules", "dist", "test"]
++}

@@ -1,0 +1,482 @@
+diff --git a/scripts/verify.sh b/scripts/verify.sh
+index 06a805925..0ccb1cf80 100755
+--- a/scripts/verify.sh
++++ b/scripts/verify.sh
+@@ -24,37 +24,31 @@ hr; say "1. link local deps (no install, no network)"; hr
+ ./scripts/link-local-deps.sh >/dev/null || exit 2
+ say "   ok"
+ 
+-hr; say "2. typecheck: candidate vs committed base (differential gate)"; hr
+-# The published tarball ships no tsconfig and no devDependencies, and its own
+-# guard refuses to run `check` from an installed package. So typecheck here is
+-# a differential gate: the base's pre-existing errors must be exactly the
+-# candidate's, i.e. the fix introduces none.
+-$TSC --noEmit -p tsconfig.json 2>&1 | grep -E '^src/.*error TS' | sort > "$WORK/candidate-types.txt"
+-CAND_TYPE_ERRORS=$(wc -l < "$WORK/candidate-types.txt")
++hr; say "2. typecheck: whole component, strict, must be clean"; hr
++# Absolute gate. Not a differential comparison against any baseline: this tree
++# has to typecheck with zero errors, including the compile-time API-compat
++# assertions under test/types/. The two host-SDK typing errors that 0.10.0
++# shipped with are fixed in this candidate, not excused.
++set -o pipefail
++$TSC --noEmit -p tsconfig.json 2>&1 | tee "$WORK/typecheck.log"
++TC_STATUS=${PIPESTATUS[0]}
++TC_ERRORS=$(grep -cE 'error TS' "$WORK/typecheck.log" || true)
++if [ "$TC_STATUS" -ne 0 ] || [ "$TC_ERRORS" -ne 0 ]; then
++  say "   FAIL: typecheck reported $TC_ERRORS error(s)"
++  exit 1
++fi
++say "   ok — 0 type errors"
++set +o pipefail
++say "   (compile-time API-compat assertions included via test/types/)"
+ 
++hr; say "2b. export the committed base (needed only for the base fail control)"; hr
+ # git archive resolves pathspecs relative to the invoking directory, so run it
+ # from the worktree top.
+-
+ git -C "$(git rev-parse --show-toplevel)" archive "$BASE_COMMIT" \
+   src/pi-extensions/pi-hermes-memory-review-fix | tar -x -C "$WORK" 2>/dev/null
+ BASE_DIR="$WORK/src/pi-extensions/pi-hermes-memory-review-fix"
+ if [ -d "$BASE_DIR" ]; then
+-  cp tsconfig.json "$BASE_DIR/tsconfig.json"
+   ln -sfn "$HERE/node_modules" "$BASE_DIR/node_modules"
+-  ( cd "$BASE_DIR" && $TSC --noEmit -p tsconfig.json 2>&1 | grep -E '^src/.*error TS' | sort > "$WORK/base-types.txt" )
+-  BASE_TYPE_ERRORS=$(wc -l < "$WORK/base-types.txt")
+-  say "   base type errors:      $BASE_TYPE_ERRORS"
+-  say "   candidate type errors: $CAND_TYPE_ERRORS"
+-  if ! diff -q "$WORK/base-types.txt" "$WORK/candidate-types.txt" >/dev/null; then
+-    say "   FAIL: the fix changed the type-error set"
+-    diff "$WORK/base-types.txt" "$WORK/candidate-types.txt" | sed 's/^/     /'
+-    exit 1
+-  fi
+-  if [ "$CAND_TYPE_ERRORS" -ne 0 ]; then
+-    say "   note: $CAND_TYPE_ERRORS pre-existing error(s), identical in base and candidate:"
+-    sed 's/^/     /' "$WORK/candidate-types.txt"
+-  fi
+-  say "   ok — no new type errors"
+ else
+   say "   FAIL: could not export base commit $BASE_COMMIT"; exit 2
+ fi
+@@ -65,15 +59,25 @@ $TSC -p tsconfig.build.json || { say "   FAIL: build"; exit 1; }
+ say "   ok"
+ 
+ hr; say "4. deterministic test suite (no provider, no network, no store)"; hr
+-node --test test/*.test.mjs 2>&1 | tail -9
++node --test test/*.test.mjs 2>&1 | tee "$WORK/tests.log" | tail -9
+ TEST_STATUS=${PIPESTATUS[0]}
+ [ "$TEST_STATUS" -eq 0 ] || { say "   FAIL: tests"; exit 1; }
+ 
+ hr; say "5. base fail control (the defect, on the published base)"; hr
+ BASE_BUILD="$WORK/base-build"
+ mkdir -p "$BASE_BUILD"
+-cp tsconfig.build.json "$BASE_DIR/tsconfig.build.json"
+-sed -i 's#"outDir": "dist"#"outDir": "'"$BASE_BUILD"'"#' "$BASE_DIR/tsconfig.build.json"
++# The base predates schema-compat.ts, so its build config lists only the two
++# files that exist at that commit. Anything else would make the compiler fall
++# back to defaults and report a flood of unrelated errors.
++cat > "$BASE_DIR/tsconfig.build.json" <<EOF
++{
++  "extends": "./tsconfig.json",
++  "compilerOptions": { "outDir": "$BASE_BUILD", "noEmitOnError": true },
++  "include": ["src/handlers/review-memory-ops.ts", "src/handlers/background-review.ts"]
++}
++EOF
++# ... and it needs the same compiler settings the candidate uses.
++cp tsconfig.json "$BASE_DIR/tsconfig.json"
+ # The base build lives outside this tree, so give it the same linked deps.
+ ln -sfn "$HERE/node_modules" "$WORK/node_modules"
+ ( cd "$BASE_DIR" && $TSC -p tsconfig.build.json ) || { say "   FAIL: base build"; exit 1; }
+diff --git a/src/tools/memory-search-tool.ts b/src/tools/memory-search-tool.ts
+index bc4cc6488..dac571a97 100644
+--- a/src/tools/memory-search-tool.ts
++++ b/src/tools/memory-search-tool.ts
+@@ -1,6 +1,6 @@
+ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+ import { Type } from "typebox";
+-import { StringEnum } from "@earendil-works/pi-ai";
++import { stringEnum } from "./schema-compat.js";
+ import { DatabaseManager } from '../store/db.js';
+ import { searchMemories, getMemoryStats, recordSearchHits } from '../store/sqlite-memory-store.js';
+ import type { MemoryCategory } from '../types.js';
+@@ -53,8 +53,8 @@ Returns matching memory entries with their mutation target, scope, and dates. Th
+     parameters: Type.Object({
+       query: Type.String({ description: 'Search query. Use natural language or specific terms.' }),
+       project: Type.Optional(Type.String({ description: 'Filter by project name. Pass null for global memories only.' })),
+-      target: Type.Optional(StringEnum(['memory', 'user', 'failure', 'project'] as const, { description: 'Filter by target type: memory, user, failure, or project-attributed memories.' })),
+-      category: Type.Optional(StringEnum(['failure', 'correction', 'insight', 'preference', 'convention', 'tool-quirk'] as const, { description: 'Filter by memory category.' })),
++      target: Type.Optional(stringEnum(['memory', 'user', 'failure', 'project'] as const, { description: 'Filter by target type: memory, user, failure, or project-attributed memories.' })),
++      category: Type.Optional(stringEnum(['failure', 'correction', 'insight', 'preference', 'convention', 'tool-quirk'] as const, { description: 'Filter by memory category.' })),
+       limit: Type.Optional(Type.Number({ description: 'Maximum results to return (default: 10, max: 20).' })),
+     }),
+     execute: async (_id: string, args: { query: string; project?: string; target?: 'memory' | 'user' | 'failure' | 'project'; category?: string; limit?: number }) => {
+diff --git a/src/tools/schema-compat.ts b/src/tools/schema-compat.ts
+new file mode 100644
+index 000000000..55baaf32f
+--- /dev/null
++++ b/src/tools/schema-compat.ts
+@@ -0,0 +1,49 @@
++import { Type, type TUnsafe } from "typebox";
++
++/**
++ * TypeBox-compatible string enum.
++ *
++ * ## Why this exists
++ *
++ * Host `ToolDefinition<TParams extends TSchema>` derives the tool-call parameter
++ * type as TypeBox's `Static<TParams>`, where `TSchema` is TypeBox's own. A schema
++ * that is not a TypeBox schema contributes nothing to that inference, so the
++ * affected property widens to `unknown` and the tool's `execute` handler can no
++ * longer be typed against the literals it actually accepts.
++ *
++ * `@earendil-works/pi-ai`'s `StringEnum` returns `Schema<T[number]>` from
++ * `@earendil-works/pi-schema` — a foreign schema type — which is exactly that
++ * case against the current host. `Type.Unsafe<T>` yields TypeBox's `TUnsafe<T>`,
++ * whose `Static` is `T`, so the literal union survives inference.
++ *
++ * ## Wire format, and the one deliberate delta
++ *
++ * The emitted JSON is the same document `StringEnum` builds — `{ type: "string",
++ * enum: [...] }` plus `description`/`default` when given — and `Type.Unsafe`
++ * adds no enumerable keys or symbols, so nothing extra reaches a provider.
++ *
++ * One internal marker differs, and it is recorded here rather than hidden:
++ * because `StringEnum` returns a *plain* object, `Type.Optional(...)` used to
++ * stamp `~optional: true` onto that property. A TypeBox-tagged schema takes the
++ * symbol path instead, so that marker is no longer emitted. `~optional` is not a
++ * JSON Schema keyword and no other property in these schemas ever carried it
++ * (native `Type.Optional(Type.String())` does not emit it either — verified in
++ * `test/api-compat.test.mjs`). The computed `required` array is identical in
++ * both cases, which is what actually decides whether a provider treats the
++ * parameter as optional.
++ *
++ * `test/api-compat.test.mjs` pins all of this: byte-equality of the enum node,
++ * identical `required`, and the `~optional` delta as an explicit assertion so it
++ * cannot drift unnoticed.
++ */
++export function stringEnum<T extends readonly string[]>(
++  values: T,
++  options?: { description?: string; default?: T[number] },
++): TUnsafe<T[number]> {
++  return Type.Unsafe<T[number]>({
++    type: "string",
++    enum: [...values],
++    ...(options?.description ? { description: options.description } : {}),
++    ...(options?.default ? { default: options.default } : {}),
++  });
++}
+diff --git a/src/tools/session-search-tool.ts b/src/tools/session-search-tool.ts
+index 85d100810..697372a54 100644
+--- a/src/tools/session-search-tool.ts
++++ b/src/tools/session-search-tool.ts
+@@ -1,7 +1,7 @@
+ import * as path from 'node:path';
+ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+ import { Type } from "typebox";
+-import { StringEnum } from "@earendil-works/pi-ai";
++import { stringEnum } from "./schema-compat.js";
+ import { DatabaseManager } from '../store/db.js';
+ import { searchSessions, getIndexedMessageCount } from '../store/session-search.js';
+ import { searchSessionAnchors } from '../store/session-anchor-search.js';
+@@ -164,7 +164,7 @@ Returns bounded conversation snippets with session dates and project context. La
+     parameters: Type.Object({
+       query: Type.String({ description: 'Search query. Use natural language or specific terms.' }),
+       project: Type.Optional(Type.String({ description: 'Filter by project name (optional).' })),
+-      role: Type.Optional(StringEnum(['user', 'assistant'] as const, { description: 'Filter by message role (optional).' })),
++      role: Type.Optional(stringEnum(['user', 'assistant'] as const, { description: 'Filter by message role (optional).' })),
+       limit: Type.Optional(Type.Number({
+         description: 'Maximum results to return (default: 10, min: 1, max: 20).',
+         minimum: 1,
+diff --git a/test/api-compat.test.mjs b/test/api-compat.test.mjs
+new file mode 100644
+index 000000000..f9950dcb1
+--- /dev/null
++++ b/test/api-compat.test.mjs
+@@ -0,0 +1,149 @@
++/**
++ * FT-20 — runtime regression for the tool-registration API compatibility fix.
++ *
++ * The fix replaces `@earendil-works/pi-ai`'s `StringEnum` with a TypeBox-native
++ * `stringEnum` in two tools, because the host derives tool-call parameter types
++ * with TypeBox's `Static` and a pi-schema `Schema<…>` widens the property to
++ * `unknown`.
++ *
++ * A type-level fix must not change what reaches the provider. These tests pin
++ * that: for every realistic argument shape, the emitted JSON is byte-identical
++ * to the SDK helper's, and `enum` still constrains the accepted values.
++ *
++ * No provider, no network, no store, no agent process.
++ *
++ * Run:  node --test test/
++ */
++
++import assert from "node:assert/strict";
++import { test } from "node:test";
++
++import { StringEnum } from "@earendil-works/pi-ai";
++import { Type } from "typebox";
++
++import { stringEnum } from "../dist/src/tools/schema-compat.js";
++
++/* ------------------------------------------------------------------ */
++/* 1. Wire compatibility with the helper it replaced                   */
++/* ------------------------------------------------------------------ */
++
++test("emitted JSON is identical to the SDK StringEnum for a plain enum", () => {
++  const values = ["memory", "user", "failure", "project"];
++  const ours = stringEnum(values);
++  const theirs = StringEnum(values);
++  assert.equal(JSON.stringify(ours), JSON.stringify(theirs));
++  assert.deepEqual(JSON.parse(JSON.stringify(ours)), { type: "string", enum: values });
++});
++
++test("emitted JSON is identical when a description is given", () => {
++  const values = ["user", "assistant"];
++  const options = { description: "Filter by message role (optional)." };
++  assert.equal(
++    JSON.stringify(stringEnum(values, options)),
++    JSON.stringify(StringEnum(values, options)),
++  );
++});
++
++test("emitted JSON is identical when a default is given", () => {
++  const values = ["failure", "correction", "insight", "preference", "convention", "tool-quirk"];
++  const options = { description: "Filter by memory category.", default: "insight" };
++  assert.equal(
++    JSON.stringify(stringEnum(values, options)),
++    JSON.stringify(StringEnum(values, options)),
++  );
++});
++
++test("no extra keys or symbols leak into the schema object", () => {
++  const ours = stringEnum(["memory", "user"]);
++  assert.deepEqual(Object.keys(ours).sort(), ["enum", "type"]);
++  assert.deepEqual(Object.getOwnPropertySymbols(ours), []);
++});
++
++test("inside Type.Object the enum node is identical and `required` is unchanged", () => {
++  // The shape both tools actually use: an optional enum inside an object.
++  const mine = Type.Object({
++    query: Type.String(),
++    target: Type.Optional(stringEnum(["memory", "user", "failure", "project"])),
++  });
++  const reference = Type.Object({
++    query: Type.String(),
++    target: Type.Optional(StringEnum(["memory", "user", "failure", "project"])),
++  });
++
++  // What decides optionality for a provider: identical.
++  assert.deepEqual(mine.required, reference.required);
++  assert.deepEqual(JSON.parse(JSON.stringify(mine)).required, ["query"]);
++
++  // The enum node itself: identical once TypeBox-internal `~` keys are removed.
++  const stripInternal = (node) => Object.fromEntries(
++    Object.entries(node).filter(([key]) => !key.startsWith("~")),
++  );
++  assert.deepEqual(
++    stripInternal(mine.properties.target),
++    stripInternal(reference.properties.target),
++  );
++  assert.deepEqual(
++    stripInternal(mine.properties.target),
++    { type: "string", enum: ["memory", "user", "failure", "project"] },
++  );
++});
++
++test("the only document delta is the internal ~optional marker, and it is deliberate", () => {
++  // Recorded on purpose. `StringEnum` returns a plain object, so Type.Optional
++  // stamped `~optional: true` on it; a TypeBox-tagged schema takes the symbol
++  // path and does not. `~optional` is not a JSON Schema keyword and nothing else
++  // in these schemas emits it — see the next test, which is what makes this a
++  // consistency fix rather than a behavioural one.
++  const mine = Type.Object({ target: Type.Optional(stringEnum(["a", "b"])) });
++  const reference = Type.Object({ target: Type.Optional(StringEnum(["a", "b"])) });
++  assert.equal(JSON.parse(JSON.stringify(mine)).properties.target["~optional"], undefined);
++  assert.equal(JSON.parse(JSON.stringify(reference)).properties.target["~optional"], true);
++  assert.deepEqual(mine.required, reference.required);
++});
++
++test("native TypeBox optionals never emit ~optional either, so the fix matches the norm", () => {
++  const native = Type.Object({ q: Type.String(), p: Type.Optional(Type.String()) });
++  const doc = JSON.parse(JSON.stringify(native));
++  assert.equal(doc.properties.p["~optional"], undefined);
++  assert.deepEqual(doc.required, ["q"]);
++});
++
++test("the object wrapper still marks the enum as optional, not required", () => {
++  const schema = JSON.parse(JSON.stringify(Type.Object({
++    role: Type.Optional(stringEnum(["user", "assistant"])),
++  })));
++  assert.deepEqual(schema.required ?? [], []);
++  assert.equal(schema.properties.role.type, "string");
++});
++
++/* ------------------------------------------------------------------ */
++/* 2. The enum still constrains values                                 */
++/* ------------------------------------------------------------------ */
++
++test("enum values are preserved in order, without duplication", () => {
++  const values = ["failure", "correction", "insight", "preference", "convention", "tool-quirk"];
++  const schema = stringEnum(values);
++  assert.deepEqual(schema.enum, values);
++  assert.equal(new Set(schema.enum).size, values.length);
++});
++
++test("a single-value enum is emitted as a one-element enum, not a const", () => {
++  // Providers that reject anyOf/const are the reason StringEnum exists; a
++  // one-element `enum` must stay an enum.
++  const schema = stringEnum(["user"]);
++  assert.deepEqual(JSON.parse(JSON.stringify(schema)), { type: "string", enum: ["user"] });
++});
++
++/* ------------------------------------------------------------------ */
++/* 3. Type-level expectations, restated at runtime where cheap         */
++/* ------------------------------------------------------------------ */
++
++test("the helper is runtime-identical even though it is typed more precisely", () => {
++  // `stringEnum` returns TUnsafe<T[number]> (TypeBox) instead of pi-schema
++  // Schema<T>. Both are plain objects at runtime — this guards against a future
++  // version of either helper making the schema a class or a proxy.
++  const ours = stringEnum(["memory", "user"]);
++  const proto = Object.getPrototypeOf(ours);
++  assert.equal(proto, Object.prototype, "not a plain object");
++  assert.equal(typeof ours, "object");
++});
+diff --git a/test/types/api-compat.assert.ts b/test/types/api-compat.assert.ts
+new file mode 100644
+index 000000000..c6afb6ce6
+--- /dev/null
++++ b/test/types/api-compat.assert.ts
+@@ -0,0 +1,107 @@
++/**
++ * Compile-time regression for host tool-registration type compatibility.
++ *
++ * This file is part of the typecheck (`tsconfig.json` includes it). It does not
++ * run; it fails the build if the tool parameter schemas ever stop inferring
++ * their literal unions — which is the defect being fixed. A `Static<T>` that
++ * widened to `unknown` would break the `satisfies HostToolDefinition<…>` checks
++ * and the `Equals<…, false>` assertions below.
++ *
++ * It is written the way the host does it: the handler's parameter type is
++ * `Static<typeof parameters>`, so the two must agree for the file to compile.
++ * That is the property being protected, stated in the compiler's own terms
++ * rather than by restating the expected type somewhere the schema cannot see it.
++ *
++ * If this file becomes unnecessary because upstream `StringEnum` is typed
++ * against TypeBox again, delete it and the `schema-compat.ts` indirection with it.
++ */
++
++import type { Static, TSchema } from "typebox";
++import { Type } from "typebox";
++import { stringEnum } from "../../src/tools/schema-compat.js";
++
++/** `true` only when the two types are mutually assignable. */
++type Equals<A, B> =
++  (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false;
++
++/** Compile-time assertion; `false` becomes a type error. */
++type Assert<T extends true> = T;
++
++/** A host-style definition: `TParams` must satisfy TypeBox's `TSchema`, and the
++ * handler receives exactly `Static<TParams>`. */
++interface HostToolDefinition<TParams extends TSchema> {
++  parameters: TParams;
++  execute: (id: string, params: Static<TParams>) => Promise<void>;
++}
++
++/** Mirrors the schema in `memory-search-tool.ts`. */
++const memorySearchParameters = Type.Object({
++  query: Type.String(),
++  project: Type.Optional(Type.String()),
++  target: Type.Optional(stringEnum(["memory", "user", "failure", "project"] as const)),
++  category: Type.Optional(stringEnum([
++    "failure", "correction", "insight", "preference", "convention", "tool-quirk",
++  ] as const)),
++  limit: Type.Optional(Type.Number()),
++});
++
++const memorySearch = {
++  parameters: memorySearchParameters,
++  execute: async (_id: string, params: Static<typeof memorySearchParameters>) => {
++    // The unions must survive inference, not widen to `unknown`.
++    const target: "memory" | "user" | "failure" | "project" | undefined = params.target;
++    const category:
++      | "failure" | "correction" | "insight" | "preference" | "convention" | "tool-quirk"
++      | undefined = params.category;
++    void target;
++    void category;
++  },
++} satisfies HostToolDefinition<typeof memorySearchParameters>;
++
++/** Mirrors the schema in `session-search-tool.ts`. */
++const sessionSearchParameters = Type.Object({
++  query: Type.String(),
++  project: Type.Optional(Type.String()),
++  role: Type.Optional(stringEnum(["user", "assistant"] as const)),
++  limit: Type.Optional(Type.Number()),
++});
++
++const sessionSearch = {
++  parameters: sessionSearchParameters,
++  execute: async (_id: string, params: Static<typeof sessionSearchParameters>) => {
++    const role: "user" | "assistant" | undefined = params.role;
++    void role;
++  },
++} satisfies HostToolDefinition<typeof sessionSearchParameters>;
++
++// --- The assertions -------------------------------------------------------
++
++type MemorySearchStatic = Static<typeof memorySearchParameters>;
++type SessionSearchStatic = Static<typeof sessionSearchParameters>;
++
++// `target` is the literal union, not `unknown`.
++export type MemorySearchTargetIsUnion = Assert<
++  Equals<MemorySearchStatic["target"], "memory" | "user" | "failure" | "project" | undefined>
++>;
++
++// `category` is the literal union too.
++export type MemorySearchCategoryIsUnion = Assert<
++  Equals<
++    MemorySearchStatic["category"],
++    "failure" | "correction" | "insight" | "preference" | "convention" | "tool-quirk" | undefined
++  >
++>;
++
++// `role` is the literal union.
++export type SessionSearchRoleIsUnion = Assert<
++  Equals<SessionSearchStatic["role"], "user" | "assistant" | undefined>
++>;
++
++// A widened (unknown) property would have failed the three assertions above;
++// this one pins the opposite direction so a future edit cannot quietly loosen
++// the handler to accept anything.
++export type MemorySearchTargetIsNotUnknown = Assert<
++  Equals<Equals<MemorySearchStatic["target"], unknown>, false>
++>;
++
++export const __typecheckOnly = { memorySearch, sessionSearch } as const;
+diff --git a/tsconfig.build.json b/tsconfig.build.json
+index 7bc24dea3..fcbb99930 100644
+--- a/tsconfig.build.json
++++ b/tsconfig.build.json
+@@ -6,6 +6,7 @@
+   },
+   "include": [
+     "src/handlers/review-memory-ops.ts",
+-    "src/handlers/background-review.ts"
++    "src/handlers/background-review.ts",
++    "src/tools/schema-compat.ts"
+   ]
+ }
+diff --git a/tsconfig.json b/tsconfig.json
+index 88a964620..e27be2a38 100644
+--- a/tsconfig.json
++++ b/tsconfig.json
+@@ -21,6 +21,6 @@
+     "rootDir": ".",
+     "verbatimModuleSyntax": false
+   },
+-  "include": ["src/**/*.ts"],
+-  "exclude": ["node_modules", "dist", "test"]
++  "include": ["src/**/*.ts", "test/types/**/*.ts"],
++  "exclude": ["node_modules", "dist"]
+ }
