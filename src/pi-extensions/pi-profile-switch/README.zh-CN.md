@@ -157,6 +157,8 @@ JSON 顶层直接写 profile 对象。所有字段都可省略；省略的字段
 
 模型是否可用、认证和命令行参数的优先级由 Pi 处理。只声明 `defaultProvider` 或 `defaultModel`，不会设置 profile 的默认模型。同时声明两个模型字段时，无效的 `defaultThinkingLevel` 字符串会产生警告并被忽略，不会移除模型声明。
 
+声明中的模型何时真正生效、已配置的模型范围如何决定它是否被采用、无法采用时会发生什么，以及 profile 不控制哪些内容（费用、授权、会话内更改），见 [模型与 thinking level 选择](docs/model-selection.md)（英文）。
+
 ### 资源选择
 
 profile 引用已有资源，不安装或复制资源。各类引用的写法如下：

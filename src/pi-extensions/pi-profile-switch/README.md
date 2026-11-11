@@ -165,6 +165,8 @@ The profile object is the JSON top-level value. Every field is optional; omitted
 
 Pi handles model availability, authentication, and command-line precedence. Declaring only `defaultProvider` or `defaultModel` does not set a profile default model. When both model fields are declared, an invalid `defaultThinkingLevel` string produces a warning and is ignored without removing the model declaration.
 
+For when a declared model actually takes effect, how the configured model scope decides whether it is used at all, what happens when it cannot be used, and what a profile does not control (cost, authorization, in-session changes), see [Model and thinking-level selection](docs/model-selection.md).
+
 ### Resource selection
 
 Profiles reference existing resources without installing or copying them. Use these reference forms:
