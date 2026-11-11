@@ -1920,6 +1920,66 @@ for (const name of ["find", "grep"]) {
 }
 
 
+// FT-22: exercise the actual clean thought projection, including disclosure,
+// progressive snapshots, source preservation, and a separate visible answer.
+{
+  await emit("session_start", {}, sessionContext([]));
+  await emit("agent_start");
+  const summaries = ["Investigating room tool availability", "Investigating room tool availability", "Exploring filesystem-based room messaging"];
+  const message = {
+    role: "assistant", timestamp: "ft22-summary",
+    content: [
+      { type: "thinking", thinking: summaries.map((text) => `**${text}**`).join(""), thinkingSignature: "reasoning_content" },
+      { type: "text", text: "FT22_VISIBLE_ANSWER" },
+    ],
+  };
+  const before = JSON.stringify(message);
+  const component = new AssistantMessageComponent(message);
+  const render = () => component.render(300).map(stripTerminalSequences);
+  const click = (label) => {
+    const rows = render();
+    const y = rows.findIndex((line) => line.includes(label));
+    assert.ok(y >= 0, label);
+    component.handleMouse({ type: "click", button: "left", x: 4, y, width: 300, height: rows.length });
+  };
+  click("Running(");
+  click("● thought");
+  assert.deepEqual(render().filter((line) => summaries.some((text) => line.includes(text)))
+    .map((line) => line.slice(line.indexOf("Investigating") >= 0 ? line.indexOf("Investigating") : line.indexOf("Exploring")).trim()), summaries);
+  assert.equal(render().filter((line) => line.includes("FT22_VISIBLE_ANSWER")).length, 1);
+  assert.equal(JSON.stringify(message), before);
+  const updated = { ...message, content: [{ ...message.content[0], thinking: message.content[0].thinking + "**Verifying artifacts**" }, message.content[1]] };
+  component.updateContent(updated, true);
+  assert.equal(render().filter((line) => line.includes("Verifying artifacts")).length, 1);
+  click("● thinking");
+  assert.ok(!render().some((line) => line.includes(summaries[0])));
+  assert.ok(render().some((line) => line.includes("FT22_VISIBLE_ANSWER")));
+
+  // A malformed pseudo-span must never become a thematic break in the actual
+  // clean component. Compare it to native thought Markdown at the same width.
+  const { ThoughtPresentation } = await import("../extensions/thought-presentation.ts");
+  for (const text of ["** ****b**", "**a ****b**", "**a**** b**", "**a**** **", "**a****unfinished ", "**a****unfinished\t"]) {
+    const malformed = { ...message, content: [{ ...message.content[0], thinking: text }, message.content[1]] };
+    component.updateContent(malformed, false);
+    click("● thought");
+    const expected = new Markdown(text, 0, 0, getMarkdownTheme()).render(300 - 13).map(stripTerminalSequences);
+    const actual = new ThoughtPresentation().details({ markdownTheme: getMarkdownTheme() }, text, theme, 300 - 13)
+      .map(stripTerminalSequences).map((line) => line.replace(/^  [│└] /u, ""));
+    assert.deepEqual(actual, expected, text);
+    for (const width of [160, 24, 160]) {
+      const rows = component.render(width).map(stripTerminalSequences).map((line) => line.trimEnd());
+      const header = rows.findIndex((line) => line.includes("● thought"));
+      const collapse = rows.findIndex((line) => line.includes("[↑ Collapse]"));
+      const projected = rows.slice(header + 1, collapse).map((line) => line.replace(/^  │    [│└] ?/u, ""));
+      const native = new Markdown(text, 0, 0, getMarkdownTheme()).render(width - 9)
+        .map(stripTerminalSequences).map((line) => line.trimEnd());
+      assert.deepEqual(projected, native, `${JSON.stringify(text)} at width ${width}`);
+      assert.ok(!rows.some((line) => /─{20}/u.test(line)), "malformed summary must not turn into a thematic break");
+    }
+    click("● thought");
+  }
+}
+
 // Clean mode owns thought disclosure. Ctrl+T is intercepted without changing
 // Pi's persisted hideThinkingBlock setting, while non-clean modes still use
 // Pi's original toggle implementation.
@@ -4501,5 +4561,7 @@ assert.notEqual(TuiAltScreen.prototype.getActiveSelectionText, patchedSelectionC
   assert.equal(untouched.renderCall(), "kept", "an unlisted tool must keep its renderers");
 }
 
+// Keep focused thought regressions in the package's normal test command too.
+await import("./thought-presentation.mjs");
 rmSync(agentDir, { recursive: true, force: true });
 console.log("Regression suite passed.");

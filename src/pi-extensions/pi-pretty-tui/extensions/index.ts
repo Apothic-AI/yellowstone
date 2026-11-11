@@ -1545,6 +1545,10 @@ export default function prettyTui(pi: ExtensionAPI) {
           member.thinking ?? thinkingText(message),
           groupTheme,
           Math.max(1, childWidth - visibleWidth("  │ ")),
+          // Delimiter eligibility must see original whitespace: timeline text
+          // is trimmed for display and can hide an invalid unfinished tail.
+          message.content.filter((item: any) => item?.type === "thinking" && typeof item.thinking === "string")
+            .map((item: any) => item.thinking).join("\n\n"),
         ));
       }
       const decorated = contentLines.map((line, index) =>
