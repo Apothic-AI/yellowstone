@@ -6,7 +6,7 @@
 [subrepo]
 	remote = https://github.com/Apothic-AI/pi-pretty-tui
 	branch = main
-	commit = 64e9ddd2c025bac888d541981361a63d1c9fffdb
-	parent = 0ce66c8bc6cf9d817507b468ade11ebe023244d6
+	commit = 47d3e52c97b410e931b2f6caf7e9e87ea7cda926
+	parent = 5c777f2dd705f1666c878434974792daf8f2abee
 	method = merge
 	cmdver = 0.4.9
