@@ -28,7 +28,16 @@
 # while the copies there have drifted. If you already keep the skills there as
 # hand-copies, see docs/mycord.md for the one-time cleanup.
 yellowstone	bundle	./yellowstone-skill	This repo's own install/configure/upgrade guide; home is this repo by definition.
-hotshot	bundle	./home/.agents/skills/hotshot	Apothic-AI/one-shot-genius exists but is empty (0 bytes, no commits), so `npx skills add` cannot fetch it yet. Becomes kind=repo once the skill is pushed.
+# hotshot — retired 2026-11-09, recorded here because the row it left was still being read as
+# "bundled from this repo" by the smoke gate, install.sh and yellowstone-skill/SKILL.md.
+# Its home repository `Apothic-AI/one-shot-genius` advertises ZERO refs: measured
+# 2026-11-11 with `git ls-remote https://github.com/Apothic-AI/one-shot-genius` -> exit 0,
+# no lines. Reachable and empty, not unreachable — a repo with no commits cannot be fetched,
+# so `npx skills add` and a checkout both resolve nothing. The 198-line SKILL.md and its
+# empty `.env` were removed from home/.agents/skills/hotshot/ in 99e4271dd, which said "no
+# references remain" while these did. It is not re-added as kind=repo until the upstream has
+# a commit; `~/.agents/skills/hotshot` is in test/retired-paths.txt so the mirror cannot
+# quietly recreate it in the meantime.
 herdr	repo	bitnom/fleet-skills	Fleet-owned manual derived from the stable Herdr skill: Pi/pil-only spawning plus target verification. Product CLI support remains in Herdr; its generic spawn examples are not fleet policy.
 dagr-producer	dagr	herdr-dagr	Owned by the herdr-dagr plugin pinned in herdr/plugins.toml. Never bundle: `dagr --skill` is byte-identical to the plugin's own copy, so a bundled copy is a silent fork of a file the plugin already owns.
 unblock	repo	Apothic-AI/unblock	Owned by our fork, which ships skills/unblock/SKILL.md. The fork's copy is newer than any bundled copy (it documents queue-page sign-in), so bundling would freeze agents on a stale skill.

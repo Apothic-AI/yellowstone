@@ -9,3 +9,12 @@
 # Form: the destination under $HOME, as install.sh --dry-run prints it.
 ~/.pi/agent/extensions/nonblock.ts
 ~/.pi/agent/extensions/transient-error-retry.ts
+# hotshot's bundled copy left the tree in 99e4271dd because its upstream
+# (Apothic-AI/one-shot-genius) advertises zero refs — re-measured 2026-11-11 with
+# `git ls-remote`, exit 0 and no lines. The row that bundled it survived that
+# commit in skills/skills.tsv and kept the manifest, install.sh's hotshot note and
+# the skill table describing a directory that no longer existed. Listing the
+# destination here is what makes the retirement enforced rather than remembered:
+# the install suite fails if the installer ever recreates it, and the mirror gate
+# fails if a file under home/.agents/skills/hotshot/ comes back.
+~/.agents/skills/hotshot

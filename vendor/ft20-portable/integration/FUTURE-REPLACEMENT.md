@@ -16,8 +16,8 @@ separate release with its own acceptance, under the parent's authority.
 `home/.pi/agent/settings.json` is a template. `scripts/json-edit.js` rewrites `@YELLOWSTONE_REPO@/…`
 to `<checkout>/…` at install time, and `docs/pi-config.md` records this as the live mechanism for the
 nine `src/pi-extensions/…` entries. A local Pi package path must resolve from `~/.pi/agent/` in the
-end, so an absolute render is what makes the entry loadable; writing a literal `/home/bitnom/Code/…`
-would hard-code this machine and break every other install.
+end, so an absolute render is what makes the entry loadable; writing a literal
+`/home/<operator>/Code/…` would hard-code this machine and break every other install.
 
 ## What must be true before it is applied
 

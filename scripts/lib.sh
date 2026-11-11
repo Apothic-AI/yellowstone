@@ -224,9 +224,16 @@ home_dest_roots() {
 #
 #   $PI_DIR/secrets  empty <provider> files for the operator to fill in. A mirror
 #                    copy of a credential is the one thing that must never exist.
+#   $AGENTS_SKILLS   links, created by scripts/skills-sync.sh from skills/skills.tsv.
+#                    No file under home/.agents/skills is shipped, because a skill's
+#                    source is the tree that owns it. The one row that used to
+#                    require shipped bytes here (hotshot, kind=bundle) was retired
+#                    when its upstream was measured empty, so the root now carries
+#                    nothing a mirror could reproduce and belongs in this list
+#                    rather than being satisfied by a placeholder file.
 #   $SYSOPS_DIR      an empty working directory for the sysops space.
 home_generated_dirs() {
-  printf '%s\n' "$PI_DIR/secrets" "$SYSOPS_DIR"
+  printf '%s\n' "$PI_DIR/secrets" "$AGENTS_SKILLS" "$SYSOPS_DIR"
 }
 
 # Every file under home/<subtree>, as a path relative to home/.

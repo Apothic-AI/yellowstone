@@ -7,13 +7,16 @@
 #
 #   ./test/run.sh            all suites
 #   ./test/run.sh install    one suite
-#   ./test/run.sh gates      the two monorepo gates, on the host (see below)
+#   ./test/run.sh gates      the host-side gates, in one traversal (see below)
 #
-# `gates` is deliberately not a container suite. Both gates clone the repository
+# `gates` is deliberately not a container suite. Most of them clone the repository
 # and talk to its remotes, so they need network and a real git; the image has
 # neither on purpose. They are also the checks that say whether the subrepo
-# conversion and the install sources are still coherent, which is a question you
-# ask on the host before pushing, not inside a sandbox.
+# conversion, the install sources and the mirror are still coherent, which is a
+# question you ask on the host before pushing, not inside a sandbox.
+#
+# Every test/verify-*.sh is either invoked here or the run fails — see gate_wiring
+# at the end of the block. A control that no wrapper runs is a file, not a check.
 set -euo pipefail
 cd "$(dirname -- "$0")/.."
 
@@ -39,13 +42,20 @@ if [ "${1:-}" = gates ]; then
   # it: the total below is computed from the calls actually made, not from prose.
   gates_run=0
   gates_failed=0
+  gated=""
   gate() {
     gates_run=$((gates_run + 1))
+    gated="$gated $1"
     if "$@"; then return 0; fi
     gates_failed=$((gates_failed + 1))
     rc=1
     return 0
   }
+  # Every control under test/verify-*.sh must be RUN here, or the run fails. A
+  # verify script that nothing invokes is the state this suite keeps finding in
+  # other people's work: the file reads as coverage and no wrapper ever runs it.
+  # The wiring check at the end of this block is derived from the directory, so
+  # adding a control without wiring it to a `gate` call fails here.
   gate ./test/verify-subrepo-roundtrip.sh
   echo
   gate ./test/verify-monorepo-install.sh
@@ -86,6 +96,32 @@ if [ "${1:-}" = gates ]; then
   # whatever happened to be true on this machine the day it was written — and its
   # first version passed the revert case for an hour, in production, green.
   gate ./test/verify-revert-detection.sh
+  echo
+  # The revert-detection gate's own environment test, which existed and that nothing
+  # ran. It runs that script under the Git environment a push hook exports
+  # (GIT_DIR, GIT_INDEX_FILE, GIT_OBJECT_DIRECTORY, GIT_COMMON_DIR, …) and requires
+  # the caller's HEAD, branch, index, tracked-file hashes and config to be untouched
+  # on both a pass and a forced failure. Hooks are the one caller that can hand a
+  # gate a pointer to somebody else's repository, and a gate that rewrites the
+  # pusher's index on its way to reporting green is worse than no gate.
+  gate ./test/verify-revert-detection-invariants.sh
+  echo
+  # The wiring check, last so the run above already shows what exists. Derived from
+  # the directory, not restated here: every test/verify-*.sh must have been invoked
+  # by a `gate` call above, or this fails. It runs through gate() like the rest, so
+  # a control added without wiring is a red run and not a silent gap.
+  gate_wiring() {
+    local g unwired=""
+    for g in ./test/verify-*.sh; do
+      case " $gated " in *" $g "*) ;; *) unwired="$unwired $g" ;; esac
+    done
+    if [ -n "$unwired" ]; then
+      echo "FAIL unwired control(s) — a verify script this wrapper never runs:${unwired}"
+      return 1
+    fi
+    echo "ok   every test/verify-*.sh control is wired into this list"
+  }
+  gate gate_wiring
   echo
   if [ "$gates_failed" -eq 0 ]; then
     echo "gates: ${gates_run}/${gates_run} passed, rc=0"

@@ -92,6 +92,85 @@ fingerprint() {
       done )
 }
 
+# ------------------------------------------------------------ lint scope ----
+# Which lint applies to which half of the tree.
+#
+# `vendor/` holds two different things and treating them alike damages both ways:
+# pointing the style or path lint at the accepted payload would demand edits to
+# files that directory forbids editing, and a blanket `--exclude-dir=vendor` would
+# stop the credential scan from looking at third-party bytes at all — where a real
+# secret is hardest to notice. So the split follows **provenance**, and membership
+# is read from a manifest rather than inferred from a prefix:
+#
+#   vendor/pi-hermes-memory-0.10.0-ft20/       accepted third-party payload; a file
+#       is in it iff ft20-provenance/ACCEPTED-13ce3cc6a.sha256 lists that exact path.
+#       Style lint is about how we write docs, so it does not apply to bytes we did
+#       not write, and neither does the developer-path lint: one accepted script
+#       carries its author's TSC_BIN default, which vendor/ft20-portable/ overrides.
+#   .../ft20-provenance/patches/               our recorded diffs of those bytes;
+#       a patch has to quote the accepted line it changes, so it inherits the same
+#       developer-path exemption and nothing else.
+#   vendor/ft20-portable/                      Yellowstone tooling. Linted as source.
+#
+# The credential scan gets no path exemption at all — see credential_findings().
+# vendor/README.md states this contract for a reader; this block implements it.
+VENDOR_PAYLOAD_REL="vendor/pi-hermes-memory-0.10.0-ft20"
+
+is_accepted_vendor() {  # $1 = repo root, $2 = path relative to it
+  local root="$1" rel="$2" manifest
+  case "$rel" in "$VENDOR_PAYLOAD_REL"/*) ;; *) return 1 ;; esac
+  manifest="$root/$VENDOR_PAYLOAD_REL/ft20-provenance/ACCEPTED-13ce3cc6a.sha256"
+  [ -f "$manifest" ] || return 1
+  # The manifest's second column is the path relative to the payload root, with no
+  # `./` prefix (unlike BASE-MANIFEST.sha256, which uses one — checked, not assumed).
+  awk -v p="${rel#"$VENDOR_PAYLOAD_REL"/}" '$2 == p { found = 1 } END { exit !found }' "$manifest"
+}
+
+is_vendor_provenance() {  # $1 = path relative to the repo root
+  case "$1" in "$VENDOR_PAYLOAD_REL"/ft20-provenance/patches/*) return 0 ;; esac
+  return 1
+}
+
+# The vendor fixtures stand in for a credential with this one literal token. The
+# exemption is the token, never the file and never the directory: a real secret
+# written into a fixture, into the accepted payload, or into a file added under
+# vendor/ later still matches. Findings are printed as paths only — in the failing
+# case the match IS the credential, and a gate log is not the place for it.
+CREDENTIAL_TOKEN_SYNTHETIC='sk-SYNTHETICCREDENT1AL0123456789'
+CREDENTIAL_RE='sk-[a-z0-9]{20,}|ghp_[a-z0-9]{20,}|gho_[a-z0-9]{20,}|AIza[0-9a-z_-]{30,}|BEGIN [A-Z ]*PRIVATE KEY'
+
+credential_findings() {  # $1 = root; prints each affected path once
+  ( cd "$1" 2>/dev/null || return 0
+    # No -h: the filename prefix is what makes the token check possible.
+    grep -roiE "$CREDENTIAL_RE" --exclude-dir=.git --exclude-dir=src . 2>/dev/null \
+      | awk -F: -v s="$CREDENTIAL_TOKEN_SYNTHETIC" '
+          { t = $2; for (i = 3; i <= NF; i++) t = t ":" $i; if (t != s) print $1 }' \
+      | sed 's|^\./||' | LC_ALL=C sort -u )
+}
+
+DEV_PATH_RE='/home/(bitnom|ubuntu|runner|[a-z][a-z0-9_-]*)/Code/'
+
+developer_path_findings() {  # $1 = root; prints each unexempted path once
+  local root="$1" rel
+  ( cd "$root" 2>/dev/null || return 0
+    grep -rnE "$DEV_PATH_RE" --exclude-dir=.git --exclude-dir=src . 2>/dev/null \
+      | grep -v '^\./\.git:' | cut -d: -f1 | sed 's|^\./||' | LC_ALL=C sort -u ) \
+  | while IFS= read -r rel; do
+      [ -n "$rel" ] || continue
+      # Exact, named exemptions. Both are tools that MEASURE a loose checkout, so
+      # their text has to contain the prefix they search for; excluding them by
+      # name keeps the exemption visible, where laundering the pattern would hide
+      # it. Anything else that hardcodes a checkout is a defect.
+      case "$rel" in
+        home/.overlord/tools/relaunch-lane-monorepo.sh) continue ;;
+        home/.overlord/tools/unit-path-refs.sh) continue ;;
+      esac
+      is_accepted_vendor "$root" "$rel" && continue
+      is_vendor_provenance "$rel" && continue
+      printf '%s\n' "$rel"
+    done
+}
+
 # ---------------------------------------------------------------- smoke ------
 suite_smoke() {
   suite smoke
@@ -118,22 +197,33 @@ suite_smoke() {
 
   # Headings must be preceded by a blank line, or they render as part of the
   # previous paragraph. A doc is read by agents, so broken shape is a defect.
-  local badmd=0 f
+  #
+  # Scoped by provenance, not by directory (see "lint scope" above): the accepted
+  # third-party payload keeps its upstream bytes verbatim, so a shape rule we apply
+  # to our own docs would be a demand to edit bytes `vendor/README.md` forbids
+  # editing. Two payload files fail this rule today, which is exactly why the scope
+  # has to be stated rather than discovered by removing the check.
+  local badmd=0 f rel
   while IFS= read -r f; do
+    rel="${f#"$REPO"/}"
+    is_accepted_vendor "$REPO" "$rel" && continue
     if awk 'prev!="" && /^(##|###) /{found=1} {prev=$0} END{exit !found}' "$f"; then
       badmd=1; bad "heading without a preceding blank line: $f"
     fi
   done < <(find "$REPO" -name '*.md' -not -path '*/.git/*' -not -path '*/src/*')
-  [ "$badmd" = 0 ] && ok "every Markdown heading has a preceding blank line"
+  [ "$badmd" = 0 ] && ok "every source Markdown heading has a preceding blank line"
 
-  # Every SKILL.md needs name + description, or hosts refuse to load it.
+  # Every SKILL.md needs name + description, or hosts refuse to load it. Same scope:
+  # a skill we import is not a skill we lint for frontmatter style.
   local bad_skill=0
   while IFS= read -r f; do
+    rel="${f#"$REPO"/}"
+    is_accepted_vendor "$REPO" "$rel" && continue
     if ! head -1 "$f" | grep -qx -- '---'; then bad_skill=1; bad "no frontmatter: $f"; continue; fi
     grep -qE '^name: *[a-z0-9-]+$' "$f" || { bad_skill=1; bad "no name: $f"; }
     grep -qE '^description: *' "$f"   || { bad_skill=1; bad "no description: $f"; }
   done < <(find "$REPO" -name 'SKILL.md' -not -path '*/.git/*' -not -path '*/src/*')
-  [ "$bad_skill" = 0 ] && ok "every SKILL.md has valid frontmatter"
+  [ "$bad_skill" = 0 ] && ok "every source SKILL.md has valid frontmatter"
 
   # The skill manifest must be parseable and internally consistent.
   local manifest="$REPO/skills/skills.tsv"
@@ -142,7 +232,7 @@ suite_smoke() {
     rows="$(grep -vE '^[[:space:]]*(#|$)' "$manifest")"
     ok "skills.tsv parses ($(printf '%s\n' "$rows" | wc -l) rows)"
 
-    local badkind=0
+    local badkind=0 badbundle=0 badretired=0
     while IFS=$'\t' read -r id kind spec why; do
       [ -n "$id" ] || continue
       case "$kind" in
@@ -150,9 +240,32 @@ suite_smoke() {
         *) badkind=1; bad "skills.tsv: $id has unknown kind '$kind'" ;;
       esac
       [ -n "$why" ] || bad "skills.tsv: $id has no why"
-      [ "$kind" = bundle ] && [ ! -d "$REPO/${spec#./}" ] && bad "skills.tsv: $id bundle path missing: $spec"
+      # A bundle row claims this repo is the source of truth, so the bytes must be
+      # here and must be a skill. An empty directory satisfies `-d` and installs
+      # nothing, which is how a retired skill can keep reading as shipped.
+      if [ "$kind" = bundle ]; then
+        if [ ! -d "$REPO/${spec#./}" ]; then
+          badbundle=1; bad "skills.tsv: $id bundle path missing: $spec"
+        elif [ ! -f "$REPO/${spec#./}/SKILL.md" ]; then
+          badbundle=1; bad "skills.tsv: $id bundle path has no SKILL.md: $spec"
+        fi
+      fi
+      # A row may not point into a destination this repo has retired. The hotshot
+      # row did exactly that for two days after its bytes were removed: the row was
+      # the last thing asserting the skill still shipped. test/retired-paths.txt is
+      # the list, so the manifest is checked against it rather than against prose.
+      if [ -f "$REPO/test/retired-paths.txt" ]; then
+        while IFS= read -r retired; do
+          case "$retired" in ''|'#'*) continue ;; esac
+          case "$spec" in
+            *"${retired#\~/}"*) badretired=1; bad "skills.tsv: $id points into retired path $retired" ;;
+          esac
+        done < "$REPO/test/retired-paths.txt"
+      fi
     done <<< "$rows"
     [ "$badkind" = 0 ] && ok "skills.tsv kinds are all valid"
+    [ "$badbundle" = 0 ] && ok "every bundle row ships a SKILL.md at its path"
+    [ "$badretired" = 0 ] && ok "no skills.tsv row points into a retired path"
   else
     bad "missing skills/skills.tsv"
   fi
@@ -228,10 +341,45 @@ suite_smoke() {
   check "skill warns it is NOT pi-codex-goal" grep -q 'not.*pi-codex-goal' "$REPO/yellowstone-skill/SKILL.md"
   check "skill documents the Replace goal modal trap" \
     grep -q 'Replace goal' "$REPO/yellowstone-skill/SKILL.md"
+  # The shipped overlord doc is the role-NEUTRAL space contract: what is true for
+  # every lane in the directory, with role instructions delegated to `.pi/modes/`.
+  # These are the headings it actually carries. The list this replaces
+  # (`## Intake`, `### Goal-driven lanes`, `### Reserved right now`,
+  # `## Operational invariants`) named sections of the older role-bearing document,
+  # which still exists at docs/overlord-orchestrator-AGENTS-2026-11-08.md — so the
+  # check was demanding that the shipped file grow role prose back, and it failed
+  # for as long as nobody looked. Assert what the file is, not what it replaced.
   local sec
-  for sec in '## Intake' '### Goal-driven lanes' '### Reserved right now'; do
+  for sec in '## Two reads that lie' '## Degraded start' '## Absolutes' \
+             '## Where things live' '## Session continuity and reloads'; do
     check "overlord doc carries '$sec'" grep -qF "$sec" "$REPO/home/.overlord/AGENTS.md"
   done
+  # Role-neutral core: the doc names where role text lives rather than carrying it.
+  check "overlord doc delegates roles to .pi/modes/" \
+    grep -qF 'Role instructions live in' "$REPO/home/.overlord/AGENTS.md"
+  # ...and the role prose it used to carry has not come back. This is the direction
+  # the headings above cannot see: a lane can add a `## Intake` section without
+  # breaking any positive assertion.
+  local stale_role=""
+  for sec in '## Role and boundaries' '## Intake:' '## Directing agents' '### Goal-driven lanes'; do
+    grep -qF "$sec" "$REPO/home/.overlord/AGENTS.md" && stale_role="$stale_role$sec; "
+  done
+  check_eq "role prose has not been resurrected into the overlord AGENTS.md" "" "$stale_role"
+  # Role append, checked against the files that carry it: each space role names a
+  # fleet mode key and composes onto it. `replace` would shadow the fleet contract
+  # the lane is supposed to keep, so the strategy is part of the invariant.
+  local role_n=0 role_bad="" role_f
+  for role_f in "$REPO"/home/.overlord/.pi/modes/*.json; do
+    [ -f "$role_f" ] || continue
+    role_n=$((role_n + 1))
+    node -e 'const s = require(process.argv[1]);
+      const ok = typeof s.key === "string" && s.key.length > 0 &&
+                 s.promptStrategy === "append" &&
+                 typeof s.systemPrompt === "string" && s.systemPrompt.length > 0;
+      process.exit(ok ? 0 : 1)' "$role_f" || role_bad="$role_bad$(basename "$role_f") "
+  done
+  check "overlord space ships role files" test "$role_n" -gt 0
+  check_eq "every overlord role file composes with promptStrategy append" "" "$role_bad"
   # Goal state is footer-only: the claim must stay true, or the doc is wrong.
   if command -v herdr >/dev/null 2>&1 && herdr workspace list >/dev/null 2>&1; then
     local any_pane goal_keys
@@ -299,7 +447,7 @@ suite_smoke() {
   check "nonblock targets the attach trap" grep -q 'action !== "attach"' "$hooks"
   check "skill documents the blocking table" \
     grep -q "jobs action='attach'" "$REPO/yellowstone-skill/SKILL.md"
-  check "overlord doc carries the invariants" grep -qF '## Operational invariants' "$REPO/home/.overlord/AGENTS.md"
+  check "overlord doc carries the invariants" grep -qF '## Absolutes' "$REPO/home/.overlord/AGENTS.md"
 
   # Plugin manifest.
   local n
@@ -328,29 +476,73 @@ suite_smoke() {
   # test fixtures (`sk-` and PEM placeholders in redaction tests) except one
   # real one — `herdr-voice-linux/scripts/merge-lanes` hardcodes
   # `/home/<user>/Code/herdr-voice-linux`; that belongs to the fork, not here.
-  local hits
-  hits="$(grep -rniE '(sk-[a-z0-9]{20,}|ghp_[a-z0-9]{20,}|gho_[a-z0-9]{20,}|AIza[0-9a-z_-]{30,}|BEGIN [A-Z ]*PRIVATE KEY)' \
-          --exclude-dir=.git --exclude-dir=src "$REPO" 2>/dev/null | grep -v 'test/run-tests.sh' | wc -l)"
-  check_eq "no credentials in the tree" 0 "$hits"
+  #
+  # `vendor/` is NOT excluded, and that is deliberate. It is scanned in full, and
+  # the only thing exempted is the exact synthetic stand-in token the vendor
+  # fixtures use (see CREDENTIAL_TOKEN_SYNTHETIC). A path or directory exemption
+  # here would be the one place a real secret could hide from every gate.
+  local cred_hits cred_paths
+  cred_hits="$(credential_findings "$REPO")"
+  cred_paths="$(printf '%s\n' "$cred_hits" | grep -c . || true)"
+  # Paths and a count only: in the failing case the matched text IS the credential.
+  [ "$cred_paths" = 0 ] || printf '       credential-shaped tokens in:%s\n' \
+      "$(printf '%s\n' "$cred_hits" | sed '/^$/d' | sed 's/^/ /' | tr '\n' ' ')"
+  check_eq "no credentials in the tree" 0 "$cred_paths"
 
-  # Match any concrete developer home directory rather than one literal path,
-  # so this check cannot be satisfied or defeated by its own text. In a git
-  # worktree `.git` is a *file* whose one line is the main checkout's gitdir, so
-  # the directory exclusion alone would report the lane's scaffolding as tree
-  # content; the second filter drops that line and nothing else. `src/` is
-  # excluded on purpose: those are other repositories' trees at pinned commits,
-  # delivered by `git subrepo`, and their fixtures are not ours to edit — the
-  # credentials check above carries the same exclusion for the same reason.
-  # One file in the mirror names a developer path on purpose and is allowed to:
-  # `relaunch-lane-monorepo.sh` is the tool that MEASURES loose references, and
-  # its expression has to contain the prefix it searches for — the same
-  # self-matching grep that once made the migration count unable to reach zero.
-  # Excluding it by name, rather than by laundering the pattern, keeps the
-  # exemption visible: anything else that hardcodes a checkout is a defect.
-  hits="$(grep -rnE '/home/(bitnom|ubuntu|runner|[a-z]+)/Code/' --exclude-dir=.git --exclude-dir=src "$REPO" 2>/dev/null \
-          | grep -v '^[^:]*/\.git:' \
-          | grep -v '^[^:]*/home/\.overlord/tools/relaunch-lane-monorepo\.sh:' | wc -l)"
-  check_eq "no absolute developer paths in the tree" 0 "$hits"
+  # The negative direction, because an allowlist that is never exercised decays
+  # into a blanket exclusion: plant a real-looking credential and a real-looking
+  # developer path in a SCANNED location and require both to still be RED. Both
+  # plants go under `vendor/` deliberately — that is where a `--exclude-dir=vendor`
+  # would have hidden them, so the plant is the direct test of "no blanket vendor
+  # exclusion". The planted tokens are assembled at run time so this file contains
+  # no matching literal of its own.
+  local plant; plant="$(mktemp -d)"
+  mkdir -p "$plant/$VENDOR_PAYLOAD_REL/scripts" "$plant/$VENDOR_PAYLOAD_REL/ft20-provenance" \
+           "$plant/vendor/ft20-portable"
+  cp "$REPO/$VENDOR_PAYLOAD_REL/ft20-provenance/ACCEPTED-13ce3cc6a.sha256" \
+     "$plant/$VENDOR_PAYLOAD_REL/ft20-provenance/"
+  # An accepted-payload file: its upstream TSC default must stay exempt.
+  cp "$REPO/$VENDOR_PAYLOAD_REL/scripts/verify.sh" "$plant/$VENDOR_PAYLOAD_REL/scripts/" 2>/dev/null || true
+  # Our own tooling: its synthetic sentinels must stay exempt too.
+  cp "$REPO/vendor/ft20-portable/probes/actual-probes.mjs" "$plant/vendor/ft20-portable/" 2>/dev/null || true
+  printf 'const k = "%s%s";\n' 'sk-' 'L1VERealCredential0123456789' \
+    > "$plant/vendor/ft20-portable/planted.txt"
+  printf '# %s/%s/Code/checkout\n' /home stranger > "$plant/planted-path.txt"
+  check_eq "a planted real credential outside the allowlist is still caught" \
+    "vendor/ft20-portable/planted.txt" "$(credential_findings "$plant" | tr '\n' ' ' | sed 's/ $//')"
+  check_eq "a planted developer path outside the allowlist is still caught" \
+    "planted-path.txt" "$(developer_path_findings "$plant" | tr '\n' ' ' | sed 's/ $//')"
+  # And the exemption still works: the synthetic fixture token is not a finding.
+  check_eq "the synthetic fixture token itself is not a finding" 0 \
+    "$(credential_findings "$plant" | grep -c 'actual-probes' || true)"
+  # Nor is the accepted-payload TSC default, which is why the planted path above had
+  # to be planted somewhere else to be caught.
+  check_eq "the accepted payload's developer path stays exempt by provenance" 0 \
+    "$(developer_path_findings "$plant" | grep -c 'scripts/verify.sh' || true)"
+  rm -rf "$plant"
+
+  # Match any concrete developer home directory rather than one literal path, so
+  # this check cannot be satisfied or defeated by its own text. In a git worktree
+  # `.git` is a *file* whose one line is the main checkout's gitdir, so the
+  # directory exclusion alone would report the lane's scaffolding as tree content;
+  # the filter drops that line and nothing else. `src/` is excluded on purpose:
+  # those are other repositories' trees at pinned commits, delivered by
+  # `git subrepo`, and their fixtures are not ours to edit — the credentials check
+  # above carries the same exclusion for the same reason.
+  #
+  # Two tools in the mirror name a developer path on purpose and are allowed to:
+  # `relaunch-lane-monorepo.sh` and `unit-path-refs.sh` are the tools that MEASURE
+  # loose references, and their expressions have to contain the prefix they search
+  # for — the same self-matching grep that once made the migration count unable to
+  # reach zero. Excluding them by name, rather than by laundering the pattern,
+  # keeps the exemption visible. The accepted vendor payload and its recorded
+  # patches are exempt by provenance (see "lint scope"): one accepted script
+  # carries its author's TSC default. That exemption is in
+  # developer_path_findings() so the planted-path check above exercises it rather
+  # than restating it.
+  local dev_paths; dev_paths="$(developer_path_findings "$REPO")"
+  [ -z "$dev_paths" ] || printf '       developer paths in: %s\n' "$(printf '%s\n' "$dev_paths" | tr '\n' ' ')"
+  check_eq "no absolute developer paths in the tree" "" "$dev_paths"
 }
 
 # -------------------------------------------------------------- install -----
@@ -603,7 +795,9 @@ suite_mirror() {
   nonexec="$(find "$REPO/home/.overlord/tools" "$REPO/home/.overlord/bin" -maxdepth 1 -type f ! -perm -u+x | wc -l)"
   check_eq "every mirrored tool is executable" 0 "$nonexec"
   # relaunch-lane-monorepo.sh names the pattern on purpose: it is the tool that
-  # measures loose references. Every other tool must reach the fleet's own code
+  # measures loose references. `unit-path-refs.sh` does the same job for systemd
+  # units, so it carries the prefix it searches for in its own header (and in the
+  # example the retired unit used). Every other tool must reach the fleet's own code
   # through the installed package list, not through a checkout path.
   #
   # Two shapes, because the first version of this check only caught the first:
@@ -612,7 +806,7 @@ suite_mirror() {
   # path hid from the guard while a real ~/Code dependency was still there.
   local codept=0 codept_join
   codept="$(grep -rnE '/home/[a-z]+/Code/' "$REPO/home/.overlord/tools" 2>/dev/null \
-           | grep -vE 'yellowstone|relaunch-lane-monorepo' | wc -l)"
+           | grep -vE 'yellowstone|relaunch-lane-monorepo|unit-path-refs' | wc -l)"
   codept_join="$(grep -rnE '"Code"[[:space:]]*/[[:space:]]*"' "$REPO/home/.overlord/tools" 2>/dev/null \
            | grep -v 'yellowstone' | wc -l)"
   check_eq "no mirrored tool hardcodes a ~/Code path" 0 "$((codept + codept_join))"
@@ -828,10 +1022,26 @@ suite_failures() {
 suite_builder() {
   suite builder
 
-  local script="$REPO/home/.agents/skills/shared-flyio-build-server/builder-idle.sh"
+  # The skill is a repo-kind row in skills/skills.tsv whose source is the in-tree copy
+  # under src/skills/fleet-skills/. The suite used to read
+  # `home/.agents/skills/shared-flyio-build-server/`, which is where an INSTALL puts the
+  # link — not where this repo keeps the script — so every case below ran `sh` against a
+  # path that did not exist, printed "cannot open", and failed for a reason that had
+  # nothing to do with the verdict. A gate is allowed to be red; it is not allowed to be
+  # red about its own pointer. Resolve the tracked source, and say so when it is absent
+  # (a bare `docker run` uses the baked image, which excludes src/ on purpose).
+  local skill_dir="$REPO/src/skills/fleet-skills/shared-flyio-build-server"
+  local script="$skill_dir/builder-idle.sh"
+  local st="$skill_dir/builder-state.sh"
   local home; home="$(new_home builder)"
   local shims="$home/shims"
   mkdir -p "$shims"
+
+  if [ ! -f "$script" ] || [ ! -f "$st" ]; then
+    bad "the builder skill is not in this work tree" \
+        "looked for $script and $st — the baked image excludes src/; run ./test/run.sh builder, which mounts the checkout"
+    return
+  fi
 
   # A fake builder-state: the verdict reads lease facts from `status --json` only.
   cat > "$shims/builder-state" <<'EOS'
@@ -919,11 +1129,11 @@ EOS
   # The lease must not outlive the record: a child that inherits the lock fd keeps
   # the shared lock held after the recorded holder is gone, and `park` then refuses
   # forever with nothing to name.
-  local st="$REPO/home/.agents/skills/shared-flyio-build-server/builder-state.sh"
   local ldir="$home/state-lock"; rm -rf "$ldir"; mkdir -p "$ldir"
   BUILDER_STATE_DIR="$ldir" sh "$st" lease probe -- sleep 30 >/dev/null 2>&1 &
   local shellpid=$!
-  for _ in $(seq 1 100); do [ -n "$(ls "$ldir/leases" 2>/dev/null)" ] && break; done
+  local lease_seen=0
+  for _ in $(seq 1 100); do [ -n "$(ls "$ldir/leases" 2>/dev/null)" ] && { lease_seen=1; break; }; done
   for _ in $(seq 1 100); do pgrep -P "$shellpid" -x sleep >/dev/null 2>&1 && break; done
   local child; child="$(pgrep -P "$shellpid" -x sleep 2>/dev/null | head -1)"
   for _ in $(seq 1 20); do :; done
@@ -931,6 +1141,10 @@ EOS
   local held=0
   [ -n "$child" ] && [ -d "/proc/$child" ] \
     && held="$(ls -l "/proc/$child/fd" 2>/dev/null | grep -c 'lease.lock')"
+  # When nothing was created, `held` is 0 and the old assertion passed without ever
+  # exercising the lock — a vacuous green in the one check about a lock nobody can see.
+  # So assert the fixture happened: no lease record means this case proved nothing.
+  check_eq "the lease probe created a lease record" 1 "$lease_seen"
   check_eq "the leased child does not inherit the lock fd" "0" "${held:-0}"
   kill -9 "$child" 2>/dev/null
 }

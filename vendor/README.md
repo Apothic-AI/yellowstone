@@ -31,3 +31,34 @@ patch series that reconstructs them.
 Read `pi-hermes-memory-0.10.0-ft20/PROVENANCE.md` for the upstream identity (tarball, npm
 integrity, 92-file manifest) and `ft20-portable/README.md` for how the candidate is verified and
 what it does **not** claim.
+
+## Which lint applies here, and why it is decided by provenance
+
+A tree-wide lint cannot tell "bytes we wrote" from "bytes we imported for auditability", and
+getting that split wrong does damage in both directions: pointing the style or path lint at the
+payload would demand edits to files this directory forbids editing, and a blanket
+`--exclude-dir=vendor` would stop the credential scan from looking at third-party bytes at all —
+which is exactly where a real secret would be hardest to notice.
+
+So the split is by **provenance, not directory name**, and membership is read from a manifest
+rather than guessed from a prefix:
+
+| Half | What decides membership | Style lint (Markdown shape, skill frontmatter) | Developer-path lint | Credential scan |
+|---|---|---|---|---|
+| Accepted payload `pi-hermes-memory-0.10.0-ft20/` | the exact path is listed in `ft20-provenance/ACCEPTED-13ce3cc6a.sha256` (106 files) | not applied — we did not write it | not applied — one accepted script carries its author's `TSC_BIN` default, which `ft20-portable/` overrides | **applied** |
+| Recorded diffs `pi-hermes-memory-0.10.0-ft20/ft20-provenance/patches/` | the path is under that directory | not applied | not applied — a patch has to quote the accepted line it changes | **applied** |
+| Yellowstone tooling `ft20-portable/` | everything else | applied | applied | **applied** |
+
+The credential column has no exemption by path at all. The vendor fixtures use one literal
+synthetic token (`sk-SYNTHETICCREDENT1AL…`) to stand in for a credential, and the scan exempts
+that **exact token** wherever it appears — so a real secret written into a fixture, into the
+payload, or into a file added under `vendor/` later is still a finding, and a blanket exclusion
+is not needed to keep the fixtures quiet. The scan reports paths and counts only; it never prints
+the matched text, because in the failing case that text is the credential.
+
+Two consequences worth stating plainly, because both are load-bearing:
+
+* A file added under `vendor/` that the accepted manifest does not list is **source**, and is
+  linted like source. The manifest is what makes the payload exempt, not the directory it sits in.
+* Nothing here exempts the payload from the credential scan. If a future accepted commit brings a
+  real key with it, the scan is the thing that must fail, and it will.

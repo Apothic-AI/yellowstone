@@ -629,7 +629,6 @@ it and nothing else decides what gets installed.
 |---|---|---|
 | `yellowstone` | this repo | symlinked from `yellowstone-skill/` |
 | `herdr` | this repo (a fork of the shipped skill) | symlinked from `home/.agents/skills/herdr/` |
-| `hotshot` | this repo, for now | symlinked from `home/.agents/skills/hotshot/` |
 | `dagr-producer` | the `herdr-dagr` plugin | `dagr --skill`, then symlinked |
 | `unblock` | `Apothic-AI/unblock` | linked from a checkout, else `npx skills add` |
 
@@ -661,15 +660,14 @@ layout. When the CLI comes up empty, `skills-sync.sh` prints the `gh repo clone`
 command to run instead, which is also what you want if you intend to edit the
 skill.
 
-**`bundle` is debt, not a design.** `hotshot`'s home repository
-(`Apothic-AI/one-shot-genius`) exists but is empty, and the `herdr` skill here is
-a fork whose delta is worth sending upstream. `scripts/skills-sync.sh status`
-and `scripts/doctor.sh` both count what is bundled, so the debt stays visible
-instead of turning into an unofficial fork.
-
-`hotshot` reads model ids from `.env` beside its `SKILL.md`. The repo ships that
-file with empty values on purpose: the first run asks once, then writes them
-back, so the choice is the operator's and not the repository's.
+**`bundle` is debt, not a design, and it is now empty.** A bundled skill ships its bytes from
+this repo because no other tree can supply them. `hotshot` was the only row that needed one, and
+its home repository (`Apothic-AI/one-shot-genius`) advertises zero refs — reachable, no commits —
+so it shipped a capability with nothing behind it. It was removed from the tree in 99e4271dd and
+its `skills.tsv` row is gone too; `~/.agents/skills/hotshot` is now listed in
+`test/retired-paths.txt`, so the mirror cannot quietly recreate it. `scripts/skills-sync.sh
+status` still counts bundled rows, so if a future skill has to be bundled the debt shows up
+instead of becoming an unofficial fork.
 
 ## Check for updates
 
@@ -904,7 +902,6 @@ home/
     extensions/            hand-written pi extensions
   .agents/skills/                                                 -> ~/.agents/skills/
     herdr/SKILL.md         how agents drive herdr panes (linked)
-    hotshot/               bundled: its repo is still empty (linked)
     shared-flyio-build-server/  the Fly build box half (linked)
   .local/bin/herdr-agy.sh  reliable waits for agy/grok agents      -> ~/.local/bin/
   .overlord/                                                      -> ~/.overlord/

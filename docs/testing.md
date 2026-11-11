@@ -212,3 +212,18 @@ a machine that never installed the overlord space has nothing to compare against
 `doctor.sh` reports the same comparison with direction and age, but never fails on
 it: doctor is what an operator runs while working, and this gate is what a push
 runs before publishing.
+
+### The wrapper's own wiring check
+
+`./test/run.sh gates` fails if any `test/verify-*.sh` exists that it does not
+invoke. The check is derived from the directory rather than restated in the
+wrapper, because the failure it guards is precisely a control nobody remembers to
+add to a list: `test/verify-revert-detection-invariants.sh` sat in the tree, ran
+nowhere, and so proved nothing about the Git environment a push hook exports
+(`GIT_DIR`, `GIT_INDEX_FILE`, `GIT_OBJECT_DIRECTORY`, …). It is invoked now, and
+it requires the caller's HEAD, branch, index, tracked-file hashes and config to be
+byte-identical after both a passing run and a forced failure.
+
+The pre-push hook carries the same rule in miniature: a check it names but cannot
+find is a **failure**, not a `continue`. A hook that skips a missing script still
+exits 0, which reads as "checked" when it means "checked nothing".
