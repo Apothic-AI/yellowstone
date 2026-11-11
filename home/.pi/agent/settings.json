@@ -32,7 +32,7 @@
     "npm:@narumitw/pi-btw",
     "npm:pi-copy-message",
     "npm:@timmyjl12/pi-model-picker",
-    "npm:@arhen/pi-core-tps-stats",
+    "@YELLOWSTONE_REPO@/vendor/pi-tps-stats-ft28",
     "npm:pi-hermes-memory",
     "npm:agents-cron",
     "npm:pi-beads-extension",

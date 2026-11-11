@@ -142,10 +142,53 @@ function renderSource(source, repoRoot, externalRoot) {
   return path.join(repoRoot, suffix);
 }
 
+// FT-28 is root-carried, not another subrepo. Retire only its upstream identity
+// when the template explicitly selects this vendor path. Keep user filters and
+// refuse incompatible duplicates rather than silently widening resource access.
+function retireTpsUpstream(existing, template, settingsPath, repoRoot, externalRoot) {
+  const target = path.join(repoRoot, 'vendor/pi-tps-stats-ft28');
+  const replacement = (template.packages || []).find(entry =>
+    renderSource(sourceOf(entry), repoRoot, externalRoot) === target);
+  if (!replacement) return [];
+  const matches = [];
+  for (let i = 0; i < existing.length; i++) {
+    const source = sourceOf(existing[i]);
+    if (typeof source !== 'string') continue;
+    const local = source.startsWith('~/') ? path.join(process.env.HOME || '', source.slice(2))
+      : path.resolve(path.dirname(settingsPath), source);
+    const identity = /^(npm:|git:|https?:)/.test(source)
+      ? packageNameOf(existing[i]) : packageNameOf(local);
+    if (local === target || identity === '@arhen/pi-core-tps-stats') matches.push(i);
+  }
+  if (!matches.length) return [];
+  const options = typeof replacement === 'object' ? { ...replacement } : {};
+  delete options.source;
+  const seen = new Map();
+  for (const i of matches) {
+    const entry = existing[i];
+    if (!entry || typeof entry !== 'object') continue;
+    for (const [key, value] of Object.entries(entry)) {
+      if (key === 'source') continue;
+      const encoded = JSON.stringify(value);
+      if (seen.has(key) && seen.get(key) !== encoded)
+        throw new Error(`FT-28: conflicting ${key} filters/options; resolve TPS duplicates before merging`);
+      seen.set(key, encoded);
+      options[key] = value;
+    }
+  }
+  const rendered = Object.keys(options).length ? { ...options, source: target } : target;
+  if (matches.length === 1 && JSON.stringify(existing[matches[0]]) === JSON.stringify(rendered)) return [];
+  const retired = matches.map(i => sourceOf(existing[i]));
+  existing[matches[0]] = rendered;
+  for (const i of matches.slice(1).reverse()) existing.splice(i, 1);
+  return retired;
+}
+
 function mergePackages(settingsPath, templatePath, repoRoot, externalRoot) {
   const settings = readJson(settingsPath, { tolerateCorrupt: true });
   const template = readJson(templatePath).value;
   const existing = Array.isArray(settings.value.packages) ? settings.value.packages : [];
+  const retired = retireTpsUpstream(existing, template, settingsPath, repoRoot, externalRoot);
   // Two sets: the exact source (so a re-run is a no-op) and the package
   // identity (so a different source for the same package is not doubled).
   // Prune entries whose local source has gone. A package entry pointing at a
@@ -213,7 +256,7 @@ function mergePackages(settingsPath, templatePath, repoRoot, externalRoot) {
   // A prune with nothing to add still has to be written: the commonest migration
   // is "the old path went away and the template already names the new one", where
   // added is empty and skipping the write leaves the stale entry in place forever.
-  if (added.length === 0 && pruned.length === 0) {
+  if (added.length === 0 && pruned.length === 0 && retired.length === 0) {
     process.stdout.write('packages: already complete\n');
     return;
   }
@@ -221,6 +264,7 @@ function mergePackages(settingsPath, templatePath, repoRoot, externalRoot) {
   if (settings.existed) { const b = backup(settingsPath); process.stdout.write(`backed up ${path.basename(settingsPath)} -> ${path.basename(b)}\n`); }
   settings.value.packages = existing;
   writeJson(settingsPath, settings.value);
+  if (retired.length) process.stdout.write(`packages: FT-28 replaced ${retired.join(', ')} with root vendor\n`);
   process.stdout.write(`packages: added ${added.join(', ')}\n`);
 }
 

@@ -82,6 +82,7 @@ if [ "${1:-}" = gates ]; then
   # labels were lowercased against the operator's capitalised workspaces, which would
   # have created duplicate spaces rather than failing.
   gate ./test/verify-fleet-manifest.sh
+  gate node ./test/verify-ft28-vendor.mjs
   echo
   # Objective 2 has two halves and only the local one was checked. A development machine
   # installs from src/; a fresh machine installs `git:Apothic-AI/<repo>@<sha>` from each

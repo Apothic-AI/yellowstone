@@ -1,0 +1,16 @@
+{
+  "name": "@yellowstone/pi-tps-stats-candidate",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "description": "Isolated FT-28 metrics-only TPS/TTFT candidate; not installed",
+  "pi": { "extensions": ["./index.ts"] },
+  "scripts": {
+    "test": "node --experimental-strip-types --test test/*.test.mjs",
+    "typecheck": "node scripts/typecheck.mjs",
+    "check": "npm run typecheck && npm test"
+  },
+  "peerDependencies": { "@earendil-works/pi-coding-agent": "*" },
+  "devDependencies": { "@types/node": "^22.0.0", "typescript": "^5.9.3" }
+}
