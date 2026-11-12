@@ -13,6 +13,7 @@
 #   failures  no herdr / no pi / no network: assert clean, explained failures.
 #   resolvers linked-skill resolution across the two layouts.
 #   builder   the box-side idleness verdict and the lease lock-fd fix.
+#   behold    isolated Behold suite and offline installer path checks
 #   all       everything
 #
 # Every suite that writes runs against a fresh HOME under $SANDBOX, so the real
@@ -1222,6 +1223,28 @@ suite_resolvers() {
   check_contains "warns when a checkout lacks the skill" "$out" "neither"
 }
 
+# ---------------------------------------------------------------- behold ----
+suite_behold() {
+  suite behold
+  local home fake rc
+  home="$(new_home behold)"
+  fake="$home/fake-bin"
+  mkdir -p "$fake"
+  printf '#!/bin/sh\nexit 0\n' > "$fake/pi"
+  chmod +x "$fake/pi"
+  in_home "$home" env PATH="$fake:$PATH" bash "$REPO/install.sh" pi behold --yes >"$home/install.log" 2>&1
+  rc=$?
+  check_eq "offline Behold install exits 0" 0 "$rc"
+  check "reporter installed byte-identical" cmp -s "$REPO/src/pi-extensions/behold/pi-extension/behold-state.ts" "$home/.pi/agent/extensions/behold-state.ts"
+  check "CLI is executable" test -x "$home/.local/bin/behold"
+  check "installed CLI runs independently of checkout" env HOME="$home" "$home/.local/bin/behold" --help
+  if bash "$REPO/src/pi-extensions/behold/tests/run-tests.sh"; then
+    ok "Behold isolated suite"
+  else
+    bad "Behold isolated suite"
+  fi
+}
+
 # ------------------------------------------------------------------ main ----
 main() {
   printf 'yellowstone test suite\nrepo: %s\nnode: %s\nherdr: %s\npi: %s\ncontainer memory limit: %s\n' \
@@ -1253,7 +1276,8 @@ main() {
     failures)   suite_failures ;;
     resolvers)  suite_resolvers ;;
     builder)    suite_builder ;;
-    all)        suite_smoke; suite_install; suite_mirror; suite_idempotent; suite_partial; suite_failures; suite_resolvers; suite_builder ;;
+    behold)     suite_behold ;;
+    all)        suite_smoke; suite_install; suite_mirror; suite_idempotent; suite_partial; suite_failures; suite_resolvers; suite_builder; suite_behold ;;
     *) printf 'unknown suite: %s\n' "$SUITE" >&2; exit 2 ;;
   esac
 
