@@ -22,7 +22,8 @@ Stages (default: all, in this order):
   herdr      home/.config/herdr (config.toml), plugins, pi
              integration, home/.local/bin
   pi         home/.pi/agent — settings, models, extensions, configs — then the
-             packages those settings declare
+             packages those settings declare; also install the Behold reporter
+  behold     Behold CLI and Python package into ~/.local/bin and ~/.local/share
   skills     link every agent skill the manifest selects from home/.agents/skills
              and from the repositories that own the rest
   agents     ~/AGENTS.md — the fleet instruction core (home/AGENTS.md)
@@ -49,14 +50,14 @@ while [ $# -gt 0 ]; do
     -y|--yes) ASSUME_YES=1 ;;
     -n|--dry-run) DRY_RUN=1 ;;
     -h|--help) usage; exit 0 ;;
-    herdr|launcher|pi|plugins|skills|agents|extensions|spaces|overlord|secrets|verify) STAGES+=("$1") ;;
+    herdr|launcher|pi|behold|plugins|skills|agents|extensions|spaces|overlord|secrets|verify) STAGES+=("$1") ;;
     *) err "unknown argument: $1"; usage; exit 2 ;;
   esac
   shift
 done
 
 if [ ${#STAGES[@]} -eq 0 ]; then
-  STAGES=(herdr launcher pi skills agents extensions plugins spaces overlord secrets verify)
+  STAGES=(herdr launcher pi behold skills agents extensions plugins spaces overlord secrets verify)
 fi
 
 # Where the pi-goal fork lives (PI_EXTENSIONS_APOTHIC) is a layout path, so its
@@ -159,6 +160,9 @@ install_pi() {
   # everything else is copied. A new per-feature file needs no code here — only
   # a path under home/.pi/agent/ — which is what the mirror is for.
   install_home_tree .pi/agent
+  # Standalone reporter is auto-discovered in the agent extensions directory.
+  install_file "$REPO_ROOT/src/pi-extensions/behold/pi-extension/behold-state.ts" \
+    "$PI_DIR/extensions/behold-state.ts"
 
   # Now let pi install the packages the merged settings.json declares.
   if [ "$DRY_RUN" = 1 ]; then
@@ -169,6 +173,27 @@ install_pi() {
       info "packages reconciled"
     else
       warn "pi update --extensions reported a problem; run 'pi list' to inspect"
+    fi
+  fi
+}
+
+# ------------------------------------------------------------------ behold --
+install_behold() {
+  step "Behold CLI"
+  # The entry point resolves its real path, so a symlink into the installed
+  # component preserves its relative Python import without depending on checkout.
+  local src="$REPO_ROOT/src/pi-extensions/behold" dest="$HOME/.local/share/yellowstone/behold" f
+  while IFS= read -r -d '' f; do
+    install_file "$f" "$dest/${f#"$src"/}"
+  done < <(find "$src/behold" -type f -name '*.py' -print0)
+  install_file "$src/bin/behold" "$dest/bin/behold" 755
+  if [ "$DRY_RUN" = 1 ]; then
+    dryrun "link $(short "$LOCAL_BIN/behold") -> $(short "$dest/bin/behold")"
+  else
+    mkdir -p -- "$LOCAL_BIN"
+    if [ "$(readlink "$LOCAL_BIN/behold" 2>/dev/null || true)" != "$dest/bin/behold" ]; then
+      backup_path "$LOCAL_BIN/behold"
+      ln -sfn -- "$dest/bin/behold" "$LOCAL_BIN/behold"
     fi
   fi
 }
@@ -482,6 +507,7 @@ install_verify() {
 want herdr   && install_herdr
 want launcher && install_launcher
 want pi      && install_pi
+want behold  && install_behold
 want plugins && install_plugins
 want extensions && install_extensions
 want skills   && install_skills

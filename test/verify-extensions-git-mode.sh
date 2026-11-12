@@ -65,8 +65,21 @@ if ! sed -n '/^install_launcher()/,/^}/p' "$REPO_ROOT/install.sh" | grep -q 'pi-
   bad "$NOT_A_PACKAGE is excluded from the install loop but install_launcher() does not install it — the exception is a gap"
 fi
 
+# Behold is the second such component, and for a different reason: it is not a pi package at
+# all, so `pi install` cannot carry it. It is a Python CLI plus a single-file reporter, and
+# install.sh installs it in its own `behold` stage. The exception is verified the same way —
+# the stage must exist AND be called — so a component that is neither in the loop nor behind
+# a working stage still fails this gate instead of being excused.
+DEDICATED_STAGE="behold"
+if ! sed -n '/^install_behold()/,/^}/p' "$REPO_ROOT/install.sh" | grep -q 'behold'; then
+  bad "$DEDICATED_STAGE is excluded from the install loop but install_behold() does not install it — the exception is a gap"
+fi
+if ! grep -q 'want behold  && install_behold' "$REPO_ROOT/install.sh"; then
+  bad "$DEDICATED_STAGE has an install stage but install.sh never calls it — the exception is a gap"
+fi
+
 if [ -n "$listed" ] && [ -n "$present" ]; then
-  only_tree="$(comm -13 <(printf '%s\n' "$listed") <(printf '%s\n' "$present") | grep -vx "$NOT_A_PACKAGE" || true)"
+  only_tree="$(comm -13 <(printf '%s\n' "$listed") <(printf '%s\n' "$present") | grep -vx "$NOT_A_PACKAGE" | grep -vx "$DEDICATED_STAGE" || true)"
   only_list="$(comm -23 <(printf '%s\n' "$listed") <(printf '%s\n' "$present"))"
   if [ -n "$only_tree" ]; then
     bad "in src/pi-extensions/ but absent from install.sh's loop — never installed in production: $(echo "$only_tree" | tr '\n' ' ')"
