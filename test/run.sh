@@ -76,6 +76,12 @@ if [ "${1:-}" = gates ]; then
   # requires a difference that has been decided to be written down rather than tolerated.
   gate ./test/verify-space-scaffold.sh
   echo
+  # The shared role contracts -- the ones every space composes onto. The fleet's
+  # pi-rooms communication cadence lived only in one space's project overlay, so a lane
+  # in any other space never saw it; the rule belongs in the shared contracts, in both
+  # roles, and this gate holds both of them to it.
+  gate ./test/verify-shared-mode-cadence.sh
+  echo
   # What a new machine actually receives: the plugin manifest must link components out
   # of the repo (Objective 4) and the space table must carry all seven labels verbatim.
   # Both failed silently: two plugins pointed at ~/Code checkouts, and three space
