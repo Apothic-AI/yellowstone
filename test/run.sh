@@ -104,6 +104,10 @@ if [ "${1:-}" = gates ]; then
   # ceasing to be the reporter the component carries. This gate binds both by bytes and
   # then runs the component's own capture tests.
   gate ./test/verify-behold-landing.sh
+  # parameter-tools is a real pi package but lives in a workspace subdirectory of our
+  # pi-extensions fork, which `pi install git:<repo>@<sha>` cannot name. Its landing is
+  # bound to the accepted commit and to a wired install stage.
+  gate ./test/verify-parameter-tools-landing.sh
   echo
   # The mirror gate's own test: a reverted mirror, an uncommitted live edit and a
   # pending install must be told apart. Without it, that gate is verified only by

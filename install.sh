@@ -24,6 +24,7 @@ Stages (default: all, in this order):
   pi         home/.pi/agent — settings, models, extensions, configs — then the
              packages those settings declare; also install the Behold reporter
   behold     Behold CLI and Python package into ~/.local/bin and ~/.local/share
+  parameter-tools  the model/thinking parameter-tools package from src/
   skills     link every agent skill the manifest selects from home/.agents/skills
              and from the repositories that own the rest
   agents     ~/AGENTS.md — the fleet instruction core (home/AGENTS.md)
@@ -50,14 +51,14 @@ while [ $# -gt 0 ]; do
     -y|--yes) ASSUME_YES=1 ;;
     -n|--dry-run) DRY_RUN=1 ;;
     -h|--help) usage; exit 0 ;;
-    herdr|launcher|pi|behold|plugins|skills|agents|extensions|spaces|overlord|secrets|verify) STAGES+=("$1") ;;
+    herdr|launcher|pi|behold|parameter-tools|plugins|skills|agents|extensions|spaces|overlord|secrets|verify) STAGES+=("$1") ;;
     *) err "unknown argument: $1"; usage; exit 2 ;;
   esac
   shift
 done
 
 if [ ${#STAGES[@]} -eq 0 ]; then
-  STAGES=(herdr launcher pi behold skills agents extensions plugins spaces overlord secrets verify)
+  STAGES=(herdr launcher pi behold parameter-tools skills agents extensions plugins spaces overlord secrets verify)
 fi
 
 # Where the pi-goal fork lives (PI_EXTENSIONS_APOTHIC) is a layout path, so its
@@ -195,6 +196,35 @@ install_behold() {
       backup_path "$LOCAL_BIN/behold"
       ln -sfn -- "$dest/bin/behold" "$LOCAL_BIN/behold"
     fi
+  fi
+}
+
+# --------------------------------------------------------- parameter-tools --
+install_parameter_tools() {
+  step "parameter-tools (model/thinking)"
+  # A pi package, but it lives in a workspace subdirectory of our pi-extensions fork, and
+  # `pi install git:<repo>@<sha>` has no way to name a subdirectory — it would install the
+  # monorepo root, which declares no `pi.extensions`. It is installed from the checkout
+  # instead, exactly as Behold is, and the package is recorded by pi itself so
+  # `pi update --extensions` stays coherent.
+  local spec="$REPO_ROOT/src/pi-extensions/pi-parameter-tools"
+  if ! have pi; then
+    warn "pi is not on PATH — parameter-tools not installed"
+    return 0
+  fi
+  if [ ! -f "$spec/package.json" ]; then
+    warn "parameter-tools: $spec carries no package.json — skipped"
+    return 0
+  fi
+  if [ "$DRY_RUN" = 1 ]; then
+    dryrun "pi install $(short "$spec")"
+    return 0
+  fi
+  if pi install "$spec" >/tmp/pi-install-parameter-tools.log 2>&1; then
+    :
+  else
+    warn "parameter-tools: pi install failed — run: pi install $spec"
+    tail -3 /tmp/pi-install-parameter-tools.log | sed 's/^/    /'
   fi
 }
 
@@ -508,6 +538,7 @@ want herdr   && install_herdr
 want launcher && install_launcher
 want pi      && install_pi
 want behold  && install_behold
+want parameter-tools && install_parameter_tools
 want plugins && install_plugins
 want extensions && install_extensions
 want skills   && install_skills

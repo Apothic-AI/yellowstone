@@ -78,8 +78,20 @@ if ! grep -q 'want behold  && install_behold' "$REPO_ROOT/install.sh"; then
   bad "$DEDICATED_STAGE has an install stage but install.sh never calls it — the exception is a gap"
 fi
 
+# The third: a real pi package, but it lives in a workspace subdirectory of our pi-extensions
+# fork, and `pi install git:<repo>@<sha>` cannot name a subdirectory — it would install the
+# monorepo root, which declares no `pi.extensions`. It is installed from the checkout by its
+# own stage, and that stage is verified here for the same reason as the others.
+SUBDIRECTORY_PACKAGE="pi-parameter-tools"
+if ! sed -n '/^install_parameter_tools()/,/^}/p' "$REPO_ROOT/install.sh" | grep -q 'pi-parameter-tools'; then
+  bad "$SUBDIRECTORY_PACKAGE is excluded from the install loop but install_parameter_tools() does not install it — the exception is a gap"
+fi
+if ! grep -q 'want parameter-tools && install_parameter_tools' "$REPO_ROOT/install.sh"; then
+  bad "$SUBDIRECTORY_PACKAGE has an install stage but install.sh never calls it — the exception is a gap"
+fi
+
 if [ -n "$listed" ] && [ -n "$present" ]; then
-  only_tree="$(comm -13 <(printf '%s\n' "$listed") <(printf '%s\n' "$present") | grep -vx "$NOT_A_PACKAGE" | grep -vx "$DEDICATED_STAGE" || true)"
+  only_tree="$(comm -13 <(printf '%s\n' "$listed") <(printf '%s\n' "$present") | grep -vx "$NOT_A_PACKAGE" | grep -vx "$DEDICATED_STAGE" | grep -vx "$SUBDIRECTORY_PACKAGE" || true)"
   only_list="$(comm -23 <(printf '%s\n' "$listed") <(printf '%s\n' "$present"))"
   if [ -n "$only_tree" ]; then
     bad "in src/pi-extensions/ but absent from install.sh's loop — never installed in production: $(echo "$only_tree" | tr '\n' ' ')"
