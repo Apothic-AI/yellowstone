@@ -106,6 +106,34 @@ Both installations must support machine API forwarding, and the remote server mu
 
 ## Start and coordinate an agent
 
+### Worktree-backed agents
+
+`herdr worktree create` creates the worktree **and** the workspace that owns it; that workspace
+is a child of the repository's parent workspace, which is what puts it under that space in the
+sidebar. Create it first, then start the agent in the returned root pane — never start an agent
+and then have it create the worktree:
+
+```bash
+herdr worktree create --workspace "$HERDR_WORKSPACE_ID" \
+  --branch <branch> --label <label> [--base <ref>] [--no-focus]
+```
+
+- `--workspace` is required and names the repository's parent workspace; that workspace's cwd must
+  be inside a Git work tree. `--cwd` is mutually exclusive with `--workspace`, and a workspace
+  outside a repository fails `not_git_worktree`.
+- `--focus`/`--no-focus` default to not focusing; `--trust-repository` only after the repository has
+  been verified. Parse the returned workspace id from the response; do not assume one.
+- Existing checkout: `herdr worktree open --workspace <parent> --path <checkout>` (or `--branch`)
+  links it to the parent. Inspect the returned pane before starting anything — an occupied pane is
+  not a launch target.
+- `herdr worktree list [--workspace <id>] [--json]` shows them; `herdr worktree remove --workspace
+  <id>` removes a checkout; `herdr workspace close --group` closes the primary workspace and its
+  linked worktree workspaces.
+
+The nesting in the sidebar is the worktree **workspace**, not one agent under another. A checkout
+entered with `cd`, or a worktree created from inside a running agent, is discoverable but carries
+no workspace membership — which is exactly why it does not nest, and why the order matters.
+
 ### Target verification before delegation
 
 Never infer that a pane is the intended worker from its numeric ID, current
@@ -133,7 +161,7 @@ orchestrator side, even if another pane appears idle. If the intended worker
 tab is absent or ambiguous, stop and ask for clarification rather than
 creating a new worker or sending instructions to a likely-but-unverified pane.
 
-Default to a sibling pane in the current tab and the current working directory. Do not create a workspace, tab, worktree, or different cwd unless the user explicitly requests that topology or location.
+Default to a sibling pane in the current tab and the current working directory. Do not create a workspace, tab, worktree, or different cwd unless the user explicitly requests that topology or location — or a standing policy in your own instructions does; the fleet's per-issue worktree policy is such a request, and its procedure is *Worktree-backed agents* above.
 
 Honor a direction requested by the user. Otherwise inspect the caller pane:
 

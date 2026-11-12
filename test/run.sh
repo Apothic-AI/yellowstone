@@ -81,6 +81,11 @@ if [ "${1:-}" = gates ]; then
   # in any other space never saw it; the rule belongs in the shared contracts, in both
   # roles, and this gate holds both of them to it.
   gate ./test/verify-shared-mode-cadence.sh
+  # FT-64: the worktree-lane ordering lived in no prompt at all, so leaders started a
+  # worker and only then asked it to create a checkout — which has no workspace membership
+  # and never nests. The leader contract, the worker contract and the herdr procedure must
+  # agree, and the skill's blanket no-worktree rule must not contradict them.
+  gate ./test/verify-worktree-lane-instruction.sh
   echo
   # What a new machine actually receives: the plugin manifest must link components out
   # of the repo (Objective 4) and the space table must carry all seven labels verbatim.
