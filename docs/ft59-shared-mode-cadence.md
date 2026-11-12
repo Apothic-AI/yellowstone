@@ -15,7 +15,8 @@ same `promptStrategy` (`replace_base`), the same contract text.
 
 `home/.pi/agent/modes/leader.json` — appended to `systemPrompt`:
 
-```
+```md
+
 ## Communication cadence
 
 Use pi-rooms for coordination, not narration. Do not send incremental progress updates merely to report
