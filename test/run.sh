@@ -92,6 +92,13 @@ if [ "${1:-}" = gates ]; then
   # hardcoded nine, so a tenth component would install locally and never in production.
   gate ./test/verify-extensions-git-mode.sh
   echo
+  # Behold is not a `pi install` package — a Python CLI plus a single-file reporter — so
+  # its landing has two silent failure modes the extension gate above cannot see: the
+  # component drifting from the accepted source, and the reporter the installer places
+  # ceasing to be the reporter the component carries. This gate binds both by bytes and
+  # then runs the component's own capture tests.
+  gate ./test/verify-behold-landing.sh
+  echo
   # The mirror gate's own test: a reverted mirror, an uncommitted live edit and a
   # pending install must be told apart. Without it, that gate is verified only by
   # whatever happened to be true on this machine the day it was written — and its
