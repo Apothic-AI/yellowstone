@@ -36,6 +36,7 @@ for phrase in \
   "herdr worktree create" \
   "never start a lane and then ask it to make its own worktree" \
   "PI_MODE_CONFIRM_PROJECT=1" \
+  "herdr pane run <returned-pane-id> env PI_MODE=worker" \
   "not_git_worktree"
 do
   case "$leader" in *"$phrase"*) ;; *) bad "leader contract is missing: $phrase" ;; esac
