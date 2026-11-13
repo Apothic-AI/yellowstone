@@ -21,6 +21,9 @@ output. For a slash command the proof is the command's own confirmation line in
 the pane (e.g. `Reloaded keybindings, extensions, skills, ...`) and a status that
 never left idle; `--verify` reads both back and reports per lane.
 
+Before the 2026-11-13 fix, --include-self /reload accidentally admitted every
+working lane; a dry run showed SEND for working non-self leaders.
+
 Prompting or typing into a `working` agent disturbs its in-flight turn. So by
 default those lanes are skipped and reported; pass --end-agent-turns to accept
 that, which sends `esc` to every target first.
@@ -156,6 +159,8 @@ def send_slash(pane: str, message: str, timeout: float,
     command prints a completion line: it polls for one more `confirm` line than
     the pane held before the command ran, so a stale confirmation cannot pass.
     """
+    if message.split()[:2] == ["/profile", "reload"]:
+        return False, "refused: /profile reload can be submitted as a user prompt", False
     body = message[1:]
     token = body.split()[0] if body.split() else ""
     keys = ["/"] + type_keys(body)
@@ -231,7 +236,7 @@ def send_slash(pane: str, message: str, timeout: float,
 
 def plan(agents: list[dict], self_pane: str | None, include_self: bool,
          include_working: bool, only: list[str], working_only: bool = False,
-         slash: bool = False) -> tuple[list[dict], list[dict], list[dict]]:
+         slash: bool = False, defer_working_self: bool = False) -> tuple[list[dict], list[dict], list[dict]]:
     """Return (targets, skipped_working, skipped_harness).
 
     `/reload` is a pi command; a droid or opencode lane has no such palette entry,
@@ -257,7 +262,9 @@ def plan(agents: list[dict], self_pane: str | None, include_self: bool,
             other.append({**entry, "harness": harness or "unknown"})
         elif working_only and status != "working":
             continue
-        elif status == "working" and not include_working:
+        elif status not in {"idle", "done", "working"} and not (defer_working_self and pane == self_pane):
+            skipped.append(entry)
+        elif status == "working" and not include_working and not (defer_working_self and pane == self_pane):
             skipped.append(entry)
         else:
             targets.append({**entry, "was_working": status == "working"})
@@ -410,12 +417,18 @@ def main() -> int:
         if head in DESTRUCTIVE and not args.allow_destructive:
             parser.error(f"{head} destroys context fleet-wide; pass --allow-destructive")
 
+    if args.end_turns and message.split()[0] == "/reload":
+        parser.error("use --interrupt-working or --working-only for /reload")
+    if message.split()[0] == "/reload" and not args.dry_run and not args.verify:
+        parser.error("/reload requires --verify or --dry-run/--list")
     if args.end_turns and args.interrupt_working:
         parser.error("--end-agent-turns and --interrupt-working are aliases; choose one")
     if args.working_only and args.only:
         parser.error("--working-only cannot be combined with --only")
     interrupt_working = args.interrupt_working or args.end_turns or args.working_only
     self_pane = os.environ.get("HERDR_PANE_ID")
+    if message.split()[0] == "/reload" and args.include_self and not self_pane:
+        parser.error("cannot safely defer self reload: HERDR_PANE_ID is unset")
     agents = list_agents()
     self_reload = (
         bool(self_pane)
@@ -423,8 +436,9 @@ def main() -> int:
         and (args.include_self or self_pane in (args.only or []))
     )
     targets, skipped, other = plan(
-        agents, self_pane, args.include_self, interrupt_working or self_reload,
+        agents, self_pane, args.include_self, interrupt_working,
         args.only or [], working_only=args.working_only, slash=is_slash,
+        defer_working_self=self_reload,
     )
     deferred_self = next((t for t in targets if t["pane"] == self_pane), None)
     if deferred_self and message.split()[0] == "/reload":
@@ -445,7 +459,7 @@ def main() -> int:
         for t in targets:
             print(f"  SEND  {t['pane']:<10} {t['name']:<24} {t['status']}")
         if skipped:
-            print(f"skipping {len(skipped)} working lane(s) — pass --interrupt-working to include:")
+            print(f"skipping {len(skipped)} working or unknown-status lane(s) — pass --interrupt-working for working lanes:")
             for s in skipped:
                 print(f"  SKIP  {s['pane']:<10} {s['name']:<24} {s['status']}")
         if other:
@@ -510,12 +524,11 @@ def main() -> int:
     not_verifiable: list[str] = []
     confirm_line = CONFIRMATIONS.get(message.split()[0]) if is_slash else None
     for t in ready:
-        if interrupt_working:
-            current_status = status_of(t["pane"], args.timeout)
-            if current_status != "idle":
-                failed.append((t["pane"], f"pre-delivery status is {current_status or 'unknown'}; skipped"))
-                timed_out += 1
-                continue
+        current_status = status_of(t["pane"], args.timeout)
+        if current_status not in ({"idle"} if interrupt_working else {"idle", "done"}):
+            failed.append((t["pane"], f"pre-delivery status is {current_status or 'unknown'}; skipped"))
+            timed_out += 1
+            continue
         if is_slash:
             sent, err, seen = send_slash(t["pane"], message, args.timeout, confirm_line)
             if sent and seen and message.split()[0] == "/reload" and t.get("was_working") and interrupt_working:
@@ -554,7 +567,7 @@ def main() -> int:
     for pane, err in failed:
         print(f"  FAILED {pane}: {err}", file=sys.stderr)
     if skipped and not interrupt_working:
-        print("skipped (working, pass --interrupt-working): "
+        print("skipped (working or unknown; pass --interrupt-working for working lanes): "
               + " ".join(s["pane"] for s in skipped))
     if other:
         print("skipped (non-pi harness, no slash commands): "

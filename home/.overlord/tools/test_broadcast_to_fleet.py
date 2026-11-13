@@ -50,7 +50,7 @@ class BroadcastToFleetTests(unittest.TestCase):
     def test_timeout_fails_closed_without_reload(self):
         agents = [{"pane_id": "w1:p1", "name": "busy", "agent": "pi", "agent_status": "working"}]
         code, output, calls = self.run_main(
-            ["-m", "/reload", "--interrupt-working", "--idle-timeout", "0"],
+            ["-m", "/reload", "--interrupt-working", "--idle-timeout", "0", "--verify"],
             agents, ["working", "working"],
         )
         self.assertEqual(code, 1)
@@ -64,7 +64,7 @@ class BroadcastToFleetTests(unittest.TestCase):
         ]
         calls = []
         output = io.StringIO()
-        with patch.object(sys, "argv", [str(MODULE_PATH), "-m", "/reload", "--include-self", "--interrupt-working"]), \
+        with patch.object(sys, "argv", [str(MODULE_PATH), "-m", "/reload", "--include-self", "--interrupt-working", "--verify"]), \
              patch.dict(btf.os.environ, {"HERDR_PANE_ID": "w1:p1"}), \
              patch.object(btf, "list_agents", return_value=agents), \
              patch.object(btf, "status_of", return_value="idle"), \
@@ -110,6 +110,20 @@ class BroadcastToFleetTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(calls, [("w1:p1", "/reload", btf.DEFAULT_TIMEOUT, "Reloaded")])
 
+    def test_self_deferred_and_other_working_skipped_unless_interrupt(self):
+        agents = [
+            {"pane_id": "w1:p1", "name": "self", "agent": "pi", "agent_status": "working"},
+            {"pane_id": "w1:p2", "name": "other", "agent": "pi", "agent_status": "working"},
+        ]
+        with patch.dict(btf.os.environ, {"HERDR_PANE_ID": "w1:p1"}):
+            for flags, expected in (([], "SKIP  w1:p2"), (["--interrupt-working"], "SEND  w1:p2")):
+                code, output, calls = self.run_main(["-m", "/reload", "--include-self", "--dry-run", *flags], agents, [])
+                self.assertEqual(code, 0)
+                self.assertIn("DEFER w1:p1", output)
+                self.assertNotIn("SEND  w1:p1", output)
+                self.assertIn(expected, output)
+                self.assertEqual(calls, [])
+
     def test_working_only_excludes_idle_lanes(self):
         agents = [
             {"pane_id": "w1:p1", "name": "busy", "agent": "pi", "agent_status": "working"},
@@ -134,6 +148,13 @@ class BroadcastToFleetTests(unittest.TestCase):
         self.assertNotIn(" ", btf.type_keys("profile reload"))
         self.assertEqual(btf.type_keys("/reload"), ["/", "r", "e", "l", "o", "a", "d"])
 
+    def test_profile_reload_is_refused_before_any_keys(self):
+        with patch.object(btf, "run") as run:
+            sent, error, _ = btf.send_slash("w1:p1", "/profile reload", 5.0)
+        self.assertFalse(sent)
+        self.assertIn("refused", error)
+        run.assert_not_called()
+
     def test_send_slash_sends_a_space_token_for_a_two_word_command(self):
         calls = []
 
@@ -146,11 +167,11 @@ class BroadcastToFleetTests(unittest.TestCase):
         with patch.object(btf, "run", side_effect=fake_run), \
              patch.object(btf, "read_pane", return_value=""), \
              patch.object(btf.time, "sleep"):
-            sent, _err, _confirmed = btf.send_slash("w1:p1", "/profile reload", 5.0)
+            sent, _err, _confirmed = btf.send_slash("w1:p1", "/some-command argument", 5.0)
 
         typed = next(
             c for c in calls
-            if c[:3] == ("herdr", "agent", "send-keys") and len(c) > 4 and "p" in c[4:] and "space" in c
+            if c[:3] == ("herdr", "agent", "send-keys") and len(c) > 4 and "space" in c
         )
         self.assertIn("space", typed)
         self.assertNotIn(" ", typed)

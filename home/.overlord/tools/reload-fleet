@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # reload-fleet — send /reload to every herdr Pi agent (thin wrapper).
+# Before 2026-11-13, --include-self inadvertently targeted other working lanes.
+# --verify is required for a real reload; --dry-run/--list never sends.
 # Includes the initiating lane automatically; that self-reload is deferred until
 # this command's Pi turn returns, so the coordinator cannot kill itself.
 # By default skips other working lanes. Use --interrupt-working to send Esc, wait

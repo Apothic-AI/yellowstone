@@ -1,44 +1,17 @@
 #!/usr/bin/env python3
-"""reconcile-mode — drive one lane through a mode-file change, and prove it.
+"""reconcile-mode — inspect mode state; propagation is disabled fail-closed.
 
-Why this exists
----------------
-A mode-file edit reaches a running lane in two steps, and skipping either one leaves the lane
-composing the NATIVE prompt with no role contract:
+Observed 2026-11-13: /profile reload reached lanes as a user prompt, aborting a
+turn; base CLI digests were refused for composed project-overlay selections.
+Base changes need no lane prompt; instance copies refresh at the next launch.
+This tool refuses propagation, including project reapproval until it can prove
+both a changed project file and the exact composed selection digest. --inspect
+is read-only; neither /reload nor /profile reload reapproves a project mode.
 
-  1. `/profile reload` re-materialises the lane's snapshot copy of `modes/` in its launch
-     instance (pi-profile's ADR-0019 copies rather than symlinks, because pi-modes fails closed
-     on a symlinked mode root). `/reload` does NOT do this.
-  2. The lane's session still records the OLD definition digest, so under the default `block`
-     drift policy the composition is dropped. The lane must re-approve the new digest.
 
-The digest is not something this tool may compute: the fingerprint covers the definition's
-`scope` and `path`, so the same mode TEXT at an instance path hashes differently from the real
-agent dir (measured: 3fef5517 at `instances/launch-RXYi4n/modes/leader.json` vs 7fd1f88c at
-`~/.pi/agent/modes/leader.json`). It asks the `pi-modes` CLI for the value, sends THAT, then
-attests that the lane recorded it.
+Use --inspect for read-only mode-state evidence. Default and --dry-run refuse
+propagation, including base edits; no slash commands are sent.
 
-Why the lane re-approves itself, and why this tool never writes a session
-------------------------------------------------------------------------
-`pi --mode rpc --session <file>` RESUMES that session as a second writer: it appends entries and
-re-records `pi-mode-state.v3` with `source: "startup"` from its own inherited `PI_MODE`,
-regardless of what command you send. Against a live lane that is the two-writers failure the
-fleet forbids. So this tool only reads, and sends the command to the lane over herdr; the lane's
-own session records the new digest. See pi-modes
-`docs/project/2026-11-07-out-of-band-mode-reapproval.md`.
-
-Proof
------
-"I sent it" is not a result. Each lane is reported with the digest it recorded BEFORE and AFTER,
-and the run only succeeds when the after-digest equals the one `expected` printed for the path
-the lane actually reads. A status field is never treated as proof.
-
-Usage
------
-  reconcile-mode.py --dry-run                 report what each lane would need; change nothing
-  reconcile-mode.py --only w1C:p1             reconcile one lane
-  reconcile-mode.py                           reconcile every leader lane that needs it
-  reconcile-mode.py --no-reapprove            reload copies only; never send /mode-reapprove
 """
 from __future__ import annotations
 
@@ -186,18 +159,7 @@ def type_keys(text: str) -> list[str]:
 
 
 def slash(pane: str, message: str, confirm: str | None = None, settle: float = 30.0) -> bool:
-    run([HERDR, "agent", "send-keys", pane, "ctrl+u"])
-    ok, _ = run([HERDR, "agent", "send-keys", pane, "/", *type_keys(message[1:]), "Enter"])
-    if not ok:
-        return False
-    if confirm:
-        deadline = time.monotonic() + settle
-        while time.monotonic() < deadline:
-            if confirm.lower() in read_pane(pane).lower():
-                return True
-            time.sleep(1.5)
-        return False
-    return True
+    raise RuntimeError("slash delivery disabled: command may be submitted as a prompt")
 
 
 def state(session: str) -> dict | None:
@@ -241,6 +203,9 @@ def expected_digests(session: str) -> dict[str, str]:
 
 
 def reconcile(pane: str, name: str, dry: bool, reapprove: bool) -> dict:
+    # This function is also imported/called outside main: fail closed at the mutation boundary.
+    if not dry:
+        raise RuntimeError("mode propagation disabled; project reapproval requires a verified composed digest")
     row: dict = {"pane": pane, "name": name, "before": None, "after": None,
                  "expected": None, "reloaded": False, "reapproved": False,
                  "verified": False, "note": ""}
@@ -258,86 +223,15 @@ def reconcile(pane: str, name: str, dry: bool, reapprove: bool) -> dict:
     row["before"] = (before or {}).get("verdict")
     row["before_digests"] = recorded_digests(before)
 
-    # What the lane SHOULD record once its copy is refreshed — asked of the CLI, for the path the
-    # lane actually reads. Never computed here.
     want = expected_digests(session)
     row["expected"] = want
     if not want:
-        row["note"] = "no expected digest (no recorded mode state)"
+        row["note"] = "UNVERIFIED: no expected digest; inspection only"
         return row
-
-    already = row["before_digests"]
-    needs = any(already.get(k) != v for k, v in want.items())
-    row["needs"] = needs
-    if not needs:
-        row["verified"] = True
-        row["note"] = "already recorded the expected digest"
-        return row
-
-    if dry:
-        row["note"] = "would reload" + (" + re-approve" if reapprove else "")
-        return row
-
-    if status_of(pane) not in IDLE_STATES:
-        row["note"] = f"status={status_of(pane)} (skipped: never prompt a working lane)"
-        return row
-
-    # 1. refresh the snapshot copy in place
-    row["reloaded"] = slash(pane, "/profile reload", "profile reloaded")
-
-    # 2. the lane re-approves ITSELF against the digest the CLI computed. The digest is passed
-    #    explicitly so the approval is pinned to the definition we hashed, not to whatever is on
-    #    disk by the time the command runs.
-    if reapprove:
-        for key, digest in want.items():
-            slash(pane, f"/mode-reapprove --expect {digest} --confirm-project")
-            # Two consent dialogs can stand between the command and the recorded digest, and a lane
-            # left on either is worse than a few seconds of polling:
-            #   1. "Reapprove active prompt mode definitions?" — the generic confirm, raised only
-            #      when --expect covers *some* of the selection (it is skipped when it covers all).
-            #   2. "Use project mode \"<key>\"?" — the project-mode consent gate, raised when the
-            #      lane's mode composes with a space-local delta. This one is NOT removed by
-            #      --expect and not removed by --confirm-project, which is how pi-rooms-leader and
-            #      herdr-leader were left stuck on a modal reporting `drift -> drift`.
-            # Both default to `Yes`, and in case 2 the dialog names the very digest we asserted, so
-            # answering is approving the definition we intended, not a blind Enter.
-            # CASE 2 IS NEW AND MUST NOT BE ANSWERED IN ONE PASS: the project gate can re-raise
-            # after the first answer, so allow repeated rounds.
-            dialogs = (
-                "Reapprove active prompt mode definitions?",
-                "Use project mode",
-            )
-            answered = 0
-            for _round in range(4):
-                deadline = time.monotonic() + 20
-                hit = False
-                while time.monotonic() < deadline:
-                    seen = read_pane(pane)
-                    if any(text in seen for text in dialogs) and "Yes" in seen:
-                        run([HERDR, "agent", "send-keys", pane, "Enter"])
-                        answered += 1
-                        hit = True
-                        time.sleep(1.5)
-                        break
-                    if f"{digest[:12]}" in seen and "No" not in seen:
-                        break
-                    time.sleep(0.5)
-                if not hit:
-                    break
-            row["dialogs_answered"] = answered
-        row["reapproved"] = True
-
-    # 3. ATTEST: read back what the lane recorded. This is the only thing that turns "I sent it"
-    #    into verified.
-    after = state(session)
-    row["after"] = (after or {}).get("verdict")
-    row["after_digests"] = recorded_digests(after)
-    row["verified"] = all(row["after_digests"].get(k) == v for k, v in want.items())
-    if not row["verified"]:
-        code, out = cli("attest", session, "--expect",
-                        ",".join(f"{k}={v}" for k, v in want.items()))
-        row["attest_exit"] = code
-        row["note"] = out.splitlines()[-1][:120] if out else f"attest exit {code}"
+    row["needs"] = any(row["before_digests"].get(k) != v for k, v in want.items())
+    row["verified"] = not row["needs"]
+    row["note"] = ("drift detected; inspection only, propagation refused" if row["needs"]
+                   else "already recorded the expected digest")
     return row
 
 
@@ -349,8 +243,13 @@ def main() -> int:
                    help="reload the copy only; never send /mode-reapprove")
     p.add_argument("--key", default="leader")
     p.add_argument("--json", action="store_true")
+    p.add_argument("--inspect", action="store_true", help="read-only mode state inspection; never propagates")
     args = p.parse_args()
 
+    if not args.inspect:
+        print("reconcile-mode: REFUSED base-mode propagation: no lane prompts; instance copies refresh on next launch. Project reapproval unavailable until a changed project file and composed selection digest are verified; /reload is not a substitute.", file=sys.stderr)
+        return 2
+    args.dry_run = True
     wanted = set(args.only or [])
     rows: list[dict] = []
     for agent in agents():

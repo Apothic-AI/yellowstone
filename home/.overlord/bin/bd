@@ -92,11 +92,33 @@ case "$sub" in
       esac
     done
     [ "$sub" = close ] && stop=1
-    # --status in_progress is a claim even without --claim
+    # --status in_progress is a claim even without --claim, and BOTH the
+    # space-separated and the equals forms must be recognised. The equals form
+    # (--status=in_progress) used to fall through inertly: the bead became
+    # in_progress with no join recorded, which a later reader could not tell
+    # apart from an abandoned claim. Every accepted status form now writes or
+    # clears a join.
     prev=""
     for a in "$@"; do
       [ "$prev" = "--status" ] && [ "$a" = "in_progress" ] && claim=1
       [ "$prev" = "-s" ] && [ "$a" = "in_progress" ] && claim=1
+      prev="$a"
+    done
+    for a in "$@"; do
+      case "$a" in
+        --status=in_progress) claim=1 ;;
+      esac
+    done
+    # The space-separated stop forms (--status open / --status closed) are the
+    # mirror image of the equals-form claim above and used to leave the join in
+    # place after the bead was released.
+    prev=""
+    for a in "$@"; do
+      if [ "$prev" = "--status" ] || [ "$prev" = "-s" ]; then
+        case "$a" in
+          open|closed) stop=1 ;;
+        esac
+      fi
       prev="$a"
     done
     ;;

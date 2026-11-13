@@ -1,43 +1,16 @@
 #!/usr/bin/env python3
-"""propagate-mode-change — deliver a mode/preset change to every lane the right way.
+"""propagate-mode-change — inspect mode state; propagation is disabled fail-closed.
 
-Why this exists
----------------
-A lane's mode definitions may come from one of two places, and a mode-file edit reaches
-them by different mechanisms:
+Observed 2026-11-13: /profile reload arrived as a user prompt and aborted a turn;
+base digests were refused for project-overlay selections. Base edits must never
+be propagated by prompting: overlays reread the base; instance copies refresh
+on next launch. Project reapproval is disabled until a changed project file and
+its composed selection digest can be proven. --inspect is strictly read-only.
 
-  * REAL-FILE lanes read ``~/.pi/agent/modes/<key>.json`` directly. ``getAgentDir()``
-    honors ``PI_CODING_AGENT_DIR``, and when that is unset the lane reads the real file.
-    ``/reload`` is enough: ``pi-modes`` re-reads definitions from disk every turn.
 
-  * INSTANCE-COPY lanes read their own frozen copy at
-    ``~/.pi-profile-switch/instances/launch-XXXX/modes/<key>.json``. The launcher copies
-    ``modes/`` and ``mode-presets/`` into the per-launch instance
-    (ADR-0019-materialized-mode-directories) because ``pi-modes`` fails closed on a mode
-    path that crosses a symlink boundary — so a symlinked root would silently disable
-    every mode. That copy is a snapshot: ``/reload`` does NOT refresh it, and neither does
-    a relaunch unless it re-copies. The supported refresh is ``/profile reload``, which
-    re-resolves and calls ``writeRuntimeFiles`` → ``copyResourceDirs`` against the SAME
-    runtime dir, re-materialising ``modes/`` and ``mode-presets/`` in place.
+Use --inspect for read-only inventory. Default and --dry-run refuse propagation;
+no slash commands are sent. /reload does not reapprove a mode.
 
-Nothing in the tree did this per lane, so a fleet mode change needed a hand-run mixture of
-``/reload`` and relaunches. This tool reads each lane's own recorded ``pi-mode-state.v3``
-fingerprint (the file it actually read at activation), picks the mechanism, delivers it, and
-verifies the lane's next fingerprint path/content rather than trusting a status line.
-
-What it proves
---------------
-For each lane it reports the fingerprint path it read, the mechanism chosen, and whether the
-lane's mode source now carries the current on-disk text (computed by hashing the definition
-the lane would resolve). It never claims delivery from a keystroke.
-
-Usage
------
-  propagate-mode-change.py --dry-run
-  propagate-mode-change.py                      # reload real-file lanes, /profile reload the rest
-  propagate-mode-change.py --only w1K:p1
-  propagate-mode-change.py --key leader         # which mode key to check (default leader)
-  propagate-mode-change.py --json
 """
 from __future__ import annotations
 
@@ -138,20 +111,7 @@ def send_slash(pane: str, message: str, confirm: str | None, timeout: float = 25
     `herdr agent prompt` cannot deliver a slash command: the leading `/` opens the
     palette and the text is re-submitted as a user message. Keystrokes instead.
     """
-    keys = ["/", *type_keys(message[1:]), "Enter"]
-    run(["agent", "send-keys", pane, "ctrl+u"])
-    ok, _ = run(["agent", "send-keys", pane, *keys], timeout)
-    if not ok:
-        return False
-    if confirm is None:
-        return True
-    deadline = time.monotonic() + 30
-    while time.monotonic() < deadline:
-        pane_text = read_pane(pane)
-        if confirm.lower() in pane_text.lower():
-            return True
-        time.sleep(1.5)
-    return False
+    raise RuntimeError("slash delivery disabled: command may be submitted as a prompt")
 
 
 def cwd_of(pane: str) -> str:
@@ -414,81 +374,21 @@ def expect_argument(cwd: str, session: str, key: str, copy_dir: Path | None) -> 
 
 
 def deliver(pane: str, kind: str, key: str, dry: bool, reapprove: bool = True) -> dict:
-    """Refresh a lane's mode copy, and — as the gate — re-approve a drifted digest.
-
-    `/profile reload` refreshes the lane's instance COPY of modes/ but does NOT re-approve the
-    digest its session recorded, so a lane whose composed definition changed keeps composing
-    `native` under the default `block` policy.
-
-    The re-approval is pinned inside pi-modes now, not by this tool's timing:
-      1. hash the composed definition (the package's own function, not a reimplementation),
-      2. send `/mode-reapprove --confirm-project --expect <that digest>` — pi-modes' own gate
-         refuses if the definition moved between our hash and the command (FT-40's flag; before
-         it landed this tool sent no digest and could only attest afterwards),
-      3. read back the digest the lane's session RECORDED,
-      4. attest: they must be equal, or the lane is reported `attestation_failed` and nothing is
-         claimed. `--expect` pins the command; the recorded digest is the evidence it persisted.
-
-    A lane whose selection cannot be pinned (a multi-mode selection whose copies do not resolve)
-    falls back to the digest-less command with a keypress to clear pi-modes' TUI confirm, and is
-    still judged by the read-back — the weaker path, recorded as `expect: null`.
-    """
-    source = AGENT_DIR / "modes" / f"{key}.json"
+    """Read-only lane inventory; direct mutation is forbidden."""
+    if not dry:
+        raise RuntimeError("mode propagation disabled; project reapproval requires a verified composed digest")
     cwd = cwd_of(pane)
-    before_path = fingerprint_path(session_of(pane), key)
-
-    if kind == "profile":
-        # pi-profile's own success line; `/profile reload` re-runs writeRuntimeFiles ->
-        # copyResourceDirs against the same runtime dir, re-materialising modes/.
-        mechanism, command, confirm = "/profile reload", "/profile reload", "profile reloaded"
-    else:
-        return {"pane": pane, "kind": kind, "mechanism": "none",
-                "delivered": False, "note": "no recorded fingerprint for this key"}
-
+    session = session_of(pane)
+    before_path = fingerprint_path(session, key)
+    if kind != "profile":
+        return {"pane": pane, "kind": kind, "mechanism": "none", "delivered": False,
+                "note": "no recorded fingerprint for this key"}
     expected = composed_digest(cwd, key) if cwd else None
-
-    if dry:
-        return {"pane": pane, "kind": kind, "mechanism": mechanism, "delivered": False,
-                "dry_run": True, "reads": before_path,
-                "expected_digest": (expected or {}).get("digest"),
-                "expect": expect_argument(cwd, session_of(pane), key, copy_dir_of(before_path)),
-                "verdict": mode_verdict(pane)}
-
-    if status_of(pane) not in IDLE_STATES:
-        return {"pane": pane, "kind": kind, "mechanism": mechanism,
-                "delivered": False, "note": f"status={status_of(pane)} (skipped, not idle)"}
-
-    # The MUTATION is delegated. reconcile-mode.py owns everything that can silently fail — the
-    # digest from the pi-modes CLI, the keystroke encoding, BOTH consent dialogs, and the read-back
-    # attestation — so there is one implementation of them. This tool's own send path answered only
-    # the generic confirm and left a lane sitting on the "Use project mode …" gate: measured
-    # 2026-11-08 on a scratch lane whose mode composed with a project delta, where drift stayed
-    # drift because `--expect` does not remove that dialog. It keeps the inventory and the digest
-    # it computes for reporting.
-    code, delegated, raw = reconcile(pane, reapprove=reapprove)
-    delegated = delegated or {}
-    after_expected = delegated.get("expected") or {}
-    row = {
-        "pane": pane, "kind": kind, "mechanism": mechanism,
-        "delivered": bool(delegated.get("reloaded") or delegated.get("verified")),
-        "reads": before_path,
-        "verdict": mode_verdict(pane),
-        "expected_digest": after_expected.get(key) or want,
-        "expected_path": (expected or {}).get("path"),
-        "recorded_before": (delegated.get("before_digests") or {}).get(key),
-        "recorded_after": (delegated.get("after_digests") or {}).get(key),
-        "reapproved": bool(delegated.get("reapproved")),
-        "dialogs_answered": delegated.get("dialogs_answered"),
-        "attested": bool(delegated.get("verified")),
-        "verdict_after": mode_verdict(pane),
-        "delegate_exit": code,
-        "note": delegated.get("note") or (None if delegated else raw),
-    }
-    row["needs_reapprove"] = not row["attested"]
-    if not delegated:
-        row["delivered"] = False
-        row["note"] = raw or "reconcile-mode.py returned nothing"
-    return row
+    return {"pane": pane, "kind": kind, "mechanism": "inspection", "delivered": False,
+            "dry_run": True, "reads": before_path,
+            "expected_digest": (expected or {}).get("digest"),
+            "expect": expect_argument(cwd, session, key, copy_dir_of(before_path)),
+            "verdict": mode_verdict(pane)}
 
 
 def main() -> int:
@@ -501,8 +401,13 @@ def main() -> int:
                              "of the gate — the lane then stays on native until re-approved "
                              "deliberately)")
     parser.add_argument("--json", action="store_true")
+    parser.add_argument("--inspect", action="store_true", help="read-only mode state inspection; never propagates")
     args = parser.parse_args()
 
+    if not args.inspect:
+        print("propagate-mode-change: REFUSED base-mode propagation: no lane prompts; instance copies refresh on next launch. Project reapproval unavailable until a changed project file and composed selection digest are verified; /reload is not a substitute.", file=sys.stderr)
+        return 2
+    args.dry_run = True
     wanted = set(args.only or [])
     rows: list[dict] = []
     for agent in list_agents():
@@ -530,7 +435,7 @@ def main() -> int:
     print(f"{'pane':9} {'lane':24} {'reads':13} {'mechanism':16} result")
     for row in rows:
         if row.get("dry_run"):
-            result = "would deliver"
+            result = "inspection only; propagation refused"
             if row.get("verdict"):
                 result += f" (mode:{row['verdict']})"
         elif not row.get("delivered"):
