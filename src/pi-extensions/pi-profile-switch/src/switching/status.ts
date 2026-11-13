@@ -14,6 +14,14 @@
  * visible.
  */
 
+import type {
+	ContributorSet,
+	PendingToolReference,
+	ProfileComposition,
+	ProvenanceKind,
+	ReferenceListKind,
+	UnappliedReference,
+} from "../profile-composition.ts";
 import { mergeResolutionDiagnostics, type ResolutionDiagnostic } from "../profile-resolver.ts";
 import type { RuntimeOverlay } from "../runtime-state-store.ts";
 import type { ProfileSubagentSettings } from "../subagent-settings.ts";
@@ -46,6 +54,21 @@ export interface StatusReport {
 	tools?: string[];
 	mcp: { enabled: string[]; disabled: string[]; missing: string[] };
 	mcpTools?: McpServerToolStatus[];
+	/** Composition metadata of the active plan. Absent when the profile declares
+	 *  no `promptStrategy`, which keeps the report (and its Markdown) identical
+	 *  to a pre-change activation. */
+	composition?: ProfileComposition;
+	/** Per-kind declaration intent of the composed definition. */
+	intent?: { skills: boolean; extensions: boolean; mcps: boolean; tools: boolean };
+	/** Per-identity provenance carried by the active plan; `native` marks an
+	 *  identity selected because its kind is undeclared. */
+	origins?: Partial<Record<ReferenceListKind, Record<string, ProvenanceKind>>>;
+	/** Extension provenance keyed by resolved entry path. */
+	extensionOrigins?: Record<string, { id: string; contributors: ContributorSet }>;
+	/** Raw tool references that were unresolved at boot. The plan is written
+	 *  before session start, so no current pending/resolved/dropped outcome and
+	 *  no resolved per-tool contributor is claimed here. */
+	pendingToolReferences?: PendingToolReference[];
 	/** Glob delta versus the previous activation (prefixed names). */
 	delta?: { added: string[]; removed: string[] };
 	/** Glob references that matched nothing at resolution (ADR-0009). */
@@ -202,6 +225,24 @@ export function buildStatusReport(input: {
 		...(plan.tools !== undefined ? { tools: plan.tools } : {}),
 		mcp,
 		...(mcpTools !== undefined ? { mcpTools } : {}),
+		// Composition truth is read from the active plan only — no definition is
+		// re-read and no state is re-resolved.
+		...(plan.composition !== undefined
+			? {
+					composition: plan.composition,
+					intent: {
+						skills: plan.resourceSelection?.skills ?? false,
+						extensions: plan.resourceSelection?.extensions ?? false,
+						mcps: plan.mcps !== undefined,
+						tools: plan.tools !== undefined,
+					},
+				}
+			: {}),
+		...(plan.origins !== undefined ? { origins: plan.origins } : {}),
+		...(plan.extensionOrigins !== undefined ? { extensionOrigins: plan.extensionOrigins } : {}),
+		...(plan.pendingToolReferences !== undefined && plan.pendingToolReferences.length > 0
+			? { pendingToolReferences: plan.pendingToolReferences }
+			: {}),
 		...(delta !== undefined ? { delta } : {}),
 		...(plan.unmatched !== undefined && plan.unmatched.length > 0 ? { unmatched: plan.unmatched } : {}),
 		...(diagnostics.length > 0 ? { diagnostics } : {}),
@@ -217,9 +258,61 @@ export function buildStatusReport(input: {
 	};
 }
 
+/** Renders the composition block from the active plan's metadata only. A
+ *  standalone `append` is informational: it has no base to widen, so it has no
+ *  unapplied list and is not a failure. */
+function compositionLines(report: StatusReport, unapplied: readonly UnappliedReference[]): string[] {
+	const composition = report.composition;
+	if (composition === undefined) return [];
+	const lines = [`composition: ${composition.strategy} (${composition.branch})`];
+	if (composition.branch === "composed") {
+		if (composition.globalPath !== undefined) lines.push(`  base: ${composition.globalPath}`);
+		lines.push(`  project: ${composition.projectPath}`);
+	} else {
+		lines.push(`  project: ${composition.projectPath}`);
+		lines.push("  no global base: the project definition applies on its own (informational, not a failure)");
+	}
+	if (report.intent !== undefined) {
+		const intent = report.intent;
+		lines.push(
+			`  intent: skills=${intent.skills ? "declared" : "native"} extensions=${intent.extensions ? "declared" : "native"} mcps=${intent.mcps ? "declared" : "native"} tools=${intent.tools ? "declared" : "native"}`,
+		);
+	}
+	const contributors: string[] = [];
+	for (const [kind, entries] of Object.entries(report.origins ?? {})) {
+		const declared = Object.entries(entries ?? {}).filter(([, value]) => value !== "native");
+		if (declared.length > 0) contributors.push(`${kind} ${declared.map(([name, value]) => `${name}=${value}`).join(", ")}`);
+	}
+	const extensionContributors = Object.values(report.extensionOrigins ?? {}).map(
+		(entry) => `${entry.id}=${entry.contributors}`,
+	);
+	if (extensionContributors.length > 0) contributors.push(`extensions ${extensionContributors.join(", ")}`);
+	if (contributors.length > 0) lines.push(`  contributors: ${contributors.join("; ")}`);
+	const native = Object.entries(report.origins ?? {})
+		.map(([kind, entries]) => ({ kind, names: Object.entries(entries ?? {}).filter(([, value]) => value === "native").map(([name]) => name) }))
+		.filter((entry) => entry.names.length > 0)
+		.map((entry) => `${entry.kind} [${entry.names.join(", ")}]`);
+	if (native.length > 0) lines.push(`  native (selected through no declaration): ${native.join("; ")}`);
+	if (unapplied.length > 0) {
+		const byKind = new Map<string, UnappliedReference[]>();
+		for (const entry of unapplied) {
+			const list = byKind.get(entry.kind) ?? [];
+			list.push(entry);
+			byKind.set(entry.kind, list);
+		}
+		const groups = [...byKind].map(
+			([kind, entries]) => `${kind} ${entries.map((entry) => JSON.stringify(entry.reference)).join(", ")} (declared by ${composition.projectPath}; not applied, not validated)`,
+		);
+		lines.push(`  unapplied: ${groups.join("; ")}`);
+	}
+	return lines;
+}
+
 export function formatStatusMarkdown(report: StatusReport): string {
 	const lines: string[] = [];
 	lines.push(`### profile: ${report.profile} (${report.source})`);
+	// Composition rendering reads only the active plan's persisted metadata.
+	lines.push(...compositionLines(report, report.composition?.unapplied ?? []));
 	if (report.overlay !== undefined) {
 		const parts = [
 			...(report.overlay.disabledSkills ?? []).map((name) => `-skill:${name}`),
@@ -232,18 +325,40 @@ export function formatStatusMarkdown(report: StatusReport): string {
 	if (report.skills.length > 0) {
 		lines.push("skills:");
 		for (const skill of report.skills) {
-			lines.push(`  ${skill.name} → ${skill.filePath}`);
+			const provenance = report.origins?.skills !== undefined && Object.hasOwn(report.origins.skills, skill.name)
+				? report.origins.skills[skill.name]
+				: undefined;
+			const contributor = provenance === undefined
+				? ""
+				// `native` is the disjoint kind, not a fabricated scope contributor.
+				: provenance === "native"
+					? " (native)"
+					: ` (contributors: ${provenance})`;
+			lines.push(`  ${skill.name} → ${skill.filePath}${contributor}`);
 		}
 	}
 	if (report.extensions.length > 0) {
 		lines.push("extensions:");
 		for (const extension of report.extensions) {
 			const originTag = extension.origin !== undefined ? ` [${extension.origin}]` : "";
-			lines.push(`  ${extension.id}${originTag} → ${extension.entry}`);
+			const contributor = report.extensionOrigins !== undefined && Object.hasOwn(report.extensionOrigins, extension.entry)
+				? ` (contributors: ${report.extensionOrigins[extension.entry].contributors})`
+				: "";
+			lines.push(`  ${extension.id}${originTag} → ${extension.entry}${contributor}`);
 		}
 	}
 	if (report.tools !== undefined) {
 		lines.push(`tools: [${report.tools.join(", ")}]`);
+	}
+	if (report.pendingToolReferences !== undefined && report.pendingToolReferences.length > 0) {
+		// Boot-snapshot truth only: the plan is written before session start, so no
+		// current pending/resolved/dropped outcome is claimed.
+		const pending = report.pendingToolReferences.map(
+			(entry) => `${JSON.stringify(entry.reference)} (${entry.contributors})`,
+		).join(", ");
+		lines.push(
+			`tools awaiting session start: ${pending} — boot-snapshot pending; current session outcome not recorded (UNKNOWN)`,
+		);
 	}
 	if (report.subagents !== undefined) {
 		lines.push("subagents (profile-declared overrides; not effective runtime mappings):");

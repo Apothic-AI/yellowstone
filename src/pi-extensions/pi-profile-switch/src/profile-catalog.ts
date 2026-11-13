@@ -5,8 +5,12 @@
  *
  * Invariants:
  * - Each profile is stored in a separate `<name>.json` file.
- * - Filename indexing decides project precedence before definition reads.
+ * - Filename indexing decides project precedence before definition reads, and
+ *   the index keeps both halves per name so a composing winner can name its
+ *   base without a directory scan.
  * - Only selected winners are parsed; listing isolates definition errors.
+ * - A shadowed global definition is read only as the composition base of a
+ *   winning project definition that declares `"promptStrategy": "append"`.
  * - The caller supplies projectDir only after its trust check passes.
  */
 
@@ -14,10 +18,24 @@ import { readFileSync, type Dirent } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
 
+import { CatalogError } from "./catalog-error.ts";
 import { getGlobalProfilesDir } from "./workspace.ts";
 import { isRecord, readJsonFile } from "./json-file.ts";
+import {
+	composeProfileDefinitions,
+	compositionMetadata,
+	resolvePromptStrategy,
+	type ProfileComposition,
+	type ProfileScope,
+	type PromptStrategy,
+} from "./profile-composition.ts";
 import { parseSubagentSettings, SubagentSettingsError, type ProfileSubagentSettings } from "./subagent-settings.ts";
 
+export { CatalogError } from "./catalog-error.ts";
+
+/* The supported-field inventory is derived from the shipped schema so the
+ * unknown-key warning and the schema cannot drift. It drives that warning
+ * only: assigning a field's value is the parser's job. */
 const supportedFields = Object.keys(
 	(JSON.parse(readFileSync(new URL("../schemas/profiles.schema.json", import.meta.url), "utf8")) as {
 		properties: Record<string, unknown>;
@@ -40,6 +58,9 @@ export interface ProfileModel {
 export interface ProfileDefinition {
 	label?: string;
 	description?: string;
+	/** Composition strategy. Retained as a parsed field, not merely tolerated:
+	 *  the catalog assigns it and `resolvePromptStrategy` validates it. */
+	promptStrategy?: PromptStrategy;
 	skills?: string[];
 	extensions?: string[];
 	mcps?: string[];
@@ -66,23 +87,42 @@ export interface ResolvedProfile {
 	source: ProfileSource;
 	definition: ProfileDefinition;
 	warnings?: string[];
+	/** Present only when the winner declares `"promptStrategy": "append"`: the
+	 *  branch, both paths, and both contributor sets, retained for the surfaces
+	 *  that report a composition. `source` stays the winner's scope. */
+	composition?: ProfileComposition;
 }
 
 export interface CatalogListItem {
 	name: string;
 	source: ProfileSource;
+	/** True when a project winner *replaces* a same-named global definition. A
+	 *  winner that composes with that global base (a trusted `append`) does not
+	 *  shadow or replace it, so that entry keeps this false. */
 	shadowsGlobal: boolean;
+	/** True only for a project winner that composes with a global namesake, i.e.
+	 *  a trusted `append` winner whose base exists. Derivable per entry without
+	 *  reading any other name's definition. */
+	composesGlobal: boolean;
 	available: boolean;
 	definition?: ProfileDefinition;
+	composition?: ProfileComposition;
 	error?: string;
 	warnings?: string[];
 }
 
-export class CatalogError extends Error {
-	constructor(message: string) {
-		super(message);
-		this.name = "CatalogError";
-	}
+/** Reads the optional `promptStrategy` field. The accepted set and the
+ *  per-scope validity are owned by the contract, not by the schema: an
+ *  unsupported value and `"append"` in a global definition are field errors
+ *  naming the file, the profile, and the accepted values. */
+function readPromptStrategy(
+	value: unknown,
+	profileName: string,
+	scope: ProfileScope,
+	filePath?: string,
+): PromptStrategy | undefined {
+	if (value === undefined) return undefined;
+	return resolvePromptStrategy(value, scope, { profile: profileName, ...(filePath !== undefined ? { filePath } : {}) });
 }
 
 function readStringArray(value: unknown, field: string, profileName: string, filePath?: string): string[] | undefined {
@@ -147,12 +187,16 @@ function readMcpTools(
 }
 
 /** Parses one raw profile definition; the single read-time validator so
- *  catalog files and any external writer stay loadable. */
+ *  catalog files and any external writer stay loadable. `scope` decides which
+ *  strategy values are valid: `append` composes a project definition, and a
+ *  global definition has no base to compose with. The default is the
+ *  permissive project scope, which is what an external writer's definition is. */
 export function parseProfileDefinition(
 	name: string,
 	raw: unknown,
 	filePath?: string,
 	onWarning?: (message: string) => void,
+	scope: ProfileScope = "project",
 ): ProfileDefinition {
 	if (!isRecord(raw)) {
 		const prefix = filePath ? `${filePath}: ` : "";
@@ -168,6 +212,8 @@ export function parseProfileDefinition(
 	if (label !== undefined) definition.label = label;
 	const description = readOptionalString(raw.description, "description", name, filePath);
 	if (description !== undefined) definition.description = description;
+	const promptStrategy = readPromptStrategy(raw.promptStrategy, name, scope, filePath);
+	if (promptStrategy !== undefined) definition.promptStrategy = promptStrategy;
 	for (const field of ["skills", "extensions", "mcps", "tools"] as const) {
 		const entries = readStringArray(raw[field], field, name, filePath);
 		if (entries !== undefined) definition[field] = entries;
@@ -239,17 +285,26 @@ async function indexCatalogDirectory(dirPath: string, diagnostics: string[]): Pr
 
 export class ProfileCatalog {
 	readonly #profiles: ReadonlyMap<string, CatalogEntry>;
+	readonly #globalFiles: ReadonlyMap<string, string>;
 	readonly #globalNames: ReadonlySet<string>;
 	readonly #diagnostics: readonly string[];
 
-	private constructor(profiles: ReadonlyMap<string, CatalogEntry>, globalNames: ReadonlySet<string>, diagnostics: string[]) {
+	private constructor(
+		profiles: ReadonlyMap<string, CatalogEntry>,
+		globalFiles: ReadonlyMap<string, string>,
+		globalNames: ReadonlySet<string>,
+		diagnostics: string[],
+	) {
 		this.#profiles = profiles;
+		this.#globalFiles = globalFiles;
 		this.#globalNames = globalNames;
 		this.#diagnostics = diagnostics;
 	}
 
 	/** Indexes global and trusted-project filenames. Project winners keep the
-	 *  global position; project-only names follow in alphabetical order. */
+	 *  global position; project-only names follow in alphabetical order. Both
+	 *  halves stay indexed per name, so an `append` winner can name its base
+	 *  without a directory scan and a replacement winner never touches it. */
 	static async load(_agentDir: string, options?: { projectDir?: string }): Promise<ProfileCatalog> {
 		const diagnostics: string[] = [];
 		const globalProfiles = await indexCatalogDirectory(getGlobalProfilesDir(), diagnostics);
@@ -263,7 +318,7 @@ export class ProfileCatalog {
 				profiles.set(name, { source: "project", filePath });
 			}
 		}
-		return new ProfileCatalog(profiles, new Set(globalProfiles.keys()), diagnostics);
+		return new ProfileCatalog(profiles, globalProfiles, new Set(globalProfiles.keys()), diagnostics);
 	}
 
 	hasGlobal(name: string): boolean {
@@ -274,7 +329,30 @@ export class ProfileCatalog {
 		return [...this.#diagnostics];
 	}
 
-	/** Reads only the winning definition, freshly on every resolution. */
+	/** Parses one definition and collects its unknown-field warnings. */
+	#parseDefinition(name: string, raw: unknown, filePath: string, scope: ProfileScope): { definition: ProfileDefinition; warnings: string[] } {
+		const warnings: string[] = [];
+		const definition = parseProfileDefinition(name, raw, filePath, (warning) => warnings.push(warning), scope);
+		return { definition, warnings };
+	}
+
+	/** Reads one definition freshly, classifying read failures by the same rules
+	 *  the catalog has always used. */
+	async #readDefinition(name: string, filePath: string, scope: ProfileScope): Promise<{ definition: ProfileDefinition; warnings: string[] }> {
+		const result = await readJsonFile(filePath);
+		if (!result.ok) {
+			throw new CatalogError(result.reason === "missing"
+				? `${filePath}: profile "${name}" disappeared; retry resolution`
+				: `invalid JSON in ${filePath}`);
+		}
+		return this.#parseDefinition(name, result.value, filePath, scope);
+	}
+
+	/** Reads the winning definition, freshly on every resolution. The shadowed
+	 *  global file is read only as the composition base of a trusted project
+	 *  winner that declares `"promptStrategy": "append"`; a replacement winner
+	 *  (absent strategy or `replace`) never opens it. Composition is never
+	 *  cached: the merged definition exists only in this result. */
 	async resolve(name: string): Promise<ResolvedProfile | undefined> {
 		if (!PROFILE_NAME_PATTERN.test(name)) {
 			throw new CatalogError(`invalid profile name "${name}" (must match ${PROFILE_NAME_PATTERN})`);
@@ -284,28 +362,71 @@ export class ProfileCatalog {
 		}
 		const entry = this.#profiles.get(name);
 		if (entry === undefined) return undefined;
-		const result = await readJsonFile(entry.filePath);
-		if (!result.ok) {
-			throw new CatalogError(result.reason === "missing"
-				? `${entry.filePath}: profile "${name}" disappeared; retry resolution`
-				: `invalid JSON in ${entry.filePath}`);
+		const winner = await this.#readDefinition(name, entry.filePath, entry.source);
+		if (winner.definition.promptStrategy !== "append") {
+			return {
+				name,
+				source: entry.source,
+				definition: winner.definition,
+				...(winner.warnings.length > 0 ? { warnings: winner.warnings } : {}),
+			};
 		}
-		const warnings: string[] = [];
-		const definition = parseProfileDefinition(name, result.value, entry.filePath, (warning) => warnings.push(warning));
-		return { name, source: entry.source, definition, ...(warnings.length > 0 ? { warnings } : {}) };
+		// Only a project definition can declare `append`; the parser rejects it in a
+		// global catalog, so this winner is a project entry. An absent namesake is
+		// the standalone branch, not an error and not a fallback to another name.
+		const globalPath = this.#globalFiles.get(name);
+		let base: { definition: ProfileDefinition; warnings: string[] } | undefined;
+		if (globalPath !== undefined) {
+			const baseFile = await readJsonFile(globalPath);
+			if (baseFile.ok) {
+				base = this.#parseDefinition(name, baseFile.value, globalPath, "global");
+			} else if (baseFile.reason === "invalid") {
+				// An existing but malformed base fails closed, naming that file; neither
+				// half is applied.
+				throw new CatalogError(`invalid JSON in ${globalPath}`);
+			}
+			// A base that vanished between indexing and this read is absent, not
+			// malformed: absence is not an error, so the standalone branch applies.
+		}
+		const composed = composeProfileDefinitions(base?.definition, winner.definition, {
+			globalPath,
+			projectPath: entry.filePath,
+		});
+		const warnings = [...winner.warnings, ...(base?.warnings ?? [])];
+		return {
+			name,
+			source: entry.source,
+			definition: composed.definition,
+			composition: compositionMetadata(composed, { globalPath, projectPath: entry.filePath }),
+			...(warnings.length > 0 ? { warnings } : {}),
+		};
 	}
 
 	/** Lists only winners, retaining expected definition errors per entry. */
 	async list(): Promise<CatalogListItem[]> {
-		const items: CatalogListItem[] = [{ name: DEFAULT_PROFILE_NAME, source: "builtin", definition: {}, available: true, shadowsGlobal: false }];
+		const items: CatalogListItem[] = [{ name: DEFAULT_PROFILE_NAME, source: "builtin", definition: {}, available: true, shadowsGlobal: false, composesGlobal: false }];
 		for (const [name, entry] of this.#profiles) {
 			const metadata = { name, source: entry.source, shadowsGlobal: entry.source === "project" && this.hasGlobal(name) };
 			try {
 				const profile = (await this.resolve(name))!;
-				items.push({ ...profile, ...metadata, available: true });
+				// `composesGlobal` is true only when the winner actually composed with a
+				// global namesake, which the resolved metadata records; no other name's
+				// definition is read to decide it. A composing append consumes the
+				// global definition as its base, so it must not also claim to shadow or
+				// replace it. A replacement winner keeps the shadowing claim, and an
+				// unavailable entry (nothing resolved) keeps its prior metadata because
+				// nothing proves the winner composes.
+				const composesGlobal = profile.composition?.branch === "composed";
+				items.push({
+					...profile,
+					...metadata,
+					shadowsGlobal: metadata.shadowsGlobal && !composesGlobal,
+					composesGlobal,
+					available: true,
+				});
 			} catch (error) {
 				if (!(error instanceof CatalogError)) throw error;
-				items.push({ ...metadata, available: false, error: error.message });
+				items.push({ ...metadata, composesGlobal: false, available: false, error: error.message });
 			}
 		}
 		return items;

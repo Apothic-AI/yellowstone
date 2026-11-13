@@ -91,6 +91,36 @@ describe("shipped JSON schemas", () => {
 		}
 	});
 
+	it("the profiles schema accepts the documented prompt strategies and rejects any other value", async () => {
+		const validate = newAjv().compile(await loadSchema("profiles.schema.json"));
+
+		// The schema mirrors the contract's two values; it is not the source of them.
+		for (const value of ["append", "replace"]) {
+			expect(validate({ promptStrategy: value }), JSON.stringify(validate.errors)).toBe(true);
+			expect(() => parseProfileDefinition("schema-case", { promptStrategy: value })).not.toThrow();
+		}
+		expect(validate({})).toBe(true);
+		for (const value of ["merge", "Append", "", 1, null, true, ["append"]]) {
+			expect(validate({ promptStrategy: value })).toBe(false);
+			expect(() => parseProfileDefinition("schema-case", { promptStrategy: value })).toThrow();
+		}
+	});
+
+	it("declares promptStrategy between description and skills", async () => {
+		const fields = Object.keys((await loadSchema("profiles.schema.json")).properties) as string[];
+
+		expect(fields.indexOf("promptStrategy")).toBe(fields.indexOf("description") + 1);
+		expect(fields.indexOf("promptStrategy") + 1).toBe(fields.indexOf("skills"));
+	});
+
+	it("keeps the shipped examples free of a strategy a global catalog would reject", async () => {
+		// Both shipped files are ordinary definitions; an `append` example could be
+		// copied into a global catalog, where the parser rejects it.
+		for (const example of ["examples/ask.json", "examples/example.json"]) {
+			expect(JSON.parse(await readFile(path.resolve(example), "utf8"))).not.toHaveProperty("promptStrategy");
+		}
+	});
+
 	it("the profiles schema accepts an empty mcps array", async () => {
 		const validate = newAjv().compile(await loadSchema("profiles.schema.json"));
 

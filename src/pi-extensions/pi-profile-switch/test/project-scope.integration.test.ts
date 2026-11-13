@@ -67,6 +67,107 @@ async function trustProject(): Promise<void> {
 	await writeFile(path.join(fixture.agentDir, "trust.json"), JSON.stringify({ [fixture.cwd]: true }));
 }
 
+describe("launcher integration: a trusted project's append profile composes at launch (FT54 S3 §8)", () => {
+	it(
+		"composes the union and records the composition in the plan file",
+		{ timeout: 45_000 },
+		async () => {
+			await addGlobalSkill(fixture, "alpha-skill");
+			await addGlobalSkill(fixture, "beta-skill");
+			await writeGlobalCatalog({ review: { skills: ["alpha-skill"] } });
+			await writeProjectCatalog({ review: { promptStrategy: "append", skills: ["beta-skill"] } });
+			await trustProject();
+
+			const run = await runLauncher(fixture, ["review", "--", "--version"]);
+			// The composed launch exits cleanly; the helper closed stdin.
+			expect(run.code).toBe(0);
+
+			const instance = await soleInstanceDir(fixture);
+			const settings = JSON.parse(await readFile(path.join(instance, "settings.json"), "utf8"));
+			const entries = ((settings.skills ?? []) as unknown[]).map((entry) => String(entry));
+			// The union: the global half's skill and the project half's skill.
+			expect(entries.some((entry) => entry.includes("alpha-skill"))).toBe(true);
+			expect(entries.some((entry) => entry.includes("beta-skill"))).toBe(true);
+
+			const plan = JSON.parse(await readFile(path.join(instance, "pi-profile.json"), "utf8"));
+			expect(plan.composition).toMatchObject({
+				strategy: "append",
+				branch: "composed",
+				globalPath: path.join(fixture.profileSwitchDir, "profiles", "review.json"),
+				projectPath: path.join(fixture.cwd, ".pi", "profiles", "review.json"),
+			});
+		},
+	);
+
+	it(
+		"never reads an untrusted project's append file",
+		{ timeout: 45_000 },
+		async () => {
+			await addGlobalSkill(fixture, "alpha-skill");
+			await writeGlobalCatalog({ review: { skills: ["alpha-skill"] } });
+			// A malformed project file: had the launcher read it, the launch would
+			// have failed instead of resolving the global profile.
+			await mkdir(path.join(fixture.cwd, ".pi", "profiles"), { recursive: true });
+			await writeFile(path.join(fixture.cwd, ".pi", "profiles", "review.json"), "{ not json");
+
+			const run = await runLauncher(fixture, ["review", "--", "--version"]);
+			expect(run.code).toBe(0);
+
+			const instance = await soleInstanceDir(fixture);
+			const plan = JSON.parse(await readFile(path.join(instance, "pi-profile.json"), "utf8"));
+			// The global profile alone: there is no composition, because the
+			// project half was never read.
+			expect(plan.composition).toBeUndefined();
+			const settings = JSON.parse(await readFile(path.join(instance, "settings.json"), "utf8"));
+			const entries = ((settings.skills ?? []) as unknown[]).map((entry) => String(entry));
+			expect(entries.some((entry) => entry.includes("alpha-skill"))).toBe(true);
+		},
+	);
+
+	it(
+		"a project profile without a strategy keeps complete replacement",
+		{ timeout: 45_000 },
+		async () => {
+			await addGlobalSkill(fixture, "alpha-skill");
+			await addGlobalSkill(fixture, "beta-skill");
+			await writeGlobalCatalog({ review: { skills: ["alpha-skill"] } });
+			await writeProjectCatalog({ review: { skills: ["beta-skill"] } });
+			await trustProject();
+
+			const run = await runLauncher(fixture, ["review", "--", "--version"]);
+			expect(run.code).toBe(0);
+
+			const instance = await soleInstanceDir(fixture);
+			const settings = JSON.parse(await readFile(path.join(instance, "settings.json"), "utf8"));
+			const entries = ((settings.skills ?? []) as unknown[]).map((entry) => String(entry));
+			// No declared strategy means replacement: the global half is not
+			// composed in, and its skill is not selected. The global skill is
+			// excluded, not included.
+			expect(entries.some((entry) => entry.includes("beta-skill") && !entry.startsWith("-"))).toBe(true);
+			expect(entries.some((entry) => entry.includes("alpha-skill") && !entry.startsWith("-"))).toBe(false);
+			const plan = JSON.parse(await readFile(path.join(instance, "pi-profile.json"), "utf8"));
+			expect(plan.composition).toBeUndefined();
+		},
+	);
+
+	it(
+		"fails the launch when the global base under append is malformed, naming the file",
+		{ timeout: 45_000 },
+		async () => {
+			const globalPath = path.join(fixture.profileSwitchDir, "profiles", "review.json");
+			await mkdir(path.dirname(globalPath), { recursive: true });
+			await writeFile(globalPath, "{ not json");
+			await writeProjectCatalog({ review: { promptStrategy: "append", skills: [] } });
+			await trustProject();
+
+			const run = await runLauncher(fixture, ["review", "--", "--version"]);
+			// A malformed base fails closed: neither half is applied.
+			expect(run.code).toBe(2);
+			expect(run.stderr).toContain(globalPath);
+		},
+	);
+});
+
 describe("launcher integration: project scope and trust", () => {
 	it(
 		"an untrusted project's catalog, skills, and extensions never enter the runtime",

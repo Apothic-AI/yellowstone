@@ -3,10 +3,17 @@ import { mkdir, lstat, readFile, readlink, realpath, rm, symlink, writeFile } fr
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { DiscoveredExtensions } from "../src/extension-discovery.ts";
 import { resolveInitialProfile } from "../src/launcher/initial-profile.ts";
-import { defaultPlan, type ActivationPlan } from "../src/profile-resolver.ts";
+import type { ProfileDefinition } from "../src/profile-catalog.ts";
+import {
+	compositionMetadata,
+	composeProfileDefinitions,
+	type CompositionResult,
+} from "../src/profile-composition.ts";
+import { defaultPlan, resolveProfile, type ActivationPlan } from "../src/profile-resolver.ts";
 import { generateRuntimeDir, writeRuntimeFiles, type DiscoveryContext } from "../src/settings-generator.ts";
-import type { SkillEntry } from "../src/skill-registry.ts";
+import { discoverSkills, type SkillEntry } from "../src/skill-registry.ts";
 import { addGlobalExtension, addGlobalSkill, createPiFixture, type PiFixture } from "./helpers/pi-fixture.ts";
 
 let fixture: PiFixture;
@@ -1302,5 +1309,145 @@ describe("restrictive partial runtime materialization", () => {
 		await mkdir(path.join(fixture.agentDir, "mcp.json"));
 		await expect(writeRuntimeFiles(first.runtimeDir, selectionPlan({ mcps: [] }), { agentDir: fixture.agentDir, discovery: { skills: [], packages: [] } })).rejects.toMatchObject({ code: "EISDIR" });
 		expect(await readFile(path.join(first.runtimeDir, "settings.json"), "utf8")).toBe(before);
+	});
+});
+
+describe("composed selection at the discovery boundary (FT54 S3 §5)", () => {
+	const compositionPaths = () => ({
+		globalPath: path.join(fixture.profileSwitchDir, "profiles", "review.json"),
+		projectPath: path.join(fixture.cwd, ".pi", "profiles", "review.json"),
+	});
+
+	/** The user's own skill filters are Pi's: discovery honors them, so a skill
+	 *  the user hid never enters the reference vocabulary. */
+	async function writeUserSkillFilters(entries: string[]): Promise<void> {
+		await writeFile(path.join(fixture.agentDir, "settings.json"), JSON.stringify({ skills: entries }));
+	}
+
+	/** The real discovery result: a real SettingsManager inside discoverSkills,
+	 *  pointed at the fixture's agent dir and project. */
+	async function discover(): Promise<SkillEntry[]> {
+		return await discoverSkills({ cwd: fixture.cwd, agentDir: fixture.agentDir, projectTrusted: true });
+	}
+
+	/** A composed plan built from the real discovery result. */
+	async function compose(
+		global: ProfileDefinition,
+		project: ProfileDefinition,
+	): Promise<{ plan: ActivationPlan; composed: CompositionResult }> {
+		const paths = compositionPaths();
+		const composed = composeProfileDefinitions(global, project, paths);
+		const plan = await resolveProfile({
+			profile: {
+				name: "review",
+				source: "project",
+				definition: composed.definition,
+				composition: compositionMetadata(composed, paths),
+			},
+			skills: await discover(),
+			extensions: new DiscoveredExtensions([], [], []),
+			referenceContributors: composed.referenceContributors,
+		});
+		return { plan, composed };
+	}
+
+	it("a skill the user's own exclusion hides cannot be selected by a composed reference", async () => {
+		await addGlobalSkill(fixture, "kept-skill");
+		await addGlobalSkill(fixture, "hidden-skill");
+		await writeUserSkillFilters(["!skills/**", "+skills/kept-skill/SKILL.md"]);
+
+		const discovered = await discover();
+		const discoveredNames = discovered.map((skill) => skill.name);
+		// The real discovery honors the user's exclusion and force-inclusion.
+		expect(discoveredNames).toContain("kept-skill");
+		expect(discoveredNames).not.toContain("hidden-skill");
+
+		// The global half names both skills; the project half names the hidden one.
+		const { plan } = await compose(
+			{ skills: ["kept-skill", "hidden-skill"] },
+			{ promptStrategy: "append", skills: ["hidden-skill"] },
+		);
+		// The hidden skill is not selected: it is not in the vocabulary. The
+		// force-included skill is present even though the other scope's
+		// reference is what named it.
+		expect(plan.skills.map((skill) => skill.name)).toEqual(["kept-skill"]);
+		// The hidden reference is a diagnostic, never a silent omission.
+		expect(
+			plan.diagnostics?.some((issue) => issue.kind === "skill" && issue.reference === "hidden-skill"),
+		).toBe(true);
+	});
+
+	it("an eligible but unselected skill can be added by the project half", async () => {
+		await addGlobalSkill(fixture, "base-skill");
+		await addGlobalSkill(fixture, "extra-skill");
+
+		const { plan } = await compose(
+			{ skills: ["base-skill"] },
+			{ promptStrategy: "append", skills: ["extra-skill"] },
+		);
+		expect(plan.skills.map((skill) => skill.name).sort()).toEqual(["base-skill", "extra-skill"]);
+		// One expansion per kind: the identity the project half added is
+		// selected once, not once per half that named it.
+		expect(plan.skills.filter((skill) => skill.name === "extra-skill")).toHaveLength(1);
+	});
+
+	it("a kind the global half leaves undeclared stays native, and the project half cannot narrow it", async () => {
+		await addGlobalSkill(fixture, "native-skill");
+
+		const { plan, composed } = await compose(
+			{ tools: ["read"] },
+			{ promptStrategy: "append", skills: ["native-skill"] },
+		);
+		// The base leaves skills undeclared: native visibility stands.
+		expect(plan.resourceSelection.skills).toBe(false);
+		expect(plan.skills.map((skill) => skill.name)).toEqual(["native-skill"]);
+		// The project reference is reported as unapplied, not applied.
+		expect(composed.unapplied).toEqual([{ kind: "skills", reference: "native-skill", scope: "project" }]);
+		expect(composed.diagnostics.map((entry) => entry.code)).toContain("append-unapplied-reference");
+	});
+
+	it("a declared empty kind is a restriction, not an omission", async () => {
+		await addGlobalSkill(fixture, "native-skill");
+
+		const { plan, composed } = await compose(
+			{ skills: [] },
+			{ promptStrategy: "append", skills: ["native-skill"] },
+		);
+		// An empty list is a declared selection of nothing, so the project half
+		// widens it instead of failing to apply.
+		expect(plan.resourceSelection.skills).toBe(true);
+		expect(plan.skills.map((skill) => skill.name)).toEqual(["native-skill"]);
+		expect(composed.unapplied).toEqual([]);
+	});
+
+	it("a trusted project's own skills are not narrowed by a composed profile", async () => {
+		await addGlobalSkill(fixture, "user-skill");
+		await addGlobalSkill(fixture, "other-user-skill");
+		const projectSkillDir = path.join(fixture.cwd, ".pi", "skills", "proj-skill");
+		await mkdir(projectSkillDir, { recursive: true });
+		await writeFile(
+			path.join(projectSkillDir, "SKILL.md"),
+			"---\nname: proj-skill\ndescription: project skill\n---\n",
+		);
+
+		const { plan } = await compose(
+			{ skills: ["user-skill"] },
+			{ promptStrategy: "append", skills: ["proj-skill"] },
+		);
+		const result = await generateRuntimeDir(plan, {
+			agentDir: fixture.agentDir,
+			discovery: { skills: await discover(), packages: [] },
+			projectDir: fixture.cwd,
+		});
+		const settings = await generatedSettings(result.runtimeDir);
+		const entries = ((settings.skills ?? []) as unknown[]).map((entry) => String(entry));
+
+		// Project scope belongs to Pi: the composed profile neither selects the
+		// project skill into the allowlist nor excludes it.
+		expect(entries.some((entry) => entry.includes("proj-skill"))).toBe(false);
+		// The user scope is the profile's to narrow: an unselected user skill is
+		// excluded.
+		expect(entries.some((entry) => entry.includes("other-user-skill"))).toBe(true);
+		expect(entries.some((entry) => entry.includes("user-skill") && !entry.startsWith("-"))).toBe(true);
 	});
 });

@@ -5,6 +5,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as initialProfile from "../src/launcher/initial-profile.ts";
 import { generateRuntimeDir, writeRuntimeFiles } from "../src/settings-generator.ts";
 import { defaultPlan } from "../src/profile-resolver.ts";
+import { applyLaunchPlan, readLaunchPlanFile } from "../src/switching/apply-plan.ts";
+import { buildStatusReport, formatStatusMarkdown } from "../src/switching/status.ts";
+import { expandToolReferences } from "../src/switching/tool-references.ts";
 import { switchProfile, SwitchError } from "../src/switching/switch-profile.ts";
 import { addGlobalExtension, addGlobalSkill, createPiFixture, type PiFixture } from "./helpers/pi-fixture.ts";
 
@@ -857,4 +860,117 @@ it("retains plain warnings from resolution plans without diagnostic metadata", a
 	const result = await switchProfile("legacy", deps());
 	expect(result.warnings).toEqual(["legacy plain warning"]);
 	expect((await readPlanFile()).diagnostics).toBeUndefined();
+});
+
+describe("session-start tool provenance (FT54 S2 §3.2/§3.11/§4)", () => {
+	it("resolves or drops every boot-pending reference, one outcome each, without inventing a warning", () => {
+		const references = ["read", "lint-*", "lint-fix", "absent-tool", "mcp-only"];
+		const liveTools = ["read", "lint-fix"];
+		const mcpTools = ["mcp-only"];
+		const contributors = {
+			read: "global",
+			"lint-*": "project",
+			"lint-fix": "both",
+			"absent-tool": "project",
+			"mcp-only": "global",
+		} as const;
+
+		const traced = expandToolReferences(references, liveTools, mcpTools, contributors);
+		const plain = expandToolReferences(references, liveTools, mcpTools);
+
+		// The trace does not change the expansion or the existing diagnostics.
+		expect(traced.expanded).toEqual(plain.expanded);
+		expect(traced.droppedLiterals).toEqual(["absent-tool"]);
+		expect(traced.legacyMcpReferences).toEqual(["mcp-only"]);
+		expect(traced.expanded).toEqual(["read", "lint-fix"]);
+		// Overlap unions per tool name.
+		expect(traced.contributors).toEqual({ read: "global", "lint-fix": "both" });
+		// Exactly one outcome per reference, nothing left pending in-process.
+		expect(Object.keys(traced.outcomes ?? {}).sort()).toEqual([...references].sort());
+		expect(traced.outcomes?.["read"]).toEqual({ state: "resolved", contributors: "global" });
+		expect(traced.outcomes?.["lint-*"]).toEqual({ state: "resolved", contributors: "project" });
+		expect(traced.outcomes?.["lint-fix"]).toEqual({ state: "resolved", contributors: "both" });
+		expect(traced.outcomes?.["absent-tool"]).toEqual({ state: "dropped", contributors: "project" });
+		expect(traced.outcomes?.["mcp-only"]).toEqual({ state: "dropped", contributors: "global" });
+	});
+
+	it("keeps the three dropped states diagnostic-distinct, including a quiet zero-match glob", () => {
+		const traced = expandToolReferences(
+			["ghost-tool", "mcp-only", "nothing-*"],
+			["read"],
+			["mcp-only"],
+			{ "ghost-tool": "project", "mcp-only": "global", "nothing-*": "both" },
+		);
+
+		expect(traced.droppedLiterals).toEqual(["ghost-tool"]);
+		expect(traced.legacyMcpReferences).toEqual(["mcp-only"]);
+		// A zero-match glob is not an unknown literal: no invented dropped/warning.
+		expect(traced.droppedLiterals).not.toContain("nothing-*");
+		expect(traced.legacyMcpReferences).not.toContain("nothing-*");
+		expect(traced.outcomes?.["nothing-*"]).toEqual({ state: "dropped", contributors: "both" });
+	});
+
+	it("resolves a boot-pending reference through the existing caller and leaves the plan a boot snapshot", async () => {
+		const plan = {
+			profile: "composed",
+			source: "project",
+			tools: ["read", "lint-fix"],
+			toolReferences: ["read", "lint-fix"],
+			composition: {
+				strategy: "append",
+				branch: "composed",
+				globalPath: "/global/leader.json",
+				projectPath: "/project/.pi/profiles/leader.json",
+				referenceContributors: { skills: {}, extensions: {}, mcps: {}, tools: { read: "global", "lint-fix": "both" } },
+				unapplied: [],
+				diagnostics: [],
+			},
+			pendingToolReferences: [{ reference: "lint-fix", contributors: "both", resolvesAt: "session-start" }],
+		};
+		const planPath = path.join(runtimeDir, "pi-profile.json");
+		await writeFile(planPath, JSON.stringify(plan, null, 2));
+		const before = await readFile(planPath, "utf8");
+
+		const applied: string[] = [];
+		await applyLaunchPlan({
+			runtimeDir,
+			cwd: fixture.cwd,
+			reason: "startup",
+			surface: {
+				getAllTools: () => [
+					{ name: "read", sourceInfo: { path: "<builtin:read>", source: "builtin" } },
+					{ name: "lint-fix", sourceInfo: { path: "/agent/extensions/linter.ts", source: "extension" } },
+				],
+				setActiveTools: (names) => applied.push(...names),
+			},
+		});
+
+		// In-process resolution happened; the persisted plan was not rewritten.
+		expect(applied).toEqual(["read", "lint-fix"]);
+		expect(await readFile(planPath, "utf8")).toBe(before);
+
+		// Status reads that boot snapshot: pending with the outcome unrecorded,
+		// and it claims no resolved per-tool contributor.
+		const report = buildStatusReport({
+			plan: (await readLaunchPlanFile(runtimeDir))!,
+			discoveredMcpServers: [],
+			disabledMcpServers: [],
+			commands: [],
+			tools: [],
+		});
+		expect(report.pendingToolReferences).toEqual([
+			{ reference: "lint-fix", contributors: "both", resolvesAt: "session-start" },
+		]);
+		const markdown = formatStatusMarkdown(report);
+		expect(markdown).toContain('tools awaiting session start: "lint-fix" (both) — boot-snapshot pending; current session outcome not recorded (UNKNOWN)');
+		expect(markdown).not.toMatch(/lint-fix resolved|currently pending|still pending/i);
+	});
+
+	it("reads no filesystem, backend, or new runtime entry point in the expansion module", async () => {
+		const source = await readFile(path.resolve("src/switching/tool-references.ts"), "utf8");
+		const specifiers = [...source.matchAll(/from\s+"([^"]+)"/g)].map((match) => match[1]);
+		expect(specifiers.sort()).toEqual(["../profile-composition.ts", "minimatch"]);
+		expect(source).toMatch(/import type \{ ContributorSet \}/);
+		expect(specifiers.some((specifier) => specifier.startsWith("node:"))).toBe(false);
+	});
 });

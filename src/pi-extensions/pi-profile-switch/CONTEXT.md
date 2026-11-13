@@ -7,7 +7,8 @@
 | **Profile** | A named capability definition: references skills, extensions, MCP servers, and tools; optionally declares model, thinking level, instructions, and native child-role settings. | preset, config, bundle, capability |
 | **default profile** | The built-in profile: not deletable, absent from catalog files; loads every resource Pi can discover. | built-in |
 | **Catalog** | The `profiles/` directory holding profile definitions: one global, one per project, one `<name>.json` file per profile. | — |
-| **Source scope** | Where a profile comes from: `builtin`, `global`, or `project`. Determines which scope its runtime state and edits are written to. | — |
+| **Source scope** | Where a profile comes from: `builtin`, `global`, or `project`. Determines which scope its runtime state and edits are written to. A composed definition still reports the source of its winning file — composition never adds a fourth source. | — |
+| **Composed definition** | The definition produced by resolving a project definition that declares `"promptStrategy": "append"`: its own declarations plus the same-named global definition's, merged once at the catalog boundary. It is not a stored artifact and has no source of its own. | merged profile, inherited profile, effective profile |
 | **RuntimeOverlay** | A temporary narrowing of the active profile: disables resolved skills, extensions, MCP servers, or tools. Usually just "overlay". | session profile, temporary profile |
 | **Runtime state** | The persisted active-profile selection and overlay. | — |
 | **Resource** | Anything a profile can reference: a skill, extension, MCP server, or tool. | — |

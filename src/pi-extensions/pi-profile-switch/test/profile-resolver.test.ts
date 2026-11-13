@@ -3,6 +3,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ResolvedProfile } from "../src/profile-catalog.ts";
+import { compositionMetadata, composeProfileDefinitions } from "../src/profile-composition.ts";
 import { ActivationError, resolveProfile } from "../src/profile-resolver.ts";
 import { DiscoveredExtensions, discoverExtensions } from "../src/extension-discovery.ts";
 import { loadMergedMcpServers, type MergedMcpResult } from "../src/mcp-config.ts";
@@ -1270,5 +1271,311 @@ describe("partial MCP selection intent", () => {
 		expect((next.instanceMcpConfig?.mcpServers as Record<string, any>).future.toolExposure).toEqual({ "*": "hidden" });
 		expect(next.diagnostics).toBeUndefined();
 		expect(target.definition).toEqual({ mcps: ["future"], mcp_tools: { future: [] } });
+	});
+});
+
+/**
+ * FT54 S2 — the single origin trace.
+ *
+ * The recorded pre-change serializations below were captured by running this
+ * same resolution against the accepted S1 tip before any S2 edit
+ * (`2ae6f74e1fefbe76dd16708df4b1e98ebbda312d`, `test-plan.md` §3.8/§3.9). They
+ * are compared byte-for-byte, so any non-optional field or reordered key fails.
+ */
+const RECORDED_PRE_CHANGE_PLAN = '{"profile":"capture","source":"global","filter":"selection","skills":[{"name":"alpha","filePath":"/agent/skills/alpha/SKILL.md","source":"auto","scope":"user","origin":"top-level"},{"name":"beta","filePath":"/agent/skills/beta/SKILL.md","source":"auto","scope":"user","origin":"top-level"}],"extensions":[{"id":"local-ext","entry":"/agent/extensions/local-ext.ts"}],"resourceSelection":{"skills":true,"extensions":true},"tools":["read"],"toolReferences":["read","lint-*"],"mcps":["github"]}';
+const RECORDED_PRE_CHANGE_OVERLAY_PLAN = '{"profile":"capture-overlay","source":"global","filter":"selection","skills":[{"name":"alpha","filePath":"/agent/skills/alpha/SKILL.md","source":"auto","scope":"user","origin":"top-level"}],"extensions":[],"resourceSelection":{"skills":true,"extensions":true},"tools":[],"toolReferences":["read","lint-*"],"disabledTools":["read"],"mcps":[]}';
+
+function fixedSkill(name: string): SkillEntry {
+	return { name, filePath: `/agent/skills/${name}/SKILL.md`, source: "auto", scope: "user", origin: "top-level" };
+}
+
+/** A declared reference list whose traversal count is observable. One
+ *  `expandReferences` pass iterates the list once; a per-scope expansion would
+ *  split the composed list and traverse it (or its halves) more than once. */
+function countedList<T>(items: T[]): { list: T[]; passes: () => number } {
+	let passes = 0;
+	const list = new Proxy(items, {
+		get(target, property, receiver) {
+			if (property === Symbol.iterator) passes += 1;
+			return Reflect.get(target, property, receiver);
+		},
+	});
+	return { list, passes: () => passes };
+}
+
+const captureDefinition = {
+	skills: ["alpha", "beta"],
+	extensions: ["local-ext"],
+	mcps: ["github"],
+	tools: ["read", "lint-*"],
+};
+
+const captureExtensions = () =>
+	new DiscoveredExtensions([], [{ id: "local-ext", entry: "/agent/extensions/local-ext.ts" }], []);
+
+function composed(name: string, global: Record<string, unknown>, project: Record<string, unknown>): {
+	profile: ResolvedProfile;
+	contributors: ReturnType<typeof composeProfileDefinitions>["referenceContributors"];
+} {
+	const paths = { globalPath: "/global/leader.json", projectPath: "/project/.pi/profiles/leader.json" };
+	const result = composeProfileDefinitions(global, project, paths);
+	return {
+		profile: {
+			name,
+			source: "project",
+			definition: result.definition,
+			composition: compositionMetadata(result, paths),
+		},
+		contributors: result.referenceContributors,
+	};
+}
+
+describe("single origin trace (FT54 S2 §3)", () => {
+	it("attributes each declared identity to the scope that produced it", async () => {
+		const plan = await resolveProfile({
+			profile: profile("capture", { skills: ["alpha", "beta"] }),
+			skills: [fixedSkill("alpha"), fixedSkill("beta")],
+			extensions: await extensionsWith(),
+			referenceContributors: { skills: { alpha: "global", beta: "project" }, extensions: {}, mcps: {}, tools: {} },
+		});
+
+		expect(plan.origins).toEqual({ skills: { alpha: "global", beta: "project" } });
+		expect(plan.extensionOrigins).toBeUndefined();
+		expect(plan.toolOrigins).toBeUndefined();
+		expect(plan.pendingToolReferences).toBeUndefined();
+	});
+
+	it("unions an overlapping glob and literal per identity, repeatedly and idempotently", async () => {
+		const { profile: target, contributors } = composed(
+			"overlap",
+			{ skills: ["research-*"] },
+			{ promptStrategy: "append", skills: ["research-web"] },
+		);
+		const plan = await resolveProfile({
+			profile: target,
+			skills: [fixedSkill("research-web"), fixedSkill("research-docs")],
+			extensions: await extensionsWith(),
+			referenceContributors: contributors,
+		});
+
+		// The glob contributes `global`, the literal `project`; first-writer
+		// attribution would answer the user's question wrongly.
+		expect(plan.origins?.skills).toEqual({ "research-web": "both", "research-docs": "global" });
+		// Contributor sets are unioned, so a second resolution is identical.
+		const again = await resolveProfile({
+			profile: target,
+			skills: [fixedSkill("research-web"), fixedSkill("research-docs")],
+			extensions: await extensionsWith(),
+			referenceContributors: contributors,
+		});
+		expect(again.origins).toEqual(plan.origins);
+	});
+
+	it("expands each declared kind exactly once (instrumented, never by callback count)", async () => {
+		const skills = countedList(["alpha", "beta"]);
+		const extensionsReferences = countedList(["local-ext"]);
+		const mcpReferences = countedList(["github"]);
+		const toolReferences = countedList(["read", "lint-*"]);
+		const select = vi.spyOn(DiscoveredExtensions.prototype, "select");
+
+		const plan = await resolveProfile({
+			profile: profile("capture", {
+				skills: skills.list,
+				extensions: extensionsReferences.list,
+				mcps: mcpReferences.list,
+				tools: toolReferences.list,
+			}),
+			skills: [fixedSkill("alpha"), fixedSkill("beta")],
+			extensions: captureExtensions(),
+			discoveredMcpServers: ["github"],
+			referenceContributors: { skills: {}, extensions: {}, mcps: {}, tools: {} },
+		});
+
+		// One pass over each composed reference list. A per-scope expansion
+		// (global half then project half) would traverse it more than once.
+		expect(skills.passes()).toBe(1);
+		expect(extensionsReferences.passes()).toBe(1);
+		expect(mcpReferences.passes()).toBe(1);
+		expect(toolReferences.passes()).toBe(1);
+		expect(select).toHaveBeenCalledTimes(1);
+		expect(plan.skills.map((entry) => entry.name)).toEqual(["alpha", "beta"]);
+		expect(plan.extensions.map((entry) => entry.id)).toEqual(["local-ext"]);
+	});
+
+	it("keys extension provenance by resolved entry path, safe against identifier collisions", async () => {
+		// A local file and an installed package both call themselves "duo": the
+		// package is reachable only by its source alias, and both entries carry
+		// the same identifier. An id-keyed map would merge them.
+		const extensions = new DiscoveredExtensions(
+			[{ name: "duo", source: "npm:duo", root: "/pkgs/duo", entries: ["/pkgs/duo/index.ts"] }],
+			[{ id: "duo", entry: "/agent/extensions/duo.ts" }],
+			[],
+		);
+		const plan = await resolveProfile({
+			profile: profile("duo", { extensions: ["npm:duo", "duo"] }),
+			skills: [],
+			extensions,
+			referenceContributors: {
+				skills: {},
+				extensions: { "npm:duo": "project", duo: "global" },
+				mcps: {},
+				tools: {},
+			},
+		});
+
+		expect(plan.extensions.map((entry) => entry.id)).toEqual(["duo", "duo"]);
+		expect(plan.extensionOrigins).toEqual({
+			"/agent/extensions/duo.ts": { id: "duo", contributors: "global" },
+			"/pkgs/duo/index.ts": { id: "duo", contributors: "project" },
+		});
+	});
+
+	it("keeps boot-resolved built-ins and boot-pending raw references distinct", async () => {
+		const plan = await resolveProfile({
+			profile: profile("tools", { tools: ["read", "lint-*", "lint-fix"] }),
+			skills: [],
+			extensions: await extensionsWith(),
+			referenceContributors: {
+				skills: {},
+				extensions: {},
+				mcps: {},
+				tools: { read: "global", "lint-*": "project", "lint-fix": "both" },
+			},
+		});
+
+		// The untouched boot baseline still carries the pass-through literal.
+		expect(plan.tools).toEqual(["read", "lint-fix"]);
+		expect(plan.toolOrigins).toEqual({ read: { contributors: "global", state: "resolved", at: "boot" } });
+		// A raw reference the boot pass could not resolve is never a tool-name key.
+		expect(plan.pendingToolReferences).toEqual([
+			{ reference: "lint-fix", contributors: "both", resolvesAt: "session-start" },
+		]);
+		expect(Object.hasOwn(plan.toolOrigins ?? {}, "lint-fix")).toBe(false);
+	});
+
+	it("preserves the expanded tool selection while recording literal, glob, and zero-match provenance", async () => {
+		const definition = { tools: ["read", "gr*", "absent-*", "lint-fix"] };
+		const plain = await resolveProfile({
+			profile: profile("tools", definition),
+			skills: [],
+			extensions: await extensionsWith(),
+		});
+		const traced = await resolveProfile({
+			profile: profile("tools", definition),
+			skills: [],
+			extensions: await extensionsWith(),
+			referenceContributors: {
+				skills: {},
+				extensions: {},
+				mcps: {},
+				tools: { read: "global", "gr*": "project", "absent-*": "project", "lint-fix": "both" },
+			},
+		});
+
+		// The expansion result is unchanged by the trace.
+		expect(traced.tools).toEqual(plain.tools);
+		expect(traced.toolReferences).toEqual(plain.toolReferences);
+		// `gr*` selects `grep`; the `read` literal keeps its own scope. Neither
+		// the trace nor the overlap changes the expanded set.
+		expect(traced.toolOrigins?.read).toEqual({ contributors: "global", state: "resolved", at: "boot" });
+		expect(traced.toolOrigins?.grep).toEqual({ contributors: "project", state: "resolved", at: "boot" });
+		expect(traced.pendingToolReferences).toEqual([
+			{ reference: "lint-fix", contributors: "both", resolvesAt: "session-start" },
+		]);
+		// A zero-match tool glob is neither a tool nor a pending name: the boot
+		// tool expansion excludes tool globs from zero-match accounting (an
+		// extension tool may still appear at session start), so it invents no
+		// diagnostic here.
+		expect(traced.unmatched).toBeUndefined();
+		expect(traced.toolOrigins?.["absent-*"]).toBeUndefined();
+		expect(traced.pendingToolReferences?.map((entry) => entry.reference)).toEqual(["lint-fix"]);
+	});
+
+	it("keeps provenance and selection in agreement for every declared identity", async () => {
+		const { profile: target, contributors } = composed(
+			"agreement",
+			{ skills: ["alpha", "beta*"], mcps: ["github"] },
+			{ promptStrategy: "append", skills: ["beta", "gamma"], mcps: ["linear"] },
+		);
+		const plan = await resolveProfile({
+			profile: target,
+			skills: [fixedSkill("alpha"), fixedSkill("beta"), fixedSkill("gamma"), fixedSkill("other")],
+			extensions: await extensionsWith(),
+			discoveredMcpServers: ["github", "linear"],
+			referenceContributors: contributors,
+		});
+
+		const selected = plan.skills.map((entry) => entry.name).sort();
+		const declared = Object.entries(plan.origins?.skills ?? {});
+		expect(declared.map(([name]) => name).sort()).toEqual(selected);
+		for (const [, contributor] of declared) expect(["global", "project", "both"]).toContain(contributor);
+		expect(plan.origins?.skills).toEqual({ alpha: "global", beta: "both", gamma: "project" });
+		expect(plan.origins?.mcps).toEqual({ github: "global", linear: "project" });
+	});
+
+	it("does not fabricate a contributor for an identity its kind never declared", async () => {
+		const { profile: target, contributors } = composed(
+			"native",
+			{},
+			{ promptStrategy: "append", skills: ["review"] },
+		);
+		const plan = await resolveProfile({
+			profile: target,
+			skills: [fixedSkill("alpha"), fixedSkill("review")],
+			extensions: await extensionsWith(),
+			referenceContributors: contributors,
+		});
+
+		// The base omits `skills`, so the composite keeps native visibility and
+		// the project reference is unapplied — it never becomes a contributor.
+		expect(plan.origins?.skills).toEqual({ alpha: "native", review: "native" });
+		expect(Object.values(plan.origins?.skills ?? {})).not.toContain("project");
+		expect(plan.composition?.unapplied).toEqual([{ kind: "skills", reference: "review", scope: "project" }]);
+	});
+
+	it("treats a standalone append as its own branch, not as unapplied references", async () => {
+		// No global namesake: the project definition applies on its own, so every
+		// declared literal is a `project` contributor and nothing is unapplied.
+		const paths = { projectPath: "/project/.pi/profiles/leader.json" };
+		const composedResult = composeProfileDefinitions(
+			undefined,
+			{ promptStrategy: "append", skills: ["alpha"] },
+			paths,
+		);
+		const plan = await resolveProfile({
+			profile: {
+				name: "standalone",
+				source: "project",
+				definition: composedResult.definition,
+				composition: compositionMetadata(composedResult, paths),
+			},
+			skills: [fixedSkill("alpha"), fixedSkill("beta")],
+			extensions: await extensionsWith(),
+			referenceContributors: composedResult.referenceContributors,
+		});
+
+		expect(plan.composition?.branch).toBe("standalone");
+		expect(plan.composition?.unapplied).toEqual([]);
+		expect(plan.origins?.skills).toEqual({ alpha: "project" });
+	});
+
+	it("leaves an uncomposed plan byte-identical to the recorded pre-change output", async () => {
+		const plan = await resolveProfile({
+			profile: profile("capture", captureDefinition),
+			skills: [fixedSkill("alpha"), fixedSkill("beta"), fixedSkill("gamma")],
+			extensions: captureExtensions(),
+			discoveredMcpServers: ["github", "linear"],
+		});
+		expect(JSON.stringify(plan)).toBe(RECORDED_PRE_CHANGE_PLAN);
+
+		const overlayPlan = await resolveProfile({
+			profile: profile("capture-overlay", captureDefinition),
+			skills: [fixedSkill("alpha"), fixedSkill("beta"), fixedSkill("gamma")],
+			extensions: captureExtensions(),
+			discoveredMcpServers: ["github", "linear"],
+			overlay: { disabledSkills: ["beta"], disabledExtensions: ["local-ext"], disabledMcps: ["github"], disabledTools: ["read"] },
+			liveToolNames: ["read", "grep"],
+		});
+		expect(JSON.stringify(overlayPlan)).toBe(RECORDED_PRE_CHANGE_OVERLAY_PLAN);
 	});
 });

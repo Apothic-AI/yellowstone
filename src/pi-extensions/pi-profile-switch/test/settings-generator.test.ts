@@ -5,11 +5,14 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { DiscoveredExtensions } from "../src/extension-discovery.ts";
 import type { ProfileDefinition } from "../src/profile-catalog.ts";
+import { compositionMetadata, composeProfileDefinitions } from "../src/profile-composition.ts";
+import { loadMergedMcpServers, type MergedMcpResult } from "../src/mcp-config.ts";
 import { defaultPlan, resolveProfile } from "../src/profile-resolver.ts";
+import { discoverSkills, type SkillEntry } from "../src/skill-registry.ts";
 import { generateRuntimeDir, writeRuntimeFiles } from "../src/settings-generator.ts";
 import { resolveModelProfileInNode } from "./helpers/model-profile-runner.ts";
 import { runLauncher } from "./helpers/launcher-runner.ts";
-import { createPiFixture, type PiFixture } from "./helpers/pi-fixture.ts";
+import { addGlobalSkill, createPiFixture, type PiFixture } from "./helpers/pi-fixture.ts";
 
 let fixture: PiFixture;
 
@@ -332,5 +335,281 @@ describe("launcher activation diagnostic deduplication", () => {
 		expect(warnings.filter((line) => line.includes('unknown skill "missing"'))).toHaveLength(1);
 		expect(warnings.filter((line) => line.includes('unknown field "unknownField"'))).toHaveLength(1);
 		expect(output.stdout).not.toContain("warning");
+	});
+});
+
+/**
+ * FT54 S2 §3.3 — provenance reaches the plan file by pass-through only.
+ *
+ * The recorded pre-change file below was produced by this same write path at
+ * the accepted S1 tip before any S2 edit
+ * (`2ae6f74e1fefbe76dd16708df4b1e98ebbda312d`), with the fixture dirs
+ * normalized to placeholders. It is compared byte-for-byte.
+ */
+const RECORDED_PRE_CHANGE_PLAN_FILE = `{
+  "profile": "capture",
+  "source": "global",
+  "agentDir": "<agentDir>",
+  "tools": [
+    "read",
+    "lint-fix"
+  ],
+  "toolReferences": [
+    "read",
+    "lint-fix"
+  ],
+  "resolved": {
+    "skills": [
+      {
+        "name": "alpha",
+        "filePath": "/agent/skills/alpha/SKILL.md"
+      }
+    ],
+    "extensions": []
+  }
+}
+`;
+
+describe("composed plan provenance pass-through (FT54 S2 §3.3)", () => {
+	const fixedSkill = (name: string): SkillEntry => ({
+		name,
+		filePath: `/agent/skills/${name}/SKILL.md`,
+		source: "auto",
+		scope: "user",
+		origin: "top-level",
+	});
+
+	it("carries composition, per-kind intent, and the provenance maps for a composed plan", async () => {
+		const paths = { globalPath: "/global/leader.json", projectPath: "/project/.pi/profiles/leader.json" };
+		const composed = composeProfileDefinitions(
+			{ skills: ["alpha"], tools: ["read"] },
+			{ promptStrategy: "append", skills: ["beta"], tools: ["lint-fix"] },
+			paths,
+		);
+		const plan = await resolveProfile({
+			profile: {
+				name: "composed",
+				source: "project",
+				definition: composed.definition,
+				composition: compositionMetadata(composed, paths),
+			},
+			skills: [fixedSkill("alpha"), fixedSkill("beta"), fixedSkill("gamma")],
+			extensions: new DiscoveredExtensions([], [], []),
+			referenceContributors: composed.referenceContributors,
+		});
+
+		const result = await generateRuntimeDir(plan, { agentDir: fixture.agentDir });
+		const written = JSON.parse(await readFile(path.join(result.runtimeDir, "pi-profile.json"), "utf8"));
+
+		expect(written.composition).toMatchObject({
+			strategy: "append",
+			branch: "composed",
+			globalPath: paths.globalPath,
+			projectPath: paths.projectPath,
+		});
+		expect(written.resourceSelection).toEqual({ skills: true, extensions: false });
+		expect(written.origins).toEqual({ skills: { alpha: "global", beta: "project" } });
+		expect(written.toolOrigins).toEqual({ read: { contributors: "global", state: "resolved", at: "boot" } });
+		expect(written.pendingToolReferences).toEqual([
+			{ reference: "lint-fix", contributors: "project", resolvesAt: "session-start" },
+		]);
+		// No extension was declared and none was selected: no provenance field.
+		expect(written.extensionOrigins).toBeUndefined();
+	});
+
+	it("leaves an uncomposed plan file byte-identical to the recorded pre-change output", async () => {
+		const plan = await resolveProfile({
+			profile: { name: "capture", source: "global", definition: { skills: ["alpha"], tools: ["read", "lint-fix"] } },
+			skills: [fixedSkill("alpha"), fixedSkill("beta")],
+			extensions: new DiscoveredExtensions([], [], []),
+		});
+		// No contributor input: the trace is inactive and no field is added.
+		expect(plan.origins).toBeUndefined();
+
+		const result = await generateRuntimeDir(plan, { agentDir: fixture.agentDir });
+		const text = await readFile(path.join(result.runtimeDir, "pi-profile.json"), "utf8");
+		const normalized = text
+			.replaceAll(result.runtimeDir, "<runtimeDir>")
+			.replaceAll(fixture.agentDir, "<agentDir>");
+		expect(normalized).toBe(RECORDED_PRE_CHANGE_PLAN_FILE);
+	});
+});
+
+describe("composed generator preservation and the 13-skill baseline (FT54 S3 §6)", () => {
+	/** The operator's stated baseline: thirteen skills. The number is encoded in
+	 *  this fixture, not read from any live state; confirming it against a live
+	 *  profile is a later SI-authorised canary, and the number is neither
+	 *  deleted nor redefined here. */
+	const BASELINE_SKILL_COUNT = 13;
+	const baselineSkills = Array.from(
+		{ length: BASELINE_SKILL_COUNT },
+		(_, index) => `baseline-skill-${String(index + 1).padStart(2, "0")}`,
+	);
+
+	async function discoverFixtureSkills(): Promise<SkillEntry[]> {
+		return await discoverSkills({ cwd: fixture.cwd, agentDir: fixture.agentDir, projectTrusted: true });
+	}
+
+	it("a project half that adds one skill leaves the global tools allowlist verbatim", async () => {
+		for (const name of baselineSkills) await addGlobalSkill(fixture, name);
+		await addGlobalSkill(fixture, "added-skill");
+		const discovered = await discoverFixtureSkills();
+
+		const globalPlan = await resolveProfile({
+			profile: {
+				name: "leader",
+				source: "global",
+				definition: { skills: baselineSkills, tools: ["read", "grep"] },
+			},
+			skills: discovered,
+			extensions: new DiscoveredExtensions([], [], []),
+		});
+		const paths = { globalPath: "/global/leader.json", projectPath: "/project/.pi/profiles/leader.json" };
+		const composed = composeProfileDefinitions(
+			{ skills: baselineSkills, tools: ["read", "grep"] },
+			{ promptStrategy: "append", skills: ["added-skill"] },
+			paths,
+		);
+		const composedPlan = await resolveProfile({
+			profile: {
+				name: "leader",
+				source: "project",
+				definition: composed.definition,
+				composition: compositionMetadata(composed, paths),
+			},
+			skills: discovered,
+			extensions: new DiscoveredExtensions([], [], []),
+			referenceContributors: composed.referenceContributors,
+		});
+
+		// The global tools allowlist is verbatim: the project half declared no
+		// tools, so it cannot narrow them.
+		expect(composedPlan.tools).toEqual(globalPlan.tools);
+		// Every global skill is still selected, and the added one is selected
+		// exactly once.
+		expect(composedPlan.skills.filter((skill) => baselineSkills.includes(skill.name))).toHaveLength(
+			BASELINE_SKILL_COUNT,
+		);
+		expect(composedPlan.skills.filter((skill) => skill.name === "added-skill")).toHaveLength(1);
+		// The dynamic assertion: the selection is exactly the discovered
+		// eligible skills the composed profile names.
+		const named = new Set([...baselineSkills, "added-skill"]);
+		expect(composedPlan.skills.map((skill) => skill.name).sort()).toEqual(
+			discovered.filter((skill) => named.has(skill.name)).map((skill) => skill.name).sort(),
+		);
+
+		const result = await generateRuntimeDir(composedPlan, {
+			agentDir: fixture.agentDir,
+			discovery: { skills: discovered, packages: [] },
+		});
+		const settings = JSON.parse(await readFile(path.join(result.runtimeDir, "settings.json"), "utf8"));
+		const entries = ((settings.skills ?? []) as unknown[]).map((entry) => String(entry));
+		// The added skill is in the generated allowlist exactly once.
+		expect(entries.filter((entry) => entry.includes("added-skill"))).toHaveLength(1);
+	});
+
+	it("a declared empty base is widened by the project half", async () => {
+		await addGlobalSkill(fixture, "widened-skill");
+		const discovered = await discoverFixtureSkills();
+		const paths = { globalPath: "/global/leader.json", projectPath: "/project/.pi/profiles/leader.json" };
+		const composed = composeProfileDefinitions(
+			{ skills: [] },
+			{ promptStrategy: "append", skills: ["widened-skill"] },
+			paths,
+		);
+		const plan = await resolveProfile({
+			profile: {
+				name: "leader",
+				source: "project",
+				definition: composed.definition,
+				composition: compositionMetadata(composed, paths),
+			},
+			skills: discovered,
+			extensions: new DiscoveredExtensions([], [], []),
+			referenceContributors: composed.referenceContributors,
+		});
+		// An empty list is a declared selection of nothing, so the project half
+		// widens it instead of failing to apply.
+		expect(composed.unapplied).toEqual([]);
+		expect(plan.resourceSelection.skills).toBe(true);
+		expect(plan.skills.map((skill) => skill.name)).toEqual(["widened-skill"]);
+	});
+
+	it("an empty project list contributes nothing", async () => {
+		await addGlobalSkill(fixture, "base-skill");
+		const discovered = await discoverFixtureSkills();
+		const paths = { globalPath: "/global/leader.json", projectPath: "/project/.pi/profiles/leader.json" };
+		const composed = composeProfileDefinitions(
+			{ skills: ["base-skill"] },
+			{ promptStrategy: "append", skills: [] },
+			paths,
+		);
+		const plan = await resolveProfile({
+			profile: {
+				name: "leader",
+				source: "project",
+				definition: composed.definition,
+				composition: compositionMetadata(composed, paths),
+			},
+			skills: discovered,
+			extensions: new DiscoveredExtensions([], [], []),
+			referenceContributors: composed.referenceContributors,
+		});
+		expect(composed.unapplied).toEqual([]);
+		expect(plan.skills.map((skill) => skill.name)).toEqual(["base-skill"]);
+	});
+
+	it("an omitted mcp_tools in the global half is not narrowed by a project entry", async () => {
+		const paths = { globalPath: "/global/leader.json", projectPath: "/project/.pi/profiles/leader.json" };
+		const composed = composeProfileDefinitions(
+			{ skills: [], mcp_tools: { known: ["tool-a"] } },
+			{ promptStrategy: "append", mcp_tools: { unknown: ["tool-b"] } },
+			paths,
+		);
+		// The global half's per-server policy is unchanged ...
+		expect(composed.definition.mcp_tools).toEqual({ known: ["tool-a"] });
+		// ... and the project entry is reported, never applied.
+		expect(composed.unapplied).toEqual([{ kind: "mcp_tools", reference: "unknown", scope: "project" }]);
+		expect(composed.diagnostics.map((entry) => entry.code)).toContain("append-cannot-narrow");
+
+		// The real merged MCP discovery: the fixture's own mcp.json is the
+		// source of both servers.
+		await writeFile(
+			path.join(fixture.agentDir, "mcp.json"),
+			JSON.stringify({
+				mcpServers: {
+					known: { command: "known" },
+					unknown: { command: "unknown" },
+				},
+			}),
+		);
+		const mcpDiscovery: MergedMcpResult = await loadMergedMcpServers(fixture.agentDir, fixture.cwd, {
+			invalidSource: "diagnose",
+		});
+		const plan = await resolveProfile({
+			profile: {
+				name: "leader",
+				source: "project",
+				definition: composed.definition,
+				composition: compositionMetadata(composed, paths),
+			},
+			skills: [],
+			extensions: new DiscoveredExtensions([], [], []),
+			discoveredMcpServers: Object.keys(mcpDiscovery.servers).sort(),
+			mcpDiscovery,
+			referenceContributors: composed.referenceContributors,
+		});
+		expect(plan.mcpTools).toEqual({ known: ["tool-a"] });
+
+		const result = await generateRuntimeDir(plan, {
+			agentDir: fixture.agentDir,
+			discovery: { skills: [], packages: [] },
+		});
+		const instance = JSON.parse(await readFile(path.join(result.runtimeDir, "mcp.json"), "utf8"));
+		// The instance keeps the base policy only. The project entry introduced a
+		// restriction the base does not have, so it was never applied: that
+		// server keeps its native exposure.
+		expect(instance.mcpServers.known.toolExposure).toEqual({ "*": "hidden", "tool-a": "direct" });
+		expect(instance.mcpServers.unknown.toolExposure).toBeUndefined();
 	});
 });

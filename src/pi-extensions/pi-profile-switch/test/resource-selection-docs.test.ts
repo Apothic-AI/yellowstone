@@ -184,6 +184,16 @@ describe("resource-selection documentation", () => {
 		}
 	});
 
+	it.each([
+		["README.md", ["promptStrategy", "`append`", "reported as unapplied", "no global profile of that name exists"]],
+		["README.zh-CN.md", ["promptStrategy", "`append`", "未应用", "不存在同名的全局 profile"]],
+	])("%s documents composing a project profile with its global namesake", async (document, phrases) => {
+		const text = await read(document);
+		for (const phrase of phrases) expect(text).toContain(phrase);
+		// The guide must not present append as a way to restrict project-scope resources.
+		expect(text).not.toMatch(/`append`[^.\n]{0,80}(?:restrict|narrow)s?\s+project-level/i);
+	});
+
 	it("keeps field types and runnable command examples synchronized between READMEs", async () => {
 		const english = await read("README.md");
 		const chinese = await read("README.zh-CN.md");

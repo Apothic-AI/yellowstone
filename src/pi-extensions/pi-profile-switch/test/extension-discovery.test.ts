@@ -454,3 +454,60 @@ describe("local extension reference diagnostics", () => {
 		await expect(extensions.select([file])).rejects.toMatchObject({ code: "ELOOP" });
 	});
 });
+
+describe("selection provenance callback (FT54 S2 §3.2)", () => {
+	it("reports the producing reference for every accepted entry, without changing the selection", async () => {
+		await addPackage("pi-web-access", { extensions: ["./index.ts"] });
+		await addLoose(path.join(fixture.agentDir, "extensions"), "conventions.ts");
+		const extensions = await discoverExtensions({ cwd: fixture.cwd, agentDir: fixture.agentDir });
+
+		const plain = await extensions.select(["pi-web-access", "conventions"]);
+		const seen: Array<{ entryPath: string; id: string; reference: string }> = [];
+		const traced = await extensions.select(["pi-web-access", "conventions"], {
+			onSelect: (entryPath, id, reference) => seen.push({ entryPath, id, reference }),
+		});
+
+		// Selection semantics are untouched; the callback is presentation only.
+		expect(traced.entries).toEqual(plain.entries);
+		expect(seen.map((entry) => entry.reference).sort()).toEqual(["conventions", "pi-web-access"]);
+		for (const entry of seen) {
+			expect(traced.entries.some((selected) => selected.entry === entry.entryPath && selected.id === entry.id)).toBe(true);
+		}
+	});
+
+	it("fires once per matching reference so an overlapping glob and literal must be unioned", async () => {
+		await addPackage("pi-web-access", { extensions: ["./index.ts"] });
+		const localFile = await addLoose(path.join(fixture.agentDir, "extensions"), "pi-guard.ts");
+		const extensions = await discoverExtensions({ cwd: fixture.cwd, agentDir: fixture.agentDir });
+
+		const seen: Array<{ entryPath: string; reference: string }> = [];
+		const selection = await extensions.select(["pi-*", "pi-guard"], {
+			onSelect: (entryPath, _id, reference) => seen.push({ entryPath, reference }),
+		});
+
+		// One selected identity, two callbacks: the count is not an expansion count.
+		expect(selection.entries.map((entry) => entry.id).sort()).toEqual(["pi-guard", "pi-web-access"]);
+		expect(seen.filter((entry) => entry.entryPath === localFile).map((entry) => entry.reference).sort()).toEqual([
+			"pi-*",
+			"pi-guard",
+		]);
+	});
+
+	it("keeps identifier-colliding entries distinct because the key is the resolved entry path", async () => {
+		await addPackage("my-tool", { extensions: ["./index.ts"] });
+		const localFile = await addLoose(path.join(fixture.agentDir, "extensions"), "my-tool.ts");
+		const extensions = await discoverExtensions({ cwd: fixture.cwd, agentDir: fixture.agentDir });
+
+		const seen: Array<{ entryPath: string; id: string; reference: string }> = [];
+		const selection = await extensions.select(["npm:my-tool", "my-tool"], {
+			onSelect: (entryPath, id, reference) => seen.push({ entryPath, id, reference }),
+		});
+
+		// Same identifier, two different entries: an id-keyed map would merge them.
+		expect(selection.entries.map((entry) => entry.id)).toEqual(["my-tool", "my-tool"]);
+		const paths = new Set(selection.entries.map((entry) => entry.entry));
+		expect(paths.size).toBe(2);
+		expect(seen.some((entry) => entry.entryPath === localFile && entry.reference === "my-tool")).toBe(true);
+		expect(new Set(seen.map((entry) => entry.entryPath)).size).toBe(2);
+	});
+});

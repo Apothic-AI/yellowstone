@@ -182,7 +182,20 @@ export class DiscoveredExtensions {
 		return lines.join("\n");
 	}
 
-	async select(references: string[]): Promise<SelectExtensionsResult> {
+	async select(
+		references: string[],
+		options?: {
+			/**
+			 * Called for every accepted entry with the reference that produced it.
+			 * MAY fire more than once for the same entry path when references
+			 * overlap; callers MUST union contributors idempotently and MUST NOT
+			 * use the callback count as an expansion count. The path is the same
+			 * dedupe key the selection uses, so it is collision-safe: two entries
+			 * sharing an identifier keep distinct paths.
+			 */
+			onSelect?: (entryPath: string, id: string, reference: string) => void;
+		},
+	): Promise<SelectExtensionsResult> {
 		const byPath = new Map<string, SelectedExtension>();
 		const unmatched: string[] = [];
 		const diagnostics: ResolutionDiagnostic[] = [];
@@ -191,8 +204,9 @@ export class DiscoveredExtensions {
 		};
 		const names = this.selectableNames();
 
-		const add = (entry: SelectedExtension): void => {
+		const add = (entry: SelectedExtension, reference: string): void => {
 			if (!byPath.has(entry.entry)) byPath.set(entry.entry, entry);
+			options?.onSelect?.(entry.entry, entry.id, reference);
 		};
 
 		for (const reference of references) {
@@ -208,9 +222,9 @@ export class DiscoveredExtensions {
 						if (pkgEntries.length === 0) {
 							diagnose(reference, "empty-package", `package "${pkg.name}" declares no extension entries; restore an entry or remove the reference`, pkg.root);
 						}
-						for (const pkgEntry of pkgEntries) add(pkgEntry);
+						for (const pkgEntry of pkgEntries) add(pkgEntry, reference);
 					}
-					if (entry !== undefined) add(entry);
+					if (entry !== undefined) add(entry, reference);
 				}
 				if (matched === 0) {
 					unmatched.push(reference);
@@ -221,7 +235,7 @@ export class DiscoveredExtensions {
 
 			const entry = this.#entries.get(reference);
 			if (entry !== undefined) {
-				add(entry);
+				add(entry, reference);
 				continue;
 			}
 			const pkg = this.#packageByNameOrAlias(reference);
@@ -231,7 +245,7 @@ export class DiscoveredExtensions {
 					diagnose(reference, "empty-package", `package "${reference}" declares no extension entries (missing on disk or filtered out by its settings package entry); restore an entry or remove the reference`);
 					continue;
 				}
-				for (const pkgEntry of pkgEntries) add(pkgEntry);
+				for (const pkgEntry of pkgEntries) add(pkgEntry, reference);
 				continue;
 			}
 			if (looksLikePath(reference)) {
@@ -246,7 +260,7 @@ export class DiscoveredExtensions {
 					diagnose(reference, "missing-path", `extension path not found: ${resolved}; restore the file or remove the reference`, resolved);
 					continue;
 				}
-				add({ id: resolved, entry: resolved, origin: "path" });
+				add({ id: resolved, entry: resolved, origin: "path" }, reference);
 				continue;
 			}
 			diagnose(reference, "unknown-reference", `${this.#unknownMessage(reference, names)} Install the extension or correct the reference`);

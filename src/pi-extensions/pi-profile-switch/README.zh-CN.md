@@ -93,6 +93,10 @@ overlay 只能收窄资源，不能增加 profile 未选中的资源。`default`
 
 同名的项目级 profile 完全替换全局 profile，不合并字段。删除项目级文件后，全局定义重新生效。
 
+在项目级 profile 中设置 `"promptStrategy": "append"`，即可改为与同名的全局 profile 组合。组合后的 profile 可以补充全局选择未包含的
+用户级资源，但不会收窄全局 profile 已经允许的内容；需要收窄时请使用替换式的 profile 或 `/profile overlay`。如果项目级文件声明了
+`append` 但不存在同名全局 profile，项目级 profile 会单独生效：其自身的资源列表按原样应用，并提示未找到可组合的全局定义。
+
 名称必须以 ASCII 字母或数字开头，后续可包含 ASCII 字母、数字、点、下划线和连字符。`default` 是保留名称，不能创建 `default.json`，也不能编辑或删除 `default` profile。
 
 项目尚未信任时，可以在 Pi 中执行 `/trust` 后重新启动，或通过以下方式仅信任本次启动：
@@ -144,6 +148,7 @@ JSON 顶层直接写 profile 对象。所有字段都可省略；省略的字段
 | ---------------------- | -------------------------- | --------------------------------------------------------------------------------- |
 | `label`                | `string`                   | 选择列表中的显示名称，不改变 profile 的文件名。                                   |
 | `description`          | `string`                   | 选择列表中的说明。                                                                |
+| `promptStrategy`       | `string`                   | 接受的值只有 `"append"` 和 `"replace"`；省略该字段等同于 `"replace"`。在项目级 profile 中，`"append"` 表示与同名的全局 profile 组合，`"replace"` 表示替换。在全局 profile 中声明 `"append"` 会被拒绝；声明 `"replace"` 会被接受，且不产生任何影响。 |
 | `skills`               | `string[]`                 | 选择 skills，支持名称和 glob。                                                    |
 | `extensions`           | `string[]`                 | 选择 extensions，支持标识、glob 和指定路径。                                      |
 | `mcps`                 | `string[]`                 | 选择用户级 MCP servers，支持名称和 glob。                                         |
@@ -183,7 +188,14 @@ profile 引用已有资源，不安装或复制资源。各类引用的写法如
 }
 ```
 
-skill、extension 和 MCP server 的选择只收窄用户级资源。项目级资源的可见性由 Pi 的项目信任决定，不会被 profile 隐藏。Pi 原有的资源排除设置仍然有效。
+在组合后的 profile 中，同一字段的含义相同，只有一点补充：组合后无法应用的引用会在诊断信息中列出，不会被静默丢弃。如果全局 profile
+对某一类资源不作限制，那么在项目级 profile 中为这一类添加引用的结果会被报告为“未应用”，因为不作限制本身就代表已包含全部资源；
+若希望从项目级 profile 扩展该类资源，请在全局 profile 中声明该字段（即使是 `[]`）。如果根本不存在同名的全局 profile，
+项目级 profile 自身的列表按原样应用，不会有任何引用被报告为“未应用”。
+
+skill、extension 和 MCP server 的选择只收窄用户级资源。项目级资源的可见性由 Pi 的项目信任决定，profile 不会隐藏这些资源，
+声明 `append` 的组合式 profile 同样不会。已信任项目的 `.pi/skills/` 与 `.pi/extensions/` 在任何 profile 下都保持可见，
+包括声明 `append` 的 profile，因为这是 Pi 的信任判定，不由 profile 控制。Pi 已有的资源排除规则继续生效。
 
 `tools` 不限制 MCP 工具，也不会关闭 Pi 调用 MCP 所需的入口。要限制 MCP 工具，需要配置 `mcp_tools`；因此只读文件工具列表不会自动禁止 MCP 写入操作。
 

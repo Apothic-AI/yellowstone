@@ -28,6 +28,13 @@ import type { DiscoveredExtensions } from "./extension-discovery.ts";
 import { isRecord } from "./json-file.ts";
 import type { MergedMcpResult } from "./mcp-config.ts";
 import type { ProfileDefinition, ProfileModel, ProfileSource, ResolvedProfile } from "./profile-catalog.ts";
+import type {
+	ContributorSet,
+	PendingToolReference,
+	ProvenanceKind,
+	ReferenceListKind,
+	ProfileComposition,
+} from "./profile-composition.ts";
 import type { ProfileSubagentSettings } from "./subagent-settings.ts";
 
 /** Extracts a ProfileModel from flat definition keys, if declared. */
@@ -181,6 +188,26 @@ export interface ActivationPlan {
 	mcps?: string[];
 	/** Per-server MCP tool policy: literal tool names per server. */
 	mcpTools?: Record<string, string[]>;
+	/** Per-kind provenance of the identities this plan currently selects,
+	 *  present only when the resolved profile was composed. `native` marks an
+	 *  identity selected because its kind is undeclared — never a fabricated
+	 *  `global`/`project` contributor. An identity the overlay removed is
+	 *  absent. */
+	origins?: Partial<Record<ReferenceListKind, Record<string, ProvenanceKind>>>;
+	/** Extension provenance keyed by resolved entry path (never by identifier
+	 *  alone — two entries may share an id). Peer of the selection dedupe key. */
+	extensionOrigins?: Record<string, { id: string; contributors: ContributorSet }>;
+	/** Boot-resolved tools only, keyed by live tool name. A raw reference the
+	 *  boot expansion could not resolve is in `pendingToolReferences`, never
+	 *  here. */
+	toolOrigins?: Record<string, { contributors: ContributorSet; state: "resolved"; at: "boot" | "session-start" }>;
+	/** Raw tool references the boot expansion could not resolve: a separate
+	 *  list, never a tool-name key. */
+	pendingToolReferences?: PendingToolReference[];
+	/** Composition metadata of the resolved profile; absent for a definition
+	 *  that declares no `promptStrategy`. Presentation only — it never
+	 *  influences selection. */
+	composition?: ProfileComposition;
 	/** Prepared in-memory instance mcp.json config; never written to pi-profile.json */
 	instanceMcpConfig?: Record<string, unknown>;
 	/** Glob references (skills/extensions/MCP) that matched nothing this
@@ -224,6 +251,16 @@ export interface ResolveInput {
 	 * needs this.
 	 */
 	liveToolNames?: string[];
+	/**
+	 * Per raw reference, the scopes that declared that exact literal, from the
+	 * composition of the resolved profile. Present only when the profile was
+	 * composed: it is the single provenance input, and every provenance field
+	 * on the plan is emitted only with it, so an uncomposed plan is unchanged.
+	 * It is keyed by declaration (not identity) because the composer has no
+	 * discovery: the one expansion attributes each identity to the reference
+	 * that produced it.
+	 */
+	referenceContributors?: Partial<Record<ReferenceListKind, Readonly<Record<string, ContributorSet>>>>;
 }
 
 function isGlob(reference: string): boolean {
@@ -277,6 +314,13 @@ function expandReferences<T>(
 		onLiteralMiss?: (reference: string) => void;
 		/** Custom literal-miss failure (e.g. with near-miss candidates). Throws. */
 		literalMissError?: (reference: string) => never;
+		/**
+		 * Called for every identity this expansion sets, with the raw reference
+		 * that produced it. MAY fire more than once for the same identity when
+		 * references overlap; callers MUST union contributors idempotently and
+		 * MUST NOT use the callback count as an expansion count.
+		 */
+		onSelect?: (identity: string, reference: string) => void;
 	},
 ): T[] {
 	const selected = new Map<string, T>();
@@ -286,6 +330,7 @@ function expandReferences<T>(
 			for (const item of universe) {
 				if (minimatch(nameOf(item), reference)) {
 					selected.set(nameOf(item), item);
+					options?.onSelect?.(nameOf(item), reference);
 					matched += 1;
 				}
 			}
@@ -297,6 +342,7 @@ function expandReferences<T>(
 			if (options?.literalMustExist === false) {
 				// Pass-through (e.g. extension-provided tool names).
 				selected.set(reference, reference as T);
+				options?.onSelect?.(reference, reference);
 				continue;
 			}
 			if (options?.onLiteralMiss !== undefined) {
@@ -310,8 +356,48 @@ function expandReferences<T>(
 			throw new ActivationError(`unknown ${kind}: "${reference}" does not match any discovered ${kind}`);
 		}
 		selected.set(reference, item);
+		options?.onSelect?.(reference, reference);
 	}
 	return [...selected.values()];
+}
+
+/** The union of two contributor readings. Union, never first-writer: an
+ *  overlapping glob/literal pair and an alias/name pair report both halves,
+ *  and a repeated callback for one identity stays idempotent. */
+function unionContributors(existing: ProvenanceKind | undefined, next: ContributorSet): ContributorSet {
+	// `native` never meets a declared contributor; treating it as absent keeps
+	// the accumulator honest instead of inventing a scope for it.
+	return existing === undefined || existing === "native" || existing === next ? next : "both";
+}
+
+/** Narrows an accumulated provenance kind to a contributor set. Only a
+ *  declared kind can produce a contributor; `native` is its disjoint peer. */
+function isContributorSet(value: ProvenanceKind | undefined): value is ContributorSet {
+	return value === "global" || value === "project" || value === "both";
+}
+
+/** Reads one raw reference's contributor scope from the composition map. An
+ *  absent entry means the composer did not apply that reference, so nothing is
+ *  attributed — a contributor is never fabricated. */
+function contributorOf(
+	contributors: Readonly<Record<string, ContributorSet>> | undefined,
+	reference: string,
+): ContributorSet | undefined {
+	return contributors !== undefined && Object.hasOwn(contributors, reference)
+		? contributors[reference]
+		: undefined;
+}
+
+/** Records one identity/reference selection in a provenance accumulator. */
+function recordIdentityContributor(
+	target: Map<string, ProvenanceKind>,
+	identity: string,
+	contributors: Readonly<Record<string, ContributorSet>> | undefined,
+	reference: string,
+): void {
+	const contributor = contributorOf(contributors, reference);
+	if (contributor === undefined) return;
+	target.set(identity, unionContributors(target.get(identity), contributor));
 }
 
 /** The built-in default profile: everything Pi can discover, no filtering. */
@@ -346,6 +432,16 @@ export async function resolveProfile(input: ResolveInput): Promise<ActivationPla
 	const skillsDeclared = definition.skills !== undefined;
 	const extensionsDeclared = definition.extensions !== undefined;
 
+	// Provenance is recorded only when the resolved profile was composed. The
+	// input is the single provenance source, so an uncomposed plan gains no
+	// field and stays byte-identical to the pre-change output.
+	const referenceContributors = input.referenceContributors;
+	const trace = referenceContributors !== undefined;
+	const skillContributions = new Map<string, ProvenanceKind>();
+	const mcpContributions = new Map<string, ProvenanceKind>();
+	const selectedExtensions = new Map<string, { id: string; contributors: ContributorSet }>();
+	const bootToolContributions = new Map<string, ProvenanceKind>();
+
 	// A declared kind expands its references; an undeclared kind carries the
 	// full referenceable discovery result as overlay/status vocabulary.
 	let selectedSkills = skillsDeclared
@@ -355,13 +451,40 @@ export async function resolveProfile(input: ResolveInput): Promise<ActivationPla
 					const candidates = skills.map((entry) => entry.name).sort();
 					diagnostics.push({ kind: "skill", code: "unknown-reference", reference, message: `profile "${profile.name}": unknown skill "${reference}"; not loaded. ${candidates.length > 0 ? `Discovered candidates: ${candidates.join(", ")}; correct the reference or install the skill.` : "No skills discovered; install the skill or remove the reference."}` });
 				},
+				...(trace ? { onSelect: (identity, reference) => recordIdentityContributor(skillContributions, identity, referenceContributors.skills, reference) } : {}),
 			})
 		: [...skills];
+
+	// An identity selected because its kind is undeclared was produced by no
+	// declaration: it is `native`, never a fabricated global/project
+	// contributor, and the agreement invariant does not apply to it.
+	if (trace && !skillsDeclared) {
+		for (const skill of selectedSkills) skillContributions.set(skill.name, "native");
+	}
 
 	// Extension references resolve directly against discovered extensions.
 	let planExtensions: Array<{ id: string; entry: string; origin?: "package" | "local" | "path" }>;
 	if (extensionsDeclared) {
-		const selection = await extensions.select(definition.extensions ?? []);
+		// One selection call: the expansion deduplicates by resolved entry path and
+		// reports, per entry, the reference that produced it. Provenance is keyed
+		// by that same entry path, so two entries sharing an identifier stay
+		// distinct.
+		const selection = await extensions.select(
+			definition.extensions ?? [],
+			trace
+				? {
+						onSelect: (entryPath, id, reference) => {
+							const contributor = contributorOf(referenceContributors.extensions, reference);
+							if (contributor === undefined) return;
+							const existing = selectedExtensions.get(entryPath);
+							selectedExtensions.set(entryPath, {
+								id,
+								contributors: unionContributors(existing?.contributors, contributor),
+							});
+						},
+					}
+				: undefined,
+		);
 		for (const reference of selection.unmatched) unmatched.push(`extension:${reference}`);
 		for (const issue of selection.diagnostics ?? []) {
 			diagnostics.push({ ...issue, message: `profile "${profile.name}": ${issue.message}` });
@@ -400,6 +523,7 @@ export async function resolveProfile(input: ResolveInput): Promise<ActivationPla
 		mcps = expandReferences(definition.mcps, input.discoveredMcpServers ?? [], (name) => name, "MCP server", {
 			onZeroMatch: (reference) => zeroMatch("mcp", reference),
 			onLiteralMiss: (reference) => diagnoseMcp("mcp", "unknown-reference", reference, `unknown MCP server: "${reference}"${candidateMessage(candidates)}; not loaded; correct the reference or configure the server`),
+			...(trace ? { onSelect: (identity, reference) => recordIdentityContributor(mcpContributions, identity, referenceContributors.mcps, reference) } : {}),
 		});
 		if (mcpDiscovery !== undefined) {
 			diagnostics.push(...mcpReferenceDiagnostics(profile.name, mcpDiscovery, mcps));
@@ -473,7 +597,10 @@ export async function resolveProfile(input: ResolveInput): Promise<ActivationPla
 		diagnostics.push(...mcpReferenceDiagnostics(profile.name, input.mcpDiscovery, mcps, mcpTools));
 	}
 
-	const toolReferences = definition.tools;
+	// One copy of the declared tool references feeds the boot expansion, the
+	// plan's raw-reference list, and (when present) the overlay base set. The
+	// declaration list is read exactly once, so no expansion is per scope.
+	const toolReferences = definition.tools !== undefined ? [...definition.tools] : undefined;
 
 	let instanceMcpConfig: Record<string, unknown> | undefined;
 	if (input.mcpDiscovery !== undefined && (mcps !== undefined || mcpToolKeys.length > 0)) {
@@ -484,6 +611,7 @@ export async function resolveProfile(input: ResolveInput): Promise<ActivationPla
 	if (toolReferences !== undefined) {
 		tools = expandReferences(toolReferences, BUILTIN_TOOL_NAMES, (name) => name, "tool", {
 			literalMustExist: false,
+			...(trace ? { onSelect: (identity, reference) => recordIdentityContributor(bootToolContributions, identity, referenceContributors.tools, reference) } : {}),
 		});
 	}
 
@@ -534,6 +662,61 @@ export async function resolveProfile(input: ResolveInput): Promise<ActivationPla
 		}
 	}
 
+	// --- provenance output (present only for a composed resolved profile) ---
+	// Only identities this plan currently selects are described: an overlay
+	// removal is applied above, so it is absent here and stays absent from
+	// status. A declaring kind reports the unioned contributor of every
+	// reference that produced the identity; an undeclared kind reports
+	// `native`; no field is emitted without the contributor input, so an
+	// uncomposed plan is unchanged.
+	let origins: Partial<Record<ReferenceListKind, Record<string, ProvenanceKind>>> | undefined;
+	let extensionOrigins: Record<string, { id: string; contributors: ContributorSet }> | undefined;
+	let toolOrigins: Record<string, { contributors: ContributorSet; state: "resolved"; at: "boot" }> | undefined;
+	let pendingToolReferences: PendingToolReference[] | undefined;
+	if (trace) {
+		const skillOrigins: Record<string, ProvenanceKind> = {};
+		for (const skill of selectedSkills) {
+			const contributor = skillContributions.get(skill.name);
+			if (contributor !== undefined) setOwnRecordValue(skillOrigins, skill.name, contributor);
+		}
+		const mcpOrigins: Record<string, ProvenanceKind> = {};
+		for (const name of mcps ?? []) {
+			const contributor = mcpContributions.get(name);
+			if (contributor !== undefined) setOwnRecordValue(mcpOrigins, name, contributor);
+		}
+		if (Object.keys(skillOrigins).length > 0 || Object.keys(mcpOrigins).length > 0) {
+			origins = {
+				...(Object.keys(skillOrigins).length > 0 ? { skills: skillOrigins } : {}),
+				...(Object.keys(mcpOrigins).length > 0 ? { mcps: mcpOrigins } : {}),
+			};
+		}
+		if (extensionsDeclared) {
+			const byPath: Record<string, { id: string; contributors: ContributorSet }> = {};
+			for (const entry of planExtensions) {
+				const traced = selectedExtensions.get(entry.entry);
+				if (traced !== undefined) setOwnRecordValue(byPath, entry.entry, traced);
+			}
+			if (Object.keys(byPath).length > 0) extensionOrigins = byPath;
+		}
+		if (tools !== undefined) {
+			const resolvedTools: Record<string, { contributors: ContributorSet; state: "resolved"; at: "boot" }> = {};
+			const pending: PendingToolReference[] = [];
+			for (const name of tools) {
+				const contributor = bootToolContributions.get(name);
+				if (!isContributorSet(contributor)) continue;
+				if ((BUILTIN_TOOL_NAMES as readonly string[]).includes(name)) {
+					// A built-in name is the only tool existence the boot expansion can prove.
+					setOwnRecordValue(resolvedTools, name, { contributors: contributor, state: "resolved", at: "boot" });
+				} else {
+					// Pass-through literal: not a tool yet. A separate pending list, never a name key.
+					pending.push({ reference: name, contributors: contributor, resolvesAt: "session-start" });
+				}
+			}
+			if (Object.keys(resolvedTools).length > 0) toolOrigins = resolvedTools;
+			if (pending.length > 0) pendingToolReferences = pending;
+		}
+	}
+
 	return {
 		profile: profile.name,
 		source: profile.source,
@@ -543,7 +726,7 @@ export async function resolveProfile(input: ResolveInput): Promise<ActivationPla
 		resourceSelection: { skills: skillsDeclared, extensions: extensionsDeclared },
 		...(disabledSkills !== undefined ? { disabledSkills } : {}),
 		...(disabledExtensions !== undefined ? { disabledExtensions } : {}),
-		...(tools !== undefined && toolReferences !== undefined ? { tools, toolReferences: [...toolReferences] } : {}),
+		...(tools !== undefined && toolReferences !== undefined ? { tools, toolReferences } : {}),
 		...(disabledTools !== undefined ? { disabledTools } : {}),
 		...(model !== undefined ? { model } : {}),
 		...(definition.instructions !== undefined ? { instructions: definition.instructions } : {}),
@@ -551,6 +734,11 @@ export async function resolveProfile(input: ResolveInput): Promise<ActivationPla
 		...(mcps !== undefined ? { mcps } : {}),
 		...(mcpTools !== undefined ? { mcpTools } : {}),
 		...(instanceMcpConfig !== undefined ? { instanceMcpConfig } : {}),
+		...(origins !== undefined ? { origins } : {}),
+		...(extensionOrigins !== undefined ? { extensionOrigins } : {}),
+		...(toolOrigins !== undefined ? { toolOrigins } : {}),
+		...(pendingToolReferences !== undefined ? { pendingToolReferences } : {}),
+		...(profile.composition !== undefined ? { composition: profile.composition } : {}),
 		...(unmatched.length > 0 ? { unmatched } : {}),
 		...(diagnostics.length > 0 ? { diagnostics: mergeResolutionDiagnostics(diagnostics) } : {}),
 	};

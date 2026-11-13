@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
+import type { LaunchPlanFile } from "../src/switching/apply-plan.ts";
+import type { ProfileComposition } from "../src/profile-composition.ts";
 import { buildStatusReport, formatStatusMarkdown } from "../src/switching/status.ts";
 
 const basePlan = {
@@ -365,5 +367,220 @@ describe("retained activation knowledge before MCP reload", () => {
 		const report = buildStatusReport({ ...input, projectMcpServers: ["late"], plan: { ...plan, diagnostics: [{ kind: "mcp-tools", code: "unknown-reference", reference: "late", message: "old user miss" }] } });
 		expect(report.mcp.enabled).toEqual(["late"]);
 		expect(report.mcpTools).toEqual([{ server: "late", policy: "restricted", tools: ["search"], state: "project" }]);
+	});
+});
+
+/**
+ * FT54 S2 §7 — status renders composition truth from the ACTIVE PLAN only.
+ *
+ * The recorded Markdown below is the pre-change output for the same plan,
+ * captured at the accepted S1 tip (`2ae6f74e…`) before any S2 edit. An
+ * activation without composition must still render it byte-for-byte.
+ */
+const RECORDED_PRE_CHANGE_STATUS = `### profile: capture (global)
+skills:
+  alpha → /agent/skills/alpha/SKILL.md
+extensions:
+  local-ext → /agent/extensions/local-ext.ts
+tools: [read]
+mcp: enabled=[github] disabled=[] missing=[]
+mcp tools:
+  github: unrestricted
+unmatched (zero-match globs this resolution): [skill:nope-*]
+conflict: skill:alpha — plan resolved /agent/skills/alpha/SKILL.md, Pi registered not loaded (Pi first-wins load order)`;
+
+const fsCalls = vi.hoisted(() => ({ read: 0, write: 0 }));
+vi.mock("node:fs/promises", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("node:fs/promises")>();
+	return {
+		...actual,
+		readFile: (...args: Parameters<typeof actual.readFile>) => {
+			fsCalls.read += 1;
+			return actual.readFile(...args);
+		},
+		writeFile: (...args: Parameters<typeof actual.writeFile>) => {
+			fsCalls.write += 1;
+			return actual.writeFile(...args);
+		},
+	};
+});
+
+const baseComposition: ProfileComposition = {
+	strategy: "append",
+	branch: "composed",
+	globalPath: "/global/leader.json",
+	projectPath: "/project/.pi/profiles/leader.json",
+	referenceContributors: { skills: {}, extensions: {}, mcps: {}, tools: {} },
+	unapplied: [],
+	diagnostics: [],
+};
+
+const composedPlan = (overrides: Partial<LaunchPlanFile> = {}): LaunchPlanFile => ({
+	profile: "leader",
+	source: "project",
+	resolved: {
+		skills: [{ name: "alpha", filePath: "/agent/skills/alpha/SKILL.md" }],
+		extensions: [{ id: "linter", entry: "/agent/extensions/linter.ts" }],
+	},
+	tools: ["read"],
+	composition: baseComposition,
+	resourceSelection: { skills: true, extensions: false },
+	...overrides,
+});
+
+describe("status composition rendering (FT54 S2 §7)", () => {
+	const statusInput = {
+		discoveredMcpServers: [],
+		disabledMcpServers: [],
+		commands: [],
+		tools: [],
+	};
+
+	it("names the strategy, both paths, and per-kind intent", () => {
+		const report = buildStatusReport({ plan: composedPlan(), ...statusInput });
+		const markdown = formatStatusMarkdown(report);
+
+		expect(markdown).toContain("composition: append (composed)");
+		expect(markdown).toContain("base: /global/leader.json");
+		expect(markdown).toContain("project: /project/.pi/profiles/leader.json");
+		expect(markdown).toContain("intent: skills=declared extensions=native mcps=native tools=declared");
+		expect(report.intent).toEqual({ skills: true, extensions: false, mcps: false, tools: true });
+	});
+
+	it("reports both contributors and keeps native identities unattributed", () => {
+		const report = buildStatusReport({
+			plan: composedPlan({
+				origins: { skills: { alpha: "both", beta: "native" } },
+				extensionOrigins: { "/agent/extensions/linter.ts": { id: "linter", contributors: "project" } },
+			}),
+			...statusInput,
+		});
+		const markdown = formatStatusMarkdown(report);
+
+		expect(markdown).toContain("alpha → /agent/skills/alpha/SKILL.md (contributors: both)");
+		expect(markdown).toContain("linter → /agent/extensions/linter.ts (contributors: project)");
+		expect(markdown).toContain("contributors: skills alpha=both; extensions linter=project");
+		expect(markdown).toContain("native (selected through no declaration): skills [beta]");
+		// A native identity never acquires a fabricated scope contributor.
+		expect(markdown).not.toContain("beta=global");
+		expect(markdown).not.toContain("beta=project");
+	});
+
+	it("describes an unrestricted kind honestly with its unapplied references and their file", () => {
+		const report = buildStatusReport({
+			plan: composedPlan({
+				resourceSelection: { skills: true, extensions: false },
+				origins: { skills: { alpha: "global" } },
+				composition: { ...baseComposition, unapplied: [{ kind: "skills", reference: "review", scope: "project" }] },
+			}),
+			...statusInput,
+		});
+		const markdown = formatStatusMarkdown(report);
+
+		expect(markdown).toContain("extensions=native");
+		expect(markdown).toContain(
+			'unapplied: skills "review" (declared by /project/.pi/profiles/leader.json; not applied, not validated)',
+		);
+		// Unapplied references are static, never validated or reported as unknown.
+		expect(markdown).not.toMatch(/unknown|did you mean/i);
+	});
+
+	it("reports a standalone append as informational, not as a failure", () => {
+		const report = buildStatusReport({
+			plan: composedPlan({
+				resourceSelection: { skills: true, extensions: true },
+				composition: {
+					...baseComposition,
+					branch: "standalone",
+					globalPath: undefined,
+					unapplied: [],
+					diagnostics: [{ code: "append-standalone", message: "no base" }],
+				},
+			}),
+			...statusInput,
+		});
+		const markdown = formatStatusMarkdown(report);
+
+		expect(markdown).toContain("composition: append (standalone)");
+		expect(markdown).toContain("no global base: the project definition applies on its own (informational, not a failure)");
+		expect(markdown).not.toContain("unapplied:");
+		expect(markdown).not.toMatch(/failed|failure:/i);
+		expect(report.composition?.branch).toBe("standalone");
+	});
+
+	it("never conflates boot-pending references with resolved or claimed per-tool contributors", () => {
+		const report = buildStatusReport({
+			plan: composedPlan({
+				tools: ["read"],
+				toolOrigins: { read: { contributors: "global", state: "resolved", at: "boot" } },
+				pendingToolReferences: [{ reference: "lint-fix", contributors: "both", resolvesAt: "session-start" }],
+			}),
+			...statusInput,
+		});
+		const markdown = formatStatusMarkdown(report);
+
+		expect(markdown).toContain("tools: [read]");
+		expect(markdown).toContain(
+			'tools awaiting session start: "lint-fix" (both) — boot-snapshot pending; current session outcome not recorded (UNKNOWN)',
+		);
+		// No resolved per-tool contributor and no current outcome is claimed.
+		expect(markdown).not.toContain("read=global");
+		expect(markdown).not.toMatch(/lint-fix (is |was )?(currently |now )?(pending|resolved|selected|existing)/i);
+		expect(Object.hasOwn(report, "toolOrigins")).toBe(false);
+	});
+
+	it("performs no additional definition read, write, or reapproval call", async () => {
+		fsCalls.read = 0;
+		fsCalls.write = 0;
+		const report = buildStatusReport({
+			plan: composedPlan({
+				origins: { skills: { alpha: "both" } },
+				extensionOrigins: { "/agent/extensions/linter.ts": { id: "linter", contributors: "both" } },
+				pendingToolReferences: [{ reference: "lint-fix", contributors: "both", resolvesAt: "session-start" }],
+			}),
+			...statusInput,
+		});
+		formatStatusMarkdown(report);
+		expect(fsCalls.read).toBe(0);
+		expect(fsCalls.write).toBe(0);
+
+		// Static surface: the module imports no filesystem or catalog reader.
+		const actual = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
+		const source = await actual.readFile("src/switching/status.ts", "utf8");
+		expect(source).not.toMatch(/from "node:fs/);
+		expect(source).not.toMatch(/profile-catalog\.ts"|extension-discovery\.ts"/);
+	});
+
+	it("produces byte-equivalent output for an activation without composition", () => {
+		const report = buildStatusReport({
+			plan: {
+				profile: "capture",
+				source: "global",
+				resolved: {
+					skills: [{ name: "alpha", filePath: "/agent/skills/alpha/SKILL.md" }],
+					extensions: [{ id: "local-ext", entry: "/agent/extensions/local-ext.ts" }],
+				},
+				tools: ["read"],
+				mcps: ["github"],
+				unmatched: ["skill:nope-*"],
+			},
+			discoveredMcpServers: ["github"],
+			disabledMcpServers: [],
+			commands: [],
+			tools: [],
+		});
+		expect(formatStatusMarkdown(report)).toBe(RECORDED_PRE_CHANGE_STATUS);
+		expect(Object.keys(report)).toEqual([
+			"profile",
+			"source",
+			"overlay",
+			"skills",
+			"extensions",
+			"tools",
+			"mcp",
+			"mcpTools",
+			"unmatched",
+			"conflicts",
+		]);
 	});
 });

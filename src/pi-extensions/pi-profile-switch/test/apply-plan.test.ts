@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -549,6 +549,67 @@ describe("persisted activation diagnostics", () => {
 			const result = await applyLaunchPlan({ runtimeDir, cwd: root, reason: "reload", surface });
 			expect(result.warnings).toEqual([issue.message]);
 			expect(surface.notifications).toEqual([{ message: issue.message, level: "warning" }]);
+		}
+	});
+});
+
+describe("plan composition provenance (FT54 S2 §3.3/§4)", () => {
+	it("reads the plan's composition maps and pending references without rewriting the boot snapshot", async () => {
+		const plan = {
+			profile: "composed",
+			source: "project",
+			tools: ["read", "lint-fix"],
+			toolReferences: ["read", "lint-fix"],
+			composition: {
+				strategy: "append",
+				branch: "composed",
+				globalPath: "/global/leader.json",
+				projectPath: "/project/.pi/profiles/leader.json",
+				referenceContributors: {
+					skills: {},
+					extensions: {},
+					mcps: {},
+					tools: { read: "global", "lint-fix": "both" },
+				},
+				unapplied: [],
+				diagnostics: [],
+			},
+			resourceSelection: { skills: false, extensions: false },
+			origins: { skills: { alpha: "native" } },
+			extensionOrigins: { "/agent/extensions/linter.ts": { id: "linter", contributors: "project" } },
+			toolOrigins: { read: { contributors: "global", state: "resolved", at: "boot" } },
+			pendingToolReferences: [{ reference: "lint-fix", contributors: "both", resolvesAt: "session-start" }],
+		};
+		await writePlan(plan);
+		const planPath = path.join(runtimeDir, "pi-profile.json");
+		const before = await readFile(planPath, "utf8");
+
+		const surface = fakeSurface({
+			liveTools: [
+				{ name: "read", sourceInfo: { path: "<builtin:read>", source: "builtin" } },
+				{ name: "lint-fix", sourceInfo: { path: "/agent/extensions/linter.ts", source: "extension" } },
+			],
+		});
+		const result = await applyLaunchPlan({ runtimeDir, cwd: root, reason: "startup", surface });
+
+		// The pending reference resolves in-process; the persisted plan keeps its
+		// boot snapshot, so no extra plan write is introduced.
+		expect(surface.activeTools).toEqual(["read", "lint-fix"]);
+		expect(result.warnings).toEqual([]);
+		expect(await readFile(planPath, "utf8")).toBe(before);
+	});
+
+	it("never writes the plan file for a non-switch application", async () => {
+		await writePlan({ profile: "plain", source: "global", tools: ["read"], toolReferences: ["read"] });
+		const planPath = path.join(runtimeDir, "pi-profile.json");
+		// A write attempt would fail loudly: the boot snapshot must survive intact.
+		await chmod(planPath, 0o444);
+		try {
+			await expect(
+				applyLaunchPlan({ runtimeDir, cwd: root, reason: "startup", surface: fakeSurface() }),
+			).resolves.toMatchObject({ warnings: [] });
+		} finally {
+			await chmod(planPath, 0o644);
 		}
 	});
 });

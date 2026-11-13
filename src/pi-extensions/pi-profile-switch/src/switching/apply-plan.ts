@@ -34,6 +34,13 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { isRecord, readJsonFile } from "../json-file.ts";
+import type {
+	ContributorSet,
+	PendingToolReference,
+	ProfileComposition,
+	ProvenanceKind,
+	ReferenceListKind,
+} from "../profile-composition.ts";
 import { mergeResolutionDiagnostics, type ResolutionDiagnostic } from "../profile-resolver.ts";
 import { RuntimeStateStore } from "../runtime-state-store.ts";
 import { getGlobalStateDir } from "../workspace.ts";
@@ -68,6 +75,25 @@ export interface LaunchPlanFile {
 	/** Glob references that matched nothing at resolution (ADR-0009). */
 	unmatched?: string[];
 	diagnostics?: ResolutionDiagnostic[];
+	/** Composition metadata of the resolution that produced this plan. Absent
+	 *  for a definition that declares no `promptStrategy`. Presentation only. */
+	composition?: ProfileComposition;
+	/** Per-kind declaration intent of the composed definition (skills,
+	 *  extensions): true exactly when the field was declared. Carried only with
+	 *  `composition` so an uncomposed plan keeps its exact shape. */
+	resourceSelection?: { skills: boolean; extensions: boolean };
+	/** Per-identity provenance of the identities this plan selects; `native`
+	 *  marks an identity selected because its kind is undeclared. */
+	origins?: Partial<Record<ReferenceListKind, Record<string, ProvenanceKind>>>;
+	/** Extension provenance keyed by resolved entry path, never by identifier. */
+	extensionOrigins?: Record<string, { id: string; contributors: ContributorSet }>;
+	/** Boot-resolved tools only, keyed by live tool name. This file is written
+	 *  before session start, so it cannot carry a post-session-start map. */
+	toolOrigins?: Record<string, { contributors: ContributorSet; state: "resolved"; at: "boot" | "session-start" }>;
+	/** Raw tool references the boot expansion could not resolve: a separate
+	 *  list, never keyed as a tool name. Status reports them as boot-snapshot
+	 *  pending with the current session outcome not recorded. */
+	pendingToolReferences?: PendingToolReference[];
 	previousResolved?: {
 		skills: string[];
 		extensions: string[];
@@ -186,6 +212,10 @@ export async function applyLaunchPlan(input: {
 				plan.toolReferences,
 				nonMcpToolNames,
 				mcpToolNames,
+				// The plan's per-raw-reference contributor map rides the existing
+				// expansion; the in-process per-tool result is returned to this caller
+				// and is not written back into the plan.
+				plan.composition?.referenceContributors.tools,
 			);
 			if (droppedLiterals.length > 0) {
 				warnings.push(

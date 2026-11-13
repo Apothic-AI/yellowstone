@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { runLauncher, runLauncherRpc } from "./helpers/launcher-runner.ts";
 import { runNativePi } from "./helpers/native-pi-runner.ts";
-import { addGlobalSkill, createPiFixture, listFiles, type PiFixture } from "./helpers/pi-fixture.ts";
+import { addGlobalSkill, createPiFixture, listFiles, soleInstanceDir, type PiFixture } from "./helpers/pi-fixture.ts";
 
 let fixture: PiFixture;
 
@@ -362,4 +362,36 @@ describe("real restrictive partial resource discovery", () => {
 		expect(await readFile(settingsFile, "utf8")).toBe(settings);
 		expect(await readFile(path.join(dir, "corrupt.json"), "utf8")).toBe("{ bad");
 	});
+});
+
+describe("launcher integration: a named profile a trusted project appends to (FT54 S3 §8)", () => {
+	it(
+		"widens a declared empty base with the project half",
+		{ timeout: 45_000 },
+		async () => {
+			await addGlobalSkill(fixture, "widened-skill");
+			await writeCatalog({ review: { skills: [] } });
+			await mkdir(path.join(fixture.cwd, ".pi", "profiles"), { recursive: true });
+			await writeFile(
+				path.join(fixture.cwd, ".pi", "profiles", "review.json"),
+				JSON.stringify({ promptStrategy: "append", skills: ["widened-skill"] }),
+			);
+			await writeFile(
+				path.join(fixture.agentDir, "trust.json"),
+				JSON.stringify({ [fixture.cwd]: true }),
+			);
+
+			const run = await runLauncher(fixture, ["review", "--", "--version"]);
+			expect(run.code).toBe(0);
+
+			const instance = await soleInstanceDir(fixture);
+			const settings = JSON.parse(await readFile(path.join(instance, "settings.json"), "utf8"));
+			const entries = ((settings.skills ?? []) as unknown[]).map((entry) => String(entry));
+			// An empty base is a declared selection of nothing, so the project
+			// half widens it.
+			expect(entries.some((entry) => entry.includes("widened-skill"))).toBe(true);
+			const plan = JSON.parse(await readFile(path.join(instance, "pi-profile.json"), "utf8"));
+			expect(plan.composition).toMatchObject({ strategy: "append", branch: "composed" });
+		},
+	);
 });

@@ -1,3 +1,5 @@
+**Superseded by ADR-0022.**
+
 # No profile inheritance
 
 ## Context

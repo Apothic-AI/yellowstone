@@ -12,6 +12,11 @@
     "description": {
       "type": "string"
     },
+    "promptStrategy": {
+      "type": "string",
+      "enum": ["append", "replace"],
+      "description": "Composition strategy. Accepted values are exactly \"append\" and \"replace\"; an omitted field means \"replace\". In a project profile, \"append\" composes this definition with the same-named global profile, and \"replace\" replaces it. \"append\" is rejected in a global profile; \"replace\" is accepted there and changes nothing."
+    },
     "skills": {
       "type": "array",
       "items": {

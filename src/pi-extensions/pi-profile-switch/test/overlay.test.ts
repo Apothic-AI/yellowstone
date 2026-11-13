@@ -3,7 +3,10 @@ import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { defaultPlan } from "../src/profile-resolver.ts";
+import { defaultPlan, resolveProfile } from "../src/profile-resolver.ts";
+import { compositionMetadata, composeProfileDefinitions } from "../src/profile-composition.ts";
+import { DiscoveredExtensions } from "../src/extension-discovery.ts";
+import type { SkillEntry } from "../src/skill-registry.ts";
 import { generateRuntimeDir } from "../src/settings-generator.ts";
 import type { RuntimeOverlay } from "../src/runtime-state-store.ts";
 import { applyOverlayMutation, clearOverlay, parseOverlayArgs } from "../src/switching/overlay.ts";
@@ -266,5 +269,79 @@ describe("applyOverlayMutation / clearOverlay", () => {
 			`-${path.join(fixture.agentDir, "skills", "beta-skill", "SKILL.md")}`,
 		]);
 		expect(settings.defaultProjectTrust).toBe("never");
+	});
+});
+
+describe("overlay truth in the origin trace (FT54 S2 §3.6)", () => {
+	const fixedSkill = (name: string): SkillEntry => ({
+		name,
+		filePath: `/agent/skills/${name}/SKILL.md`,
+		source: "auto",
+		scope: "user",
+		origin: "top-level",
+	});
+
+	it("drops an overlay-removed identity from origins instead of describing it as selected", async () => {
+		const paths = { globalPath: "/global/leader.json", projectPath: "/project/.pi/profiles/leader.json" };
+		const composed = composeProfileDefinitions(
+			{ skills: ["alpha", "beta"], mcps: ["github"] },
+			{ promptStrategy: "append", skills: ["gamma"] },
+			paths,
+		);
+		const extensions = new DiscoveredExtensions(
+			[],
+			[{ id: "linter", entry: "/agent/extensions/linter.ts" }, { id: "probe", entry: "/agent/extensions/probe.ts" }],
+			[],
+		);
+		const plan = await resolveProfile({
+			profile: {
+				name: "narrowed",
+				source: "project",
+				definition: composed.definition,
+				composition: compositionMetadata(composed, paths),
+			},
+			skills: [fixedSkill("alpha"), fixedSkill("beta"), fixedSkill("gamma"), fixedSkill("unselected")],
+			extensions,
+			discoveredMcpServers: ["github", "linear"],
+			referenceContributors: composed.referenceContributors,
+			overlay: {
+				disabledSkills: ["beta", "gamma*"],
+				disabledExtensions: ["probe"],
+				disabledMcps: ["github"],
+			},
+		});
+
+		// `gamma` is removed by the glob and `beta` by its literal: neither is
+		// currently selected, so neither appears in provenance.
+		expect(plan.skills.map((entry) => entry.name)).toEqual(["alpha"]);
+		expect(plan.origins?.skills).toEqual({ alpha: "global" });
+		expect(plan.extensions.map((entry) => entry.id)).toEqual(["linter"]);
+		expect(plan.extensionOrigins).toBeUndefined();
+		expect(plan.origins?.mcps ?? {}).toEqual({});
+	});
+
+	it("marks only the surviving native identities after an overlay narrows an undeclared kind", async () => {
+		const composed = composeProfileDefinitions(
+			{},
+			{ promptStrategy: "append", skills: ["gamma", "not-declared"] },
+			{ projectPath: "/project/.pi/profiles/standalone.json" },
+		);
+		const plan = await resolveProfile({
+			profile: {
+				name: "native-narrowed",
+				source: "project",
+				definition: composed.definition,
+				composition: compositionMetadata(composed, { projectPath: "/project/.pi/profiles/standalone.json" }),
+			},
+			skills: [fixedSkill("alpha"), fixedSkill("beta")],
+			extensions: await Promise.resolve(new DiscoveredExtensions([], [], [])),
+			referenceContributors: composed.referenceContributors,
+			overlay: { disabledSkills: ["beta"] },
+		});
+
+		// The kind stays undeclared (native), so the overlay's concrete removal is
+		// carried separately and the removed identity is not in origins.
+		expect(plan.disabledSkills?.map((entry) => entry.name)).toEqual(["beta"]);
+		expect(plan.origins?.skills).toEqual({ alpha: "native" });
 	});
 });

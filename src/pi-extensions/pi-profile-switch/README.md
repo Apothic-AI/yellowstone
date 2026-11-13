@@ -101,6 +101,8 @@ Each profile is a `<name>.json` file. The filename supplies the name used when l
 
 A project-level profile completely replaces a same-named global profile without merging fields. Deleting the project file makes the global definition available again.
 
+Set `"promptStrategy": "append"` in a project profile to compose it with its same-named global profile instead. The composed profile may add user-level resources the global selection leaves out, and it never narrows what the global profile already allows; use a replacing profile or `/profile overlay` to narrow. When the project file declares `append` and no global profile of that name exists, the project profile works on its own: its own resource lists apply exactly as written, and a note records that no base was found.
+
 Names must start with an ASCII letter or digit and may then contain ASCII letters, digits, dots, underscores, and hyphens. `default` is reserved: you cannot create `default.json`, or edit or delete the `default` profile.
 
 For an untrusted project, run `/trust` in Pi and restart, or trust only this launch:
@@ -152,6 +154,7 @@ The profile object is the JSON top-level value. Every field is optional; omitted
 | --- | --- | --- |
 | `label` | `string` | Display name in the selector; does not change the profile's filename. |
 | `description` | `string` | Description in the selector. |
+| `promptStrategy` | `string` | Accepted values are exactly `"append"` and `"replace"`; an omitted field means `"replace"`. In a project profile, `"append"` composes this definition with the same-named global profile, and `"replace"` replaces it. `"append"` is rejected in a global profile; `"replace"` is accepted there and changes nothing. |
 | `skills` | `string[]` | Select skills by name or glob. |
 | `extensions` | `string[]` | Select extensions by identifier, glob, or specified path. |
 | `mcps` | `string[]` | Select user-level MCP servers by name or glob. |
@@ -191,7 +194,9 @@ For resource lists, omitting a field leaves that resource kind unrestricted by t
 }
 ```
 
-Skill, extension, and MCP server selections narrow only user-level resources. Pi's project-trust decision governs project-level visibility; profiles do not hide those resources. Pi's existing resource exclusions remain effective.
+In a composed profile the same fields mean the same thing, with one addition: a reference a composed profile cannot apply is named in a diagnostic instead of being silently dropped. If the global profile leaves a kind unrestricted, adding references to that kind in the project profile is reported as unapplied, because an unrestricted kind already includes everything; declare the kind in the global profile (even as `[]`) to widen it from the project profile. When no global profile of that name exists at all, the project profile's own lists apply exactly as written and nothing is reported as unapplied.
+
+Skill, extension, and MCP server selections narrow only user-level resources. Pi's project-trust decision governs project-level visibility; profiles do not hide those resources, and a composed (`append`) profile does not either. A trusted project's `.pi/skills/` and `.pi/extensions/` stay visible under every profile, including one that declares `append`, because that visibility is Pi's trust gate rather than something a profile controls. Pi's existing resource exclusions remain effective.
 
 `tools` does not restrict MCP tools or disable the entry points Pi needs to invoke them. Use `mcp_tools` to restrict MCP tools; a read-only file-tool list does not automatically prevent MCP write operations.
 

@@ -101,6 +101,28 @@ describe("profile validation documentation", () => {
 
 	it.each(CURRENT_DOCS)("does not copy native value inventories into %s", assertReferenceOnlyNativeValues);
 
+	it("documents the composed definition as mechanism, without restating the contract tables", async () => {
+		const overview = await read("docs/architecture/overview.md");
+		expect(overview).toContain("profile-composition.ts");
+		expect(overview).toMatch(/composed with its same-named global definition/);
+		expect(overview).toMatch(/still reports the project source/i);
+		expect(overview).toContain("](../adr/0022-project-profile-append-composition.md)");
+		// Mechanism only: the requirement tables and their diagnostic codes live in
+		// the spec deltas, not in the architecture overview.
+		expect(overview).not.toMatch(/append-unapplied-reference|append-cannot-narrow|append-standalone/);
+
+		const glossary = await read("CONTEXT.md");
+		expect(glossary).toContain("**Composed definition**");
+		expect(glossary).toMatch(/composition never adds a fourth source/);
+	});
+
+	it.each([
+		["README.md", "a composed (`append`) profile does not either"],
+		["README.zh-CN.md", "声明 `append` 的组合式 profile 同样不会"],
+	])("%s keeps the project-scope limitation unchanged for composed profiles", async (file, phrase) => {
+		expect(await read(file)).toContain(phrase);
+	});
+
 	it("removes obsolete activation-failure editing guidance from current usage docs", async () => {
 		for (const file of ["README.md", "skills/profile-config/SKILL.md"]) {
 			const text = await read(file);

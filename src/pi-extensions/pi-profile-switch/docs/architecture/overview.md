@@ -43,6 +43,8 @@ A profile takes over exactly four resource categories (skills, extensions, MCP s
 
 A named profile controls skills and extensions independently. A declared field becomes a selection — an explicit empty array selects none — while an omitted field keeps Pi's native visibility and carries the user's own settings and package filters through unchanged. The ActivationPlan records that intent per kind as `resourceSelection`, and, when a RuntimeOverlay narrows an omitted kind, the concrete removed entries in `disabledSkills`/`disabledExtensions`. An overlay over an omitted kind adds only those concrete force-exclusions to the native base; it never turns the kind into a wildcard allowlist.
 
+A project definition that declares `"promptStrategy": "append"` is composed with its same-named global definition at resolution time, before the resolver sees a definition: raw declarations concatenate global-then-project and expand exactly once per kind, so the composite may add to what the global half allows but never narrow it. The merge is one pure module (`src/profile-composition.ts`, no filesystem, discovery, or clock access) that returns the composed definition, the contributing scopes of each raw declaration, and its own diagnostics; each resolution composes afresh, so nothing merged is stored. The winner still reports the project source, and a composed definition narrows project-scope resources no more than any other profile: `append` adds user-level resources only.
+
 A selection plan that omits `extensions` exposes the real extension directory through a conditional symlink at the managed instance path, created even when the target is absent; the directory is not added to the settings array, so Pi's basename patterns and marker-less glob filters keep their native meaning. The path is validated before any managed write: for a selection plan (omitted or declared), pre-existing non-symlink content at that path blocks activation with an actionable path-bearing error and is never deleted, adopted, or overwritten. The switch snapshot records the path's absence or raw link target, so a settings, link, or reload failure restores the prior representation before the rollback reload; the real directory is never part of rollback. A declared selection keeps the restrictive allowlist and has no generated link. Returning to the ordinary `default` profile removes only a mirror this session generated and retains its additive representation; foreign content is left untouched. The stale-instance sweep skips the link without traversing its target and keeps its warning-only treatment of real content inside an instance extension directory (ADR-0012).
 
 The `default` profile generates no filtering at all: settings are a verbatim copy of the user's global settings, re-including the real agentDir's `skills`/`extensions`/`prompts`/`themes` directories (because the discovery root has moved), do not set `defaultProjectTrust`, and behave identically to native Pi. A RuntimeOverlay on `default` resolves through the same per-kind control: both kinds are omitted, so an overlay narrows each from its native base.
@@ -64,7 +66,9 @@ The `default` profile generates no filtering at all: settings are a verbatim cop
 
 | Module | Interface |
 | --- | --- |
-| `profile-catalog.ts` | `ProfileCatalog.load` indexes filenames and source metadata; asynchronous `resolve(name)` reads one winner; `list()` captures availability/errors/warnings per winning entry; `hasGlobal` and `diagnostics()` expose index metadata |
+| `profile-catalog.ts` | `ProfileCatalog.load` indexes filenames and source metadata for both halves per name; asynchronous `resolve(name)` reads one winner and reads the shadowed global definition only as the composition base of an `append` winner; `list()` captures availability/errors/warnings per winning entry and marks a composing winner; `hasGlobal` and `diagnostics()` expose index metadata |
+| `profile-composition.ts` | `composeProfileDefinitions(global, project, options)` → composed definition, per-raw-reference contributor sets, unapplied references, and composition diagnostics; pure, and the single owner of the two composition branches (standalone, composed) and of the append project-half negated-glob guard. `resolvePromptStrategy` owns the accepted strategy set and its per-scope validity |
+| `catalog-error.ts` | `CatalogError`; the shared loud error type for definition reads and definition validation, re-exported by `profile-catalog.ts` so the composer can throw it without importing the catalog |
 | `project-trust.ts` | `resolveProjectTrust(input)` → boolean; mirrors Pi's decision order; decides whether pi-profile reads the project catalog, project state, and project MCP configuration (project-level resources themselves belong to Pi) |
 | `skill-registry.ts` | `discoverSkills(options)` → `SkillEntry[]`; read-only calls into Pi SDK discovery, never scans directories itself |
 | `extension-discovery.ts` | `discoverExtensions(options)` → `DiscoveredExtensions` (read-only, never executes extension code); `.select(refs)` resolves package names, aliases, loose-file stems, globs, and absolute paths |
@@ -117,7 +121,7 @@ pi-profile review -- --mode rpc
   ├─ parseLauncherArgs: take review, intercept --approve, pass the rest through
   ├─ readTrustInputs: resolve project trust before project-scoped reads
   ├─ Choose positional or saved name; normal default bypasses the catalog
-  ├─ Named selection: ProfileCatalog.load indexes → resolve(name) reads the winner
+  ├─ Named selection: ProfileCatalog.load indexes → resolve(name) reads the winner (plus its global base when the winner appends)
   ├─ skill-registry + extension-discovery + mcp-config read-only discovery
   ├─ resolveProfile → ActivationPlan (resource expansion, overlays, diagnostics, native declarations)
   ├─ generateRuntimeDir → this run's instance directory (generated files + seed + symlink mirror + env)
@@ -199,7 +203,7 @@ For reading convenience, not a stable surface: this format evolves with Pi versi
 
 ### User configuration contract
 
-The authoritative schema for profile definition files (global `~/.pi-profile-switch/profiles/<name>.json`, project `.pi/profiles/<name>.json`) is `schemas/profiles.schema.json`. Core fields: a profile's `skills`/`extensions`/`mcps`/`tools` (names or globs), optional `defaultProvider`/`defaultModel`/`defaultThinkingLevel`, `instructions`, and native subagent declarations; state's `activeProfile` and `overlay`. The native-shaped profile boundary and rejected alternatives are recorded in [ADR-0017](../adr/0017-native-subagent-settings-overrides.md).
+The authoritative schema for profile definition files (global `~/.pi-profile-switch/profiles/<name>.json`, project `.pi/profiles/<name>.json`) is `schemas/profiles.schema.json`. Core fields: a profile's `skills`/`extensions`/`mcps`/`tools` (names or globs), optional `promptStrategy` (`append` composes a project definition with its same-named global definition; `replace`, and an omitted field, replace it), optional `defaultProvider`/`defaultModel`/`defaultThinkingLevel`, `instructions`, and native subagent declarations; state's `activeProfile` and `overlay`. The native-shaped profile boundary and rejected alternatives are recorded in [ADR-0017](../adr/0017-native-subagent-settings-overrides.md); composition is [ADR-0022](../adr/0022-project-profile-append-composition.md).
 
 ## Known limitations
 

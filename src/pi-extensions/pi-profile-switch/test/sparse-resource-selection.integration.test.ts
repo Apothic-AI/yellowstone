@@ -187,6 +187,70 @@ function fixtureCommands(observation: Observation, names: string[]): string[] {
 	return names.filter((name) => observation.commands.includes(name)).sort();
 }
 
+describe("composed selection against a real spawned pi (FT54 S3 §5)", () => {
+	async function writeProjectCatalog(profiles: Record<string, unknown>): Promise<void> {
+		const dir = path.join(fixture.cwd, ".pi", "profiles");
+		await mkdir(dir, { recursive: true });
+		for (const [name, definition] of Object.entries(profiles)) {
+			await writeFile(path.join(dir, `${name}.json`), JSON.stringify(definition));
+		}
+	}
+
+	async function trustProject(): Promise<void> {
+		await writeFile(path.join(fixture.agentDir, "trust.json"), JSON.stringify({ [fixture.cwd]: true }));
+	}
+
+	it(
+		"a trusted project's append profile selects the union, and the project's own skill stays visible",
+		{ timeout: 90_000 },
+		async () => {
+			await addGlobalSkill("alpha-skill");
+			await addGlobalSkill("beta-skill");
+			await addProjectSkill("proj-skill");
+			await writeCatalog({ review: { skills: ["alpha-skill"] } });
+			await writeProjectCatalog({
+				review: { promptStrategy: "append", skills: ["beta-skill", "proj-skill"] },
+			});
+			await trustProject();
+
+			const review = await observe(["review", "--", "--mode", "rpc"]);
+
+			// The union of the two halves is selected.
+			expect(review.skills).toContain("skill:alpha-skill");
+			expect(review.skills).toContain("skill:beta-skill");
+			// Project scope belongs to Pi: the project's own skill stays visible.
+			expect(review.skills).toContain("skill:proj-skill");
+		},
+	);
+
+	it(
+		"a skill the user's own settings exclude cannot be selected by a composed reference",
+		{ timeout: 90_000 },
+		async () => {
+			await addGlobalSkill("alpha-skill");
+			await addGlobalSkill("hidden-skill");
+			await addGlobalSkill("kept-skill");
+			await writeCatalog({ review: { skills: ["kept-skill", "hidden-skill"] } });
+			await writeProjectCatalog({ review: { promptStrategy: "append", skills: ["hidden-skill"] } });
+			await trustProject();
+			// The user's own skill filters: every agent-dir skill hidden, one
+			// skill force-included.
+			await writeUserSettings({ skills: ["!skills/**", "+skills/kept-skill/SKILL.md"] });
+
+			const review = await observe(["review", "--", "--mode", "rpc"]);
+
+			// The force-included skill is discoverable and visible even though
+			// the user's own exclusion covers its directory ...
+			expect(review.skills).toContain("skill:kept-skill");
+			// ... and the excluded skill cannot be selected by the composed
+			// reference, which names it from both halves.
+			expect(review.skills).not.toContain("skill:hidden-skill");
+			// A user-scope skill the composed profile does not name stays hidden.
+			expect(review.skills).not.toContain("skill:alpha-skill");
+		},
+	);
+});
+
 describe("sparse resource selection against a real spawned pi", () => {
 	it(
 		"omitted skills preserve every natively visible skill",

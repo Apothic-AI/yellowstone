@@ -383,6 +383,55 @@ describe("resolveInitialProfile", () => {
 		});
 	});
 
+	describe("composed definitions reach the existing resolution path", () => {
+		async function writeProjectCatalog(profiles: Record<string, unknown>): Promise<void> {
+			const dir = path.join(fixture.cwd, ".pi", "profiles");
+			await mkdir(dir, { recursive: true });
+			for (const [name, definition] of Object.entries(profiles)) {
+				await writeFile(path.join(dir, `${name}.json`), JSON.stringify(definition));
+			}
+		}
+
+		it("resolves the composed selection through the launcher path", async () => {
+			await addGlobalSkill(fixture, "alpha-skill");
+			await addGlobalSkill(fixture, "beta-skill");
+			await writeCatalog({ review: { skills: ["alpha-skill"], tools: ["read"] } });
+			await writeProjectCatalog({ review: { promptStrategy: "append", skills: ["beta-skill"] } });
+
+			const { plan } = await resolveInitialProfile("review", { ...context(), trustOverride: true });
+
+			expect(plan.source).toBe("project");
+			expect(plan.skills.map((skill) => skill.name).sort()).toEqual(["alpha-skill", "beta-skill"]);
+			// The tools allowlist is inherited verbatim from the global half.
+			expect(plan.toolReferences).toEqual(["read"]);
+		});
+
+		it("reports a missing composition base as an informational notice", async () => {
+			await writeProjectCatalog({ review: { promptStrategy: "append", skills: [] } });
+
+			const { plan, warnings } = await resolveInitialProfile("review", { ...context(), trustOverride: true });
+
+			expect(plan.profile).toBe("review");
+			expect(plan.diagnostics).toContainEqual(expect.objectContaining({ kind: "composition", code: "append-standalone" }));
+			expect(warnings.join("\n")).toContain("no same-named global definition exists");
+		});
+
+		it("surfaces an unapplied append reference instead of dropping it silently", async () => {
+			await writeCatalog({ review: { label: "Base", tools: ["read"] } });
+			await writeProjectCatalog({ review: { promptStrategy: "append", skills: ["ghost-skill"] } });
+
+			const { plan, warnings } = await resolveInitialProfile("review", { ...context(), trustOverride: true });
+
+			const diagnostic = plan.diagnostics?.find((issue) => issue.code === "append-unapplied-reference");
+			expect(diagnostic).toMatchObject({ kind: "composition", reference: "ghost-skill" });
+			expect(diagnostic?.message).toContain("not validated against discovery");
+			expect(warnings.join("\n")).toContain("ghost-skill");
+			// The notice is not an unknown-reference claim, and no skill is selected.
+			expect(plan.skills.map((skill) => skill.name)).toEqual([]);
+			expect(plan.diagnostics?.some((issue) => issue.code === "unknown-reference" && issue.reference === "ghost-skill")).toBe(false);
+		});
+	});
+
 	describe("mcp declarations", () => {
 		it("expands the profile's mcp references against the merged user-level snapshot", async () => {
 			await writeMcpConfig({ github: {}, linear: {} });

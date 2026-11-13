@@ -37,6 +37,16 @@ function collectPlanDiagnostics(plan: ActivationPlan, discovery: LauncherDiscove
 			const separator = message.indexOf(': profile "');
 			return { kind: "catalog", code: "unknown-field", reference: message.match(/unknown field "([^"]*)"/)?.[1] ?? message, message, ...(separator >= 0 ? { filePath: message.slice(0, separator) } : {}) };
 		}),
+		// Composition notices are informational and carry their own codes: an
+		// unapplied reference, a per-server entry the base does not name, or a
+		// missing base. They are never reported as unknown fields or as unknown
+		// references, and the merged definition is not re-read to produce them.
+		(profile?.composition?.diagnostics ?? []).map((entry) => ({
+			kind: "composition",
+			code: entry.code,
+			...(entry.reference !== undefined ? { reference: entry.reference } : {}),
+			message: entry.message,
+		})),
 	);
 	if (diagnostics.length > 0) plan.diagnostics = diagnostics;
 	return diagnostics.map((issue) => issue.message);
@@ -190,6 +200,11 @@ export async function resolveInitialProfile(
 		mcpDiscovery,
 		overlay: options?.overlay,
 		liveToolNames: options?.liveToolNames,
+		// The composition's per-raw-reference map is the single provenance
+		// input; without it the resolved plan carries no provenance field.
+		...(profile.composition !== undefined
+			? { referenceContributors: profile.composition.referenceContributors }
+			: {}),
 	});
 	warnings.push(...collectPlanDiagnostics(plan, discovery, profile));
 	return { plan, discovery, projectDir, projectTrusted, warnings };

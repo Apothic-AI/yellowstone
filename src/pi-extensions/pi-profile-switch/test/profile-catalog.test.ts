@@ -364,6 +364,219 @@ describe("ProfileCatalog (global catalog)", () => {
 });
 
 
+describe("promptStrategy and composition at the catalog boundary", () => {
+	const globalPathOf = (name: string) => path.join(fixture.profileSwitchDir, "profiles", `${name}.json`);
+	const projectPathOf = (name: string) => path.join(fixture.cwd, ".pi", "profiles", `${name}.json`);
+
+	it("retains a declared strategy as a parsed field", async () => {
+		await writeGlobalProfile("base", { promptStrategy: "replace", label: "Base" });
+		await writeProjectProfile("replaced", { promptStrategy: "replace", skills: [] });
+		await writeProjectProfile("omitted", { skills: [] });
+
+		const catalog = await ProfileCatalog.load(fixture.agentDir, { projectDir: fixture.cwd });
+
+		// Parse retention, not schema tolerance: a schema-only addition would leave
+		// these undefined and emit no warning either.
+		expect((await catalog.resolve("base"))?.definition.promptStrategy).toBe("replace");
+		expect((await catalog.resolve("replaced"))?.definition.promptStrategy).toBe("replace");
+		expect((await catalog.resolve("omitted"))?.definition.promptStrategy).toBeUndefined();
+		expect(parseProfileDefinition("retained", { promptStrategy: "append" })).toEqual({ promptStrategy: "append" });
+		// A global `replace` is accepted and inert: it composes nothing.
+		expect((await catalog.resolve("base"))?.composition).toBeUndefined();
+	});
+
+	it("rejects an unsupported strategy value as a field error naming file, profile and accepted values", async () => {
+		const globalFile = await writeGlobalProfile("unsupported", { promptStrategy: "merge" });
+		const projectFile = await writeProjectProfile("unsupported-project", { promptStrategy: "merge" });
+		const catalog = await ProfileCatalog.load(fixture.agentDir, { projectDir: fixture.cwd });
+
+		const globalError = catalog.resolve("unsupported");
+		await expect(globalError).rejects.toThrow(globalFile);
+		await expect(globalError).rejects.toThrow('profile "unsupported"');
+		await expect(globalError).rejects.toThrow(/"append" and "replace"/);
+		await expect(catalog.resolve("unsupported-project")).rejects.toThrow(projectFile);
+		// It is a rejection, not a tolerated unknown key that warns and continues.
+		const listed = (await catalog.list()).find((entry) => entry.name === "unsupported");
+		expect(listed).toMatchObject({ available: false, error: expect.stringContaining(globalFile) });
+		expect(listed?.warnings).toBeUndefined();
+	});
+
+	it("rejects append in a global definition", async () => {
+		const file = await writeGlobalProfile("global-append", { promptStrategy: "append" });
+		const catalog = await ProfileCatalog.load(fixture.agentDir);
+
+		const error = catalog.resolve("global-append");
+		await expect(error).rejects.toThrow(file);
+		await expect(error).rejects.toThrow(/no base to compose with/);
+	});
+
+	it("composes a trusted append winner with its global namesake and reports project source", async () => {
+		await writeGlobalProfile("review", reviewProfile);
+		await writeProjectProfile("review", { promptStrategy: "append", skills: ["project-skill"] });
+
+		const catalog = await ProfileCatalog.load(fixture.agentDir, { projectDir: fixture.cwd });
+		const resolved = await catalog.resolve("review");
+
+		expect(resolved?.source).toBe("project");
+		expect(resolved?.definition).toEqual({
+			label: reviewProfile.label,
+			description: reviewProfile.description,
+			promptStrategy: "append",
+			skills: [...reviewProfile.skills, "project-skill"],
+			extensions: reviewProfile.extensions,
+			mcps: reviewProfile.mcps,
+			tools: reviewProfile.tools,
+			defaultProvider: reviewProfile.defaultProvider,
+			defaultModel: reviewProfile.defaultModel,
+			defaultThinkingLevel: reviewProfile.defaultThinkingLevel,
+			instructions: reviewProfile.instructions,
+		});
+		expect(resolved?.composition).toMatchObject({
+			strategy: "append",
+			branch: "composed",
+			globalPath: globalPathOf("review"),
+			projectPath: projectPathOf("review"),
+			unapplied: [],
+			diagnostics: [],
+		});
+		expect(resolved?.composition?.referenceContributors.skills).toEqual({
+			"code-review": "global",
+			"git-commit": "global",
+			"project-skill": "project",
+		});
+	});
+
+	it("returns only the project half for a replacement winner", async () => {
+		await writeGlobalProfile("review", reviewProfile);
+		await writeProjectProfile("review", { skills: ["project-skill"] });
+
+		const catalog = await ProfileCatalog.load(fixture.agentDir, { projectDir: fixture.cwd });
+		const resolved = await catalog.resolve("review");
+
+		expect(resolved).toEqual({ name: "review", source: "project", definition: { skills: ["project-skill"] } });
+	});
+
+	it("marks a composing winner in the list and reads only the definitions that participate", async () => {
+		await writeGlobalProfile("review", reviewProfile);
+		await writeProjectProfile("review", { promptStrategy: "append" });
+		await writeProjectProfile("standalone", { promptStrategy: "append" });
+		const read = vi.spyOn(jsonFile, "readJsonFile");
+		const catalog = await ProfileCatalog.load(fixture.agentDir, { projectDir: fixture.cwd });
+
+		const entries = await catalog.list();
+		// A composing append consumes the global definition as its base; it does not
+		// shadow or replace it (SI S2 review finding).
+		expect(entries.find((entry) => entry.name === "review")).toMatchObject({ source: "project", shadowsGlobal: false, composesGlobal: true, available: true });
+		expect(entries.find((entry) => entry.name === "standalone")).toMatchObject({ source: "project", shadowsGlobal: false, composesGlobal: false, available: true });
+		expect(read.mock.calls.map(([file]) => file).sort()).toEqual([globalPathOf("review"), projectPathOf("review"), projectPathOf("standalone")].sort());
+	});
+
+	it("lists an invalid composed pair as unavailable with a path-bearing message", async () => {
+		const baseFile = await writeGlobalProfile("review", "{ corrupt");
+		await writeProjectProfile("review", { promptStrategy: "append", skills: ["x"] });
+		await writeGlobalProfile("valid", {});
+		const catalog = await ProfileCatalog.load(fixture.agentDir, { projectDir: fixture.cwd });
+
+		const error = catalog.resolve("review");
+		await expect(error).rejects.toThrow(baseFile);
+		const entries = await catalog.list();
+		expect(entries.find((entry) => entry.name === "review")).toMatchObject({ available: false, composesGlobal: false, error: expect.stringContaining(baseFile) });
+		expect(entries.find((entry) => entry.name === "review")?.definition).toBeUndefined();
+		expect(entries.find((entry) => entry.name === "valid")).toMatchObject({ available: true });
+	});
+
+	it("does not fall back to either half when the project winner is invalid", async () => {
+		await writeGlobalProfile("review", reviewProfile);
+		const winner = await writeProjectProfile("review", { promptStrategy: "append", skills: 1 });
+		const catalog = await ProfileCatalog.load(fixture.agentDir, { projectDir: fixture.cwd });
+
+		const error = catalog.resolve("review");
+		await expect(error).rejects.toThrow(winner);
+		await expect(error).rejects.not.toThrow(/invalid JSON/);
+	});
+
+	it("composes freshly on every resolution without caching the merged definition", async () => {
+		await writeGlobalProfile("review", { skills: ["a"] });
+		await writeProjectProfile("review", { promptStrategy: "append", skills: ["b"] });
+		const catalog = await ProfileCatalog.load(fixture.agentDir, { projectDir: fixture.cwd });
+
+		expect((await catalog.resolve("review"))?.definition.skills).toEqual(["a", "b"]);
+		await writeGlobalProfile("review", { skills: ["a", "c"] });
+		expect((await catalog.resolve("review"))?.definition.skills).toEqual(["a", "c", "b"]);
+		expect((await catalog.list()).find((entry) => entry.name === "review")?.definition?.skills).toEqual(["a", "c", "b"]);
+	});
+
+	describe("trust and read directions", () => {
+		it("opens no project catalog file for an untrusted project and still reads the global definition", async () => {
+			const globalFile = await writeGlobalProfile("review", reviewProfile);
+			await writeProjectProfile("review", { promptStrategy: "append", skills: [] });
+			const read = vi.spyOn(jsonFile, "readJsonFile");
+			// An untrusted project supplies no projectDir; that is the trust gate, and
+			// this is exactly how the launcher loads the catalog.
+			const catalog = await ProfileCatalog.load(fixture.agentDir);
+
+			const resolved = await catalog.resolve("review");
+			expect(resolved?.source).toBe("global");
+			expect(resolved?.definition).toEqual(reviewProfile);
+			expect(read.mock.calls.map(([file]) => file)).toEqual([globalFile]);
+			expect(read.mock.calls.some(([file]) => path.dirname(String(file)) === path.dirname(projectPathOf("review")))).toBe(false);
+		});
+
+		it("opens no global definition for a replacing winner, including an explicit replace", async () => {
+			await writeGlobalProfile("review", "{ corrupt");
+			const winner = await writeProjectProfile("review", { promptStrategy: "replace", skills: [] });
+			const read = vi.spyOn(jsonFile, "readJsonFile");
+			const catalog = await ProfileCatalog.load(fixture.agentDir, { projectDir: fixture.cwd });
+
+			const resolved = await catalog.resolve("review");
+			expect(resolved?.definition).toEqual({ promptStrategy: "replace", skills: [] });
+			expect(resolved?.composition).toBeUndefined();
+			expect(read.mock.calls.map(([file]) => file)).toEqual([winner]);
+		});
+
+		it("opens both halves exactly once for an appended winner", async () => {
+			const base = await writeGlobalProfile("review", reviewProfile);
+			const winner = await writeProjectProfile("review", { promptStrategy: "append" });
+			const read = vi.spyOn(jsonFile, "readJsonFile");
+			const catalog = await ProfileCatalog.load(fixture.agentDir, { projectDir: fixture.cwd });
+
+			await catalog.resolve("review");
+			expect(read.mock.calls.map(([file]) => file).sort()).toEqual([base, winner].sort());
+		});
+
+		it("resolves a standalone append winner without any global attempt and keeps its own lists", async () => {
+			const winner = await writeProjectProfile("review", { promptStrategy: "append", skills: ["a", "b"], tools: ["read", "edit"] });
+			const read = vi.spyOn(jsonFile, "readJsonFile");
+			const catalog = await ProfileCatalog.load(fixture.agentDir, { projectDir: fixture.cwd });
+
+			const resolved = await catalog.resolve("review");
+			expect(read.mock.calls.map(([file]) => file)).toEqual([winner]);
+			expect(resolved?.composition?.branch).toBe("standalone");
+			expect(resolved?.composition?.globalPath).toBeUndefined();
+			// The declared lists are applied exactly as written — no unapplied
+			// reference is invented for a base that does not exist. The expansion of
+			// those declarations against discovery and the unchanged tool expansion
+			// are proven by the launcher-level cases.
+			expect(resolved?.definition).toEqual({ promptStrategy: "append", skills: ["a", "b"], tools: ["read", "edit"] });
+			expect(resolved?.composition?.unapplied).toEqual([]);
+			expect(resolved?.composition?.diagnostics.map((entry) => entry.code)).toEqual(["append-standalone"]);
+			expect(resolved?.composition?.referenceContributors.skills).toEqual({ a: "project", b: "project" });
+		});
+
+		it("exposes an unapplied project reference when the base leaves the kind unrestricted", async () => {
+			await writeGlobalProfile("review", { label: "Base", tools: ["read"] });
+			await writeProjectProfile("review", { promptStrategy: "append", skills: ["review-skill"] });
+			const catalog = await ProfileCatalog.load(fixture.agentDir, { projectDir: fixture.cwd });
+
+			const resolved = await catalog.resolve("review");
+			expect(resolved?.definition.skills).toBeUndefined();
+			expect(resolved?.definition.tools).toEqual(["read"]);
+			expect(resolved?.composition?.unapplied).toEqual([{ kind: "skills", reference: "review-skill", scope: "project" }]);
+			expect(resolved?.composition?.diagnostics.map((entry) => entry.code)).toEqual(["append-unapplied-reference"]);
+		});
+	});
+});
+
 describe("targeted catalog reads", () => {
 	it("indexes without reads and reads only the selected winner on each resolution", async () => {
 		const selected = await writeGlobalProfile("review", {});
@@ -388,7 +601,7 @@ describe("targeted catalog reads", () => {
 		const catalog = await ProfileCatalog.load(fixture.agentDir, { projectDir: fixture.cwd });
 		expect(catalog.hasGlobal("review")).toBe(true);
 		expect(await catalog.resolve("review")).toMatchObject({ source: "project", definition: { tools: [] } });
-		expect(await catalog.list()).toContainEqual({ name: "review", source: "project", definition: { tools: [] }, available: true, shadowsGlobal: true });
+		expect(await catalog.list()).toContainEqual({ name: "review", source: "project", definition: { tools: [] }, available: true, shadowsGlobal: true, composesGlobal: false });
 		expect(read.mock.calls.map(([file]) => file)).toEqual([winner, winner]);
 	});
 

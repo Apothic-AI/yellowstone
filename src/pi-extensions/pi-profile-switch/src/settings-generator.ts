@@ -834,6 +834,17 @@ export async function writeRuntimeFiles(
 		...(plan.mcps !== undefined ? { mcps: plan.mcps } : {}),
 		...(plan.mcpTools !== undefined ? { mcpTools: plan.mcpTools } : {}),
 		...(mcpGateways ? { mcpGateways: true } : {}),
+		// Provenance is passed through only: a composed resolution carries the
+		// composition, the per-kind intent, the provenance maps, and the raw
+		// pending tool references. An uncomposed resolution carries none of
+		// them, so its serialized plan is byte-identical to the pre-change
+		// output — no non-optional field, no reordered key.
+		...(plan.composition !== undefined ? { composition: plan.composition } : {}),
+		...(plan.composition !== undefined ? { resourceSelection: plan.resourceSelection } : {}),
+		...(plan.origins !== undefined ? { origins: plan.origins } : {}),
+		...(plan.extensionOrigins !== undefined ? { extensionOrigins: plan.extensionOrigins } : {}),
+		...(plan.toolOrigins !== undefined ? { toolOrigins: plan.toolOrigins } : {}),
+		...(plan.pendingToolReferences !== undefined ? { pendingToolReferences: plan.pendingToolReferences } : {}),
 		// The resolved sets feed /profile status (absolute paths) and the
 		// glob-delta diff against the previous activation.
 		resolved: {

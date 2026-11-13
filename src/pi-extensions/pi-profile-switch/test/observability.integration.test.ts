@@ -227,3 +227,42 @@ describe("dormant policy status uses activation knowledge", () => {
 		expect(existsSync(marker)).toBe(true);
 	});
 });
+
+describe("composed profile observability (FT54 S2 §3.4)", () => {
+	it("renders composition, contributors, and boot-snapshot pending truth against a spawned pi", { timeout: 90_000 }, async () => {
+		await writeFile(
+			path.join(fixture.profileSwitchDir, "profiles", "leader.json"),
+			JSON.stringify({ skills: ["review"], tools: ["read"] }),
+		);
+		await mkdir(path.join(fixture.cwd, ".pi", "profiles"), { recursive: true });
+		await writeFile(
+			path.join(fixture.cwd, ".pi", "profiles", "leader.json"),
+			JSON.stringify({ promptStrategy: "append", skills: ["impl"], tools: ["lint-fix"] }),
+		);
+		await start("leader");
+
+		const offset = driver.messages.length;
+		await command("profile status");
+		const event = (await driver.waitFor(
+			(message) => driver.messages.indexOf(message) >= offset && JSON.stringify(message).includes('"kind":"status"'),
+		)) as { message: { content: string; details: { report: StatusReport } } };
+		const { content, report } = { content: event.message.content, report: event.message.details.report };
+
+		// Composition truth came from the active plan written by the launcher.
+		expect(report.composition).toMatchObject({ strategy: "append", branch: "composed" });
+		expect(report.intent).toEqual({ skills: true, extensions: false, mcps: false, tools: true });
+		expect(report.origins?.skills).toEqual({ impl: "project", review: "global" });
+		expect(report.pendingToolReferences).toEqual([
+			{ reference: "lint-fix", contributors: "project", resolvesAt: "session-start" },
+		]);
+
+		expect(content).toContain("composition: append (composed)");
+		expect(content).toContain(`${path.join(fixture.cwd, ".pi", "profiles", "leader.json")}`);
+		expect(content).toContain("review → ");
+		expect(content).toContain("(contributors: global)");
+		expect(content).toContain('tools awaiting session start: "lint-fix" (project)');
+		expect(content).toContain("current session outcome not recorded (UNKNOWN)");
+		// No resolved per-tool contributor is claimed for the boot snapshot.
+		expect(content).not.toContain("read=global");
+	});
+});
