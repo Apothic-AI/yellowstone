@@ -73,6 +73,22 @@ else
   bad "herdr skill is missing at $skill"
 fi
 
+# 4. The lane-identity skill is the reusable launch recipe agents actually load. Keep it
+# explicit too: a bare `pil` in a worktree pane inherits the pane's default profile and
+# caused FT54's integration lane to start as a leader. The role must be part of the command,
+# not left as a prose suggestion.
+lane="$REPO_ROOT/src/skills/fleet-skills/lane-identity/SKILL.md"
+if [ -f "$lane" ]; then
+  grep -qF 'herdr pane run <verified-new-pane-id> "env PI_MODE=worker PI_PROFILE=worker PI_MODE_CONFIRM_PROJECT=1 pil"' "$lane" \
+    && ok "lane-identity worker recipe passes the role/profile explicitly" \
+    || bad "lane-identity worker recipe still permits an unqualified pil launch"
+  grep -qF 'herdr pane run <verified-new-pane-id> "env PI_MODE=leader PI_PROFILE=leader PI_MODE_CONFIRM_PROJECT=1 pil"' "$lane" \
+    && ok "lane-identity leader recipe passes the role/profile explicitly" \
+    || bad "lane-identity leader recipe lacks an explicit role/profile launch"
+else
+  bad "lane-identity skill is missing at $lane"
+fi
+
 echo
 if [ "$fail" -eq 0 ]; then
   echo "ok   worktree lanes: leader, worker and herdr skill agree on create-then-start"
