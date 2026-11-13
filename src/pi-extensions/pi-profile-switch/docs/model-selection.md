@@ -281,6 +281,29 @@ operator choice on every later resume — which is the FT-32 property this page 
 If per-mode model authority is ever wanted, it needs its own reviewed design; it is not a small
 additive change to the schema.
 
+## Policy decision: the profile owns the model, the mode never does (FT-39)
+
+**Decided 2026-11-13.** A model and a thinking level belong to a **profile**, because a profile is a
+role and the role is what a lane is for. A **mode** carries prompt text and composition only. Two
+consequences follow, and both are deliberate:
+
+* A space cannot pin a model by editing its `.pi/modes/*.json`. A space that wants a different model
+  for its lanes gets a profile, or its lanes make a recorded runtime choice.
+* A model change is a one- or two-line edit to `profiles/<role>.json`, and it lands on the **next
+  session in that instance**, not in the running one, because a running session keeps the model it
+  recorded. That is the FT-32 property this page documents, and it is what makes a profile edit safe
+  to perform while lanes are live.
+
+The expensive model is not a default. The 7-8x cost tier stays available but is assigned to neither
+role: on 2026-11-13 both `leader.json` and `worker.json` were switched to
+`subrouter-deepseek-flash / deepseek-v4.1-flash-1017` at `max` thinking, together with a freshly
+created `~/.pi/agent/secrets/subrouter-deepseek-flash`. A lane that needs an expensive model asks for
+it with a recorded session choice (`/model`), which appears in that lane's footer and history, rather
+than inheriting it silently from a shared profile.
+
+Reversing this decision is an edit to one or two profile files. It involves no schema change and no
+mode change.
+
 ## How this page's evidence was produced
 
 * **Config fixture** — the launcher's own `resolveInitialProfile` and `generateRuntimeDir` were run
