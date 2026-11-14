@@ -1,10 +1,27 @@
 #!/usr/bin/env bash
 # reload-fleet — send /reload to every herdr Pi agent (thin wrapper).
+#
+# What it does NOT do: replace a process. `/reload` re-imports extension code and re-reads
+# context files, skills, prompts, themes and keybindings, but the installed pi bundle, PI_MODE /
+# PI_PROFILE, the package set and the environment are all resolved at exec. For those use
+# `restart-fleet`, and for one lane `relaunch-lane.sh`.
+#
 # Before 2026-11-13, --include-self inadvertently targeted other working lanes.
-# --verify is required for a real reload; --dry-run/--list never sends.
-# Includes the initiating lane automatically; that self-reload is deferred until
-# this command's Pi turn returns, so the coordinator cannot kill itself.
-# By default skips other working lanes. Use --interrupt-working to send Esc, wait
-# for idle, then reload and nudge those lanes to resume without repeating work.
-# Use --working-only to apply that sequence only to currently working lanes.
+# Includes the initiating lane automatically; that self-reload is deferred until this command's
+# Pi turn returns, so the coordinator cannot kill itself.
+#
+# By default skips other working lanes. Use --interrupt-working to send Esc, wait for idle, then
+# reload and nudge those lanes to resume without repeating work. Use --working-only to apply that
+# sequence only to currently working lanes. --verify is required for a real reload;
+# --dry-run/--list never send.
+#
+# Usage: reload-fleet [options]        (full list: reload-fleet --help)
+case "${1:-}" in
+  -h|--help)
+    sed -n '2,18p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    echo
+    echo "Options (delegated to broadcast-to-fleet.py):"
+    exec "$(dirname "$0")/broadcast-to-fleet.py" --help
+    ;;
+esac
 exec "$(dirname "$0")/broadcast-to-fleet.py" --message /reload --include-self "$@"

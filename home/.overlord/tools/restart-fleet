@@ -1,5 +1,23 @@
 #!/usr/bin/env bash
-# restart-fleet — replace every stale pi lane's process so a new bundle or launch env
+# restart-fleet — replace every stale pi lane's process so a new bundle or a changed launch env
 # takes effect. `/reload` cannot do this: the bundle is resolved at exec.
-# Skips working lanes unless --interrupt-working; this lane is always deferred.
+#
+# Skips working lanes unless --interrupt-working; this lane is always deferred to a detached
+# helper that waits for it to go idle, writing results under ~/.local/state/pil/restart-results/.
+# Each lane is stopped with double ctrl+c and relaunched with a bare `pil` inside its own pane,
+# which restores PI_MODE / PI_PROFILE / PI_MODE_CONFIRM_PROJECT from ~/.local/state/pil/roles/ and
+# the session from ~/.local/state/pil/sessions/ — so no `env PI_…` prefix is ever needed.
+#
+# One lane instead of the fleet: relaunch-lane.sh <lane> [--dry-run|--verify-only]
+# Read-only state of one lane:            lane check <lane>
+#
+# Usage: restart-fleet [options]        (full list: restart-fleet --help)
+case "${1:-}" in
+  -h|--help)
+    sed -n '2,15p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    echo
+    echo "Options (delegated to restart-fleet.py):"
+    exec "$(dirname "$0")/restart-fleet.py" --help
+    ;;
+esac
 exec "$(dirname "$0")/restart-fleet.py" "$@"

@@ -1,0 +1,458 @@
+#!/usr/bin/env python3
+"""lane — read one lane's live state from herdr + /proc, with the fleet's gate rules baked in.
+
+Why this exists
+---------------
+Every fleet audit that touches a lane re-derives the same four facts by hand:
+
+    herdr agent get <lane> | python3 -c 'import json,sys; ...["agent_status"]'
+    herdr pane read <pane> --source recent-unwrapped --lines 40 | grep -E 'mode:' | tail -1
+    herdr pane process-info --pane <pane> | python3 -c '...["foreground_processes"]...'
+    tr '\\0' '\\n' < /proc/<pid>/environ | grep '^PI_'
+
+and two of those hand-rolled forms have already produced wrong conclusions on this fleet:
+
+  * reading the footer from raw scrollback with `tail -c 3000` matched a stale frame and made a
+    healthy lane look drift-degraded (wE:p1, 2026-11-13) — a `!` from an old frame read as current
+    state. `lane footer` reads only `--source recent-unwrapped` full lines and takes the LAST line
+    that carries a status segment, and `lane check` reports UNKNOWN rather than guessing.
+  * treating a `-e .../pi-profile/index.ts` argument as proof that the profile UI is loaded marked
+    correctly repaired lanes FAILED (that argv shape is identical before and after a repair, because
+    the extension arrives via the launcher's parent process, not the pane's child argv). `lane argv`
+    exists for inspection; it is deliberately NOT one of `lane check`'s gates.
+
+Usage
+-----
+  lane status  <lane>                 name, pane, status, mode, rooms, profile, session
+  lane footer  <lane>                 the last full footer line, parsed into fields
+  lane argv    <lane>                 foreground pids and argv (inspection only, never a gate)
+  lane env     <lane> [--keys A,B,C]  only these variables from the pi process env (default: the
+                                      five contract vars); never a whole-environment dump, because
+                                      that has leaked live API keys into receipts before
+  lane session <lane>                 recorded session path, whether it exists, and whether the
+                                      pil pin agrees
+  lane check   <lane>                 the standard gates as a pass/fail table
+  lane wait    <lane> --status idle   block until the lane reaches a status (bounded)
+
+Options
+-------
+  --json          machine-readable output on every subcommand
+  -f, --field F   print one field only (repeatable), e.g. -f profile -f mode
+  --pane ID       address the lane by pane id instead of by registered name
+  --lines N       footer scan depth in unwrapped lines (default 60)
+
+Gates in `lane check` (all required for "pass")
+  1. registered      herdr resolves the name to a pane (reported, not assumed)
+  2. no drift bang   the footer's mode segment carries no `!`
+  3. profile token   the footer shows `profile: <name>` — the only valid discriminator for the
+                     missing-profile-UI defect class
+  4. footer present  a status line was found at all; absent output is UNKNOWN, never "clean"
+  5. session intact  the recorded session file exists and the pil pin matches it (when a pin exists)
+
+Exit codes: 0 pass, 1 fail, 2 usage error or refusal.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+
+STATE_ROOT = os.path.join(os.environ.get("XDG_STATE_HOME", os.path.expanduser("~/.local/state")))
+PIL_SESSIONS = os.path.join(STATE_ROOT, "pil", "sessions")
+PIL_ROLES = os.path.join(STATE_ROOT, "pil", "roles")
+CONTRACT_KEYS = ("PI_MODE", "PI_PROFILE", "PI_MODE_CONFIRM_PROJECT", "PI_ROOMS_NAME", "PI_CODING_AGENT_DIR")
+
+FIELD_RE = {
+    "mode": re.compile(r"(?<![a-z])mode:(\S+)"),
+    "rooms": re.compile(r"rooms:\s*([^\s]+)"),
+    "profile": re.compile(r"profile:\s*([^\s]+)"),
+    "model": re.compile(r"model:(\S+)"),
+    "thinking": re.compile(r"thinking:(\S+)"),
+}
+
+
+def die(msg: str, code: int = 2) -> "None":
+    print(f"lane: {msg}", file=sys.stderr)
+    raise SystemExit(code)
+
+
+def herdr(*args: str) -> dict:
+    try:
+        proc = subprocess.run(["herdr", *args], capture_output=True, text=True, timeout=30)
+    except FileNotFoundError:
+        die("herdr not on PATH")
+    except subprocess.TimeoutExpired:
+        die(f"herdr {' '.join(args)} timed out")
+    if proc.returncode != 0:
+        die(f"herdr {' '.join(args)} failed: {(proc.stderr or proc.stdout).strip()[:200]}")
+    try:
+        return json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        die(f"herdr {' '.join(args)} did not return JSON")
+
+
+def agent(lane: str, pane: str | None) -> dict:
+    """Resolve a lane record. With --pane, the pane id is authoritative and the name is optional."""
+    if pane:
+        raw = herdr("pane", "info", "--pane", pane) if _has_pane_info() else None
+        if raw is not None:
+            info = raw.get("result", {})
+            if isinstance(info, dict) and info:
+                return info
+    data = herdr("agent", "get", lane)
+    rec = (data.get("result") or {}).get("agent")
+    if not rec:
+        die(f"no live agent named {lane}", 1)
+    return rec
+
+
+def _has_pane_info() -> bool:
+    try:
+        proc = subprocess.run(["herdr", "pane", "info", "--help"], capture_output=True, text=True, timeout=10)
+        return proc.returncode == 0
+    except Exception:
+        return False
+
+
+def process_info(pane: str) -> list[dict]:
+    data = herdr("pane", "process-info", "--pane", pane)
+    return ((data.get("result") or {}).get("process_info") or {}).get("foreground_processes") or []
+
+
+def pi_process(pane: str) -> dict | None:
+    procs = process_info(pane)
+    for proc in procs:
+        if proc.get("name") == "pi":
+            return proc
+    return procs[-1] if procs else None
+
+
+def footer_line(pane: str, lines: int) -> str | None:
+    """The LAST unwrapped line that carries a mode/rooms/profile segment.
+
+    Full lines only: `recent-unwrapped` avoids the wrapped-frame artifacts that made a
+    scrollback `tail -c 3000` read a stale `!` as current state.
+    """
+    try:
+        proc = subprocess.run(
+            ["herdr", "pane", "read", pane, "--source", "recent-unwrapped", "--lines", str(lines)],
+            capture_output=True, text=True, timeout=30,
+        )
+    except Exception:
+        return None
+    if proc.returncode != 0:
+        return None
+    found = None
+    for line in proc.stdout.splitlines():
+        if FIELD_RE["mode"].search(line) or FIELD_RE["profile"].search(line):
+            found = line.rstrip()
+    return found
+
+
+def parse_footer(line: str | None, lane: str, pane: str | None) -> dict:
+    out: dict = {
+        "lane": lane, "pane": pane, "raw": line,
+        "mode": None, "rooms": None, "profile": None, "model": None, "thinking": None,
+        "drift": None, "unknown": line is None,
+    }
+    if not line:
+        return out
+    for key, rx in FIELD_RE.items():
+        m = rx.search(line)
+        if m:
+            out[key] = m.group(1)
+    if out["mode"] is not None:
+        out["drift"] = out["mode"].endswith("!") or bool(re.search(r"mode:[a-z]+ !", line))
+    return out
+
+
+def read_env(pid: int, keys: tuple[str, ...]) -> dict:
+    path = f"/proc/{pid}/environ"
+    try:
+        with open(path, "rb") as fh:
+            blob = fh.read()
+    except (FileNotFoundError, PermissionError) as exc:
+        die(f"cannot read {path}: {exc}", 1)
+    env: dict = {}
+    for entry in blob.split(b"\0"):
+        if b"=" not in entry:
+            continue
+        k, _, v = entry.partition(b"=")
+        name = k.decode("utf-8", "replace")
+        if name in keys:
+            env[name] = v.decode("utf-8", "replace")
+    return env
+
+
+def recorded_profile(lane: str) -> str | None:
+    path = os.path.join(PIL_ROLES, f"{lane}.env")
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            text = fh.read()
+    except OSError:
+        return None
+    m = re.search(r"PI_PROFILE=(\S+)", text)
+    return m.group(1) if m else None
+
+
+def pil_pin(lane: str) -> str | None:
+    path = os.path.join(PIL_SESSIONS, f"{lane}.path")
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return fh.read().strip() or None
+    except OSError:
+        return None
+
+
+def gather(rec: dict, lane: str, args) -> dict:
+    pane = rec.get("pane_id")
+    sess = rec.get("agent_session") or {}
+    sess_path = sess.get("value") if isinstance(sess, dict) else None
+    pin = pil_pin(lane)
+    ftr = parse_footer(footer_line(pane, args.lines) if pane else None, lane, pane)
+    env = {}
+    proc = pi_process(pane) if pane else None
+    if proc and proc.get("pid"):
+        try:
+            env = read_env(int(proc["pid"]), CONTRACT_KEYS)
+        except SystemExit:
+            env = {}
+    return {
+        "lane": lane,
+        "pane": pane,
+        "tab": rec.get("tab_id"),
+        "status": rec.get("agent_status"),
+        "cwd": rec.get("cwd"),
+        "session": sess_path,
+        "session_exists": bool(sess_path and os.path.exists(sess_path)),
+        "pin": pin,
+        "pin_matches": (pin == sess_path) if pin and sess_path else None,
+        "recorded_profile": recorded_profile(lane),
+        "env": env,
+        "footer": ftr,
+        "pids": {"pi": proc.get("pid") if proc else None},
+    }
+
+
+def emit(obj, args, text_fn) -> None:
+    if getattr(args, "field", None):
+        for name in args.field:
+            value = obj.get(name)
+            print("" if value is None else value)
+        return
+    if args.json:
+        print(json.dumps(obj, indent=2, sort_keys=False))
+        return
+    text_fn(obj)
+
+
+def cmd_status(rec, lane, args):
+    obj = gather(rec, lane, args)
+    f = obj["footer"]
+
+    def text(o):
+        print(
+            f"{o['lane']:<26} {str(o['pane']):<9} {str(o['status']):<8} "
+            f"mode={f['mode'] or '?'} profile={f['profile'] or '?'} rooms={f['rooms'] or '?'}"
+        )
+        if f["drift"]:
+            print(f"  WARNING: mode token shows drift ({f['mode']})", file=sys.stderr)
+        if not o["session_exists"]:
+            print("  WARNING: recorded session file is absent", file=sys.stderr)
+
+    emit(obj, args, text)
+    return 1 if (f["unknown"] or f["drift"]) else 0
+
+
+def cmd_footer(rec, lane, args):
+    pane = rec.get("pane_id")
+    ftr = parse_footer(footer_line(pane, args.lines) if pane else None, lane, pane)
+    if args.field:
+        return emit(ftr, args, lambda o: None) or (0 if not ftr["unknown"] else 1)
+    if args.json:
+        print(json.dumps(ftr, indent=2))
+    elif ftr["unknown"]:
+        print(f"{lane}: UNKNOWN — no status line in the last {args.lines} unwrapped lines "
+              f"(not evidence of a clean footer)")
+    else:
+        print(ftr["raw"])
+        for key in ("mode", "rooms", "profile", "model", "thinking"):
+            print(f"  {key:<9} {ftr[key] if ftr[key] is not None else '—'}")
+        print(f"  {'drift':<9} {'YES' if ftr['drift'] else 'no'}")
+    return 1 if ftr["unknown"] else 0
+
+
+def cmd_argv(rec, lane, args):
+    pane = rec.get("pane_id")
+    procs = process_info(pane) if pane else []
+    rows = []
+    for proc in procs:
+        argv = proc.get("argv") or []
+        rows.append({
+            "name": proc.get("name"), "pid": proc.get("pid"),
+            "argc": len(argv), "argv": argv,
+            "has_ext_arg": any(a.endswith("pi-profile/index.ts") for a in argv),
+        })
+    if args.field:
+        return emit({"argv": rows}, args, lambda o: None) or 0
+
+    def text(o):
+        print(f"{lane} ({pane}) — inspection only; argv is NOT a validity gate")
+        for row in rows:
+            shown = " ".join(row["argv"][:6])
+            more = "" if row["argc"] <= 6 else f" …(+{row['argc'] - 6})"
+            print(f"  {str(row['name']):<6} pid={row['pid']} argc={row['argc']}  {shown}{more}")
+
+    emit({"lane": lane, "pane": pane, "processes": rows}, args, text)
+    return 0
+
+
+def cmd_env(rec, lane, args):
+    keys = tuple(k.strip() for k in (args.keys or ",".join(CONTRACT_KEYS)).split(",") if k.strip())
+    unknown = [k for k in keys if k not in CONTRACT_KEYS]
+    if unknown and not args.json:
+        print(f"lane: note — {', '.join(unknown)} not in the contract set; reading anyway", file=sys.stderr)
+    proc = pi_process(rec.get("pane_id")) if rec.get("pane_id") else None
+    if not proc:
+        die(f"{lane}: no foreground process to read", 1)
+    env = read_env(int(proc["pid"]), tuple(keys))
+    if args.json:
+        print(json.dumps({"lane": lane, "pid": proc["pid"], "env": env}, indent=2))
+    else:
+        for key in keys:
+            print(f"{key}={env.get(key, '')}")
+    missing = [k for k in keys if k not in env]
+    return 1 if missing else 0
+
+
+def cmd_session(rec, lane, args):
+    sess = rec.get("agent_session") or {}
+    path = sess.get("value") if isinstance(sess, dict) else None
+    pin = pil_pin(lane)
+    obj = {
+        "lane": lane,
+        "session": path,
+        "exists": bool(path and os.path.exists(path)),
+        "pin": pin,
+        "pin_matches": (pin == path) if pin and path else None,
+        "recorded_profile": recorded_profile(lane),
+    }
+
+    def text(o):
+        print(f"session  {o['session'] or '<none>'}")
+        print(f"exists   {'yes' if o['exists'] else 'NO — a --session relaunch would start empty'}")
+        print(f"pin      {o['pin'] or '<none>'}")
+        if o["pin_matches"] is not None:
+            print(f"matches  {'yes' if o['pin_matches'] else 'NO — pin and agent_session disagree'}")
+
+    emit(obj, args, text)
+    ok = obj["exists"] and obj["pin_matches"] in (True, None)
+    return 0 if ok else 1
+
+
+def cmd_check(rec, lane, args):
+    obj = gather(rec, lane, args)
+    f = obj["footer"]
+    gates = []
+
+    def gate(name, ok, detail, hard=True):
+        gates.append({"gate": name, "ok": ok, "detail": detail, "hard": hard})
+
+    gate("registered", bool(obj["pane"]), f"pane {obj['pane']}" if obj["pane"] else "no pane")
+    gate("status", obj["status"] in ("idle", "done"), f"status {obj['status']}", hard=False)
+    gate("footer present", not f["unknown"],
+         "status line found" if not f["unknown"] else f"UNKNOWN — nothing in {args.lines} unwrapped lines")
+    gate("no drift bang", f["drift"] is False,
+         "mode token clean" if f["drift"] is False else (f"mode:{f['mode']}" if f["drift"] else "UNKNOWN"))
+    gate("profile token", f["profile"] is not None,
+         f"profile: {f['profile']}" if f["profile"] else "no profile token in footer")
+    gate("session intact", obj["session_exists"] and obj["pin_matches"] in (True, None),
+         ("exists" if obj["session_exists"] else "session file absent")
+         + ("" if obj["pin_matches"] is None else (", pin matches" if obj["pin_matches"] else ", pin MISMATCH")))
+    ok = all(g["ok"] for g in gates if g["hard"])
+    obj["gates"] = gates
+    obj["pass"] = ok
+
+    def text(o):
+        print(f"{lane} ({o['pane']})")
+        for g in gates:
+            mark = "PASS" if g["ok"] else ("warn" if not g["hard"] else "FAIL")
+            print(f"  {mark:<4} {g['gate']:<15} {g['detail']}")
+        print(f"  {'PASS' if ok else 'FAIL'} overall (soft gates do not fail the check)")
+
+    if args.json:
+        print(json.dumps(obj, indent=2))
+    else:
+        text(obj)
+    return 0 if ok else 1
+
+
+def cmd_wait(rec, lane, args):
+    want = args.status or "idle"
+    deadline = time.time() + args.timeout
+    while True:
+        rec = herdr("agent", "get", lane).get("result", {}).get("agent") or {}
+        status = rec.get("agent_status")
+        if status == want:
+            if args.json:
+                print(json.dumps({"lane": lane, "status": status, "waited": True}))
+            else:
+                print(f"{lane}: {status}")
+            return 0
+        if time.time() >= deadline:
+            print(f"lane: {lane} still '{status}' after {args.timeout}s (wanted {want})", file=sys.stderr)
+            return 1
+        time.sleep(args.interval)
+
+
+def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(
+        prog="lane",
+        description="Read one lane's live state from herdr + /proc, with the fleet's gate rules baked in.",
+        epilog="argv is inspection only and is never a gate: the profile UI extension arrives via the "
+               "launcher's parent process, so child argv looks identical before and after a repair.",
+    )
+    parser.add_argument("--json", action="store_true", help="machine-readable output")
+    parser.add_argument("-f", "--field", action="append", help="print one field only (repeatable)")
+    parser.add_argument("--pane", help="address the lane by pane id")
+    parser.add_argument("--lines", type=int, default=60, help="footer scan depth (default 60)")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    for name, fn, help_text in (
+        ("status", cmd_status, "one line: pane, status, mode, profile, rooms"),
+        ("footer", cmd_footer, "the last full footer line, parsed"),
+        ("argv", cmd_argv, "foreground pids and argv (inspection only)"),
+        ("session", cmd_session, "recorded session path, existence, pin agreement"),
+        ("check", cmd_check, "the standard gates as a pass/fail table"),
+    ):
+        p = sub.add_parser(name, help=help_text)
+        p.add_argument("lane")
+        p.set_defaults(func=fn)
+
+    p_env = sub.add_parser("env", help="selected variables from the pi process env")
+    p_env.add_argument("lane")
+    p_env.add_argument("--keys", help="comma-separated variable names (default: the five contract vars)")
+    p_env.set_defaults(func=cmd_env)
+
+    p_wait = sub.add_parser("wait", help="block until the lane reaches a status (bounded)")
+    p_wait.add_argument("lane")
+    p_wait.add_argument("--status", default="idle", help="wanted status (default idle)")
+    p_wait.add_argument("--timeout", type=float, default=60.0)
+    p_wait.add_argument("--interval", type=float, default=1.0)
+    p_wait.set_defaults(func=cmd_wait)
+
+    args = parser.parse_args(argv)
+    rec = agent(args.lane, args.pane) if args.func is not cmd_wait else {}
+    return args.func(rec, args.lane, args)
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main(sys.argv[1:]))
+    except KeyboardInterrupt:
+        raise SystemExit(130)
