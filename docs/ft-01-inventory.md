@@ -31,7 +31,7 @@ git -C <path> status --porcelain | wc -l
 test -d <path>/.jj && echo jj
 ```
 
-## Forked components — the thirteen subrepos
+## Forked components — the fourteen subrepos
 
 Each is a real delta we maintain, installed from its own repository.
 
@@ -50,11 +50,17 @@ Each is a real delta we maintain, installed from its own repository.
 | pi-modes (in `packages/`) | `Apothic-AI/pi-extensions-1` | `origin/apothic-main` (no local) | `feat/same-key-append-composition` | no | 54 | `~/Code/apothic-pi-extensions` |
 | pi-profile-switch (`pil`) | `Apothic-AI/pi-profile-switch` | **none** | `main` | no | 4 | `~/Code/pi-profile-switch` |
 | mycord | `Apothic-AI/mycord` | **none** | `master` | yes | 0 | `~/Code/apothic-monorepo-workspace/tooling/mycord` |
+| subrouterctl | `Apothic-AI/subrouterctl` | **none** | `master` | no | 0 | `~/Code/subrouterctl` |
 
-Thirteen repositories. Five carry an `apothic*` branch (`pi-pretty-tui`, `pi-extensions`,
+Fourteen repositories. Five carry an `apothic*` branch (`pi-pretty-tui`, `pi-extensions`,
 `bizzy`, `unblock`, and `pi-extensions-1` — the last only as `origin/apothic-main`, with no
-local branch); the other eight are on `master`, `main`, `linux-port`,
+local branch); the other nine are on `master`, `main`, `linux-port`,
 `feat/opencode-cache-stats` and `feat/same-key-append-composition`.
+
+`subrouterctl` is the fourteenth and it is here ahead of its consumer: it is the Go CLI for the
+SubRouter account-management API, added at `master` (`8e95f14`) so a planned fleet feature has a
+pinned copy to build against. Nothing under `src/` loads it yet, so it carries no install stage and
+no package entry — `git subrepo pull src/apps/subrouterctl` is the only way it moves.
 
 `mycord` was added after the first pass, and it is the case that shows why "is it a package?" is
 the wrong test: it installs nothing as a pi package and appears in no pi manifest, but it owns
@@ -129,7 +135,8 @@ under `tooling/`.
 then the thirteen subrepos are carried and never used. It now matches `src/**/.gitrepo` — the
 recorded `subrepo.remote` — before any loose checkout, which pins each skill to the same commit
 as the component it documents. Measured after the change: `unblock` →
-`src/herdr-plugins/unblock`, `mycord-skill` → `src/skills/mycord`.
+`src/herdr-plugins/unblock`, `mycord-skill` → `src/skills/mycord`. It now covers fourteen
+subrepos, `subrouterctl` included, without any list to keep in step.
 
 **Why it must read `.gitrepo` and not ask git:** a subrepo directory has no `.git` of its own, so
 `git -C src/skills/mycord remote get-url origin` walks up to the *parent* repository and answers

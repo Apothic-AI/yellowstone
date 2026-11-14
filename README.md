@@ -43,7 +43,7 @@ a new file needs only a path under `home/`.
 | `home/.pi/agent/*.json` | extension configs: goal, pretty-tui, persist, auto-compact |
 | `home/.overlord/` | instructions + index for the `overlord` orchestrator space |
 | `home/.agents/skills/` | the skills this repo is the source of truth for |
-| `src/` | the thirteen components this repo carries as git subrepos — forks and owned repos, each pinned to a branch at a commit |
+| `src/` | the fourteen components this repo carries as git subrepos — forks and owned repos, each pinned to a branch at a commit |
 | `skills/skills.tsv` | which tree owns each agent skill |
 | `scripts/` | `install` helpers, plugin sync, `doctor`, `upgrade`, `overlord` |
 | `test/` | Docker test environment for the installer |

@@ -46,7 +46,7 @@ cannot do for you:
 - **Accept a plugin bump.** Pinned refs move only when someone edits
   `herdr/plugins.toml`. `scripts/herdr-plugins.sh update` re-fetches the pinned
   ref; it will not move you to a newer upstream release.
-- **Move a carried component.** The thirteen repositories under `src/` are git
+- **Move a carried component.** The fourteen repositories under `src/` are git
   subrepos, so `upgrade.sh` does not touch them and `pi update --extensions` does
   not either — nine of the fleet's packages load straight out of `src/` as local
   paths. One at a time:
