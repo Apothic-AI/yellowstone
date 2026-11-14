@@ -1,0 +1,12 @@
+; DO NOT EDIT (unless you know what you are doing)
+;
+; This subdirectory is a git "subrepo", and this file is maintained by the
+; git-subrepo command. See https://github.com/ingydotnet/git-subrepo#readme
+;
+[subrepo]
+	remote = https://github.com/Apothic-AI/subrouterctl.git
+	branch = master
+	commit = 8e95f144f07ea047c3b3be2b34e41543dfa0a416
+	parent = 5db37b1d92061ee6db783be52c1a6bce2066ded5
+	method = merge
+	cmdver = 0.4.9

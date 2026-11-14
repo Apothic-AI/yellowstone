@@ -1,0 +1,22 @@
+# Build output
+/subrouterctl
+/dist/
+/build/
+
+# Local credential copies
+*.credentials.json
+credentials.json
+
+# Bindings
+packages/typescript/node_modules/
+packages/typescript/dist/
+packages/python/src/subrouterctl/_lib/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Editor and OS noise
+.DS_Store
+*.swp
+.idea/
+.vscode/
