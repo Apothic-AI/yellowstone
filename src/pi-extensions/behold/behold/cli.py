@@ -34,7 +34,7 @@ from . import cache as cache_mod
 from . import field as F
 from . import guard, identity, lane as lane_mod, render, util, watch
 from . import admission
-from .sources import Paths, SourceError, fleet_state, herdr, herdr_capture, pi_state
+from .sources import Paths, SourceError, fleet_state, herdr, herdr_capture, pi_state, pil_roles
 
 EXIT_OK = 0
 EXIT_USAGE = 2
@@ -222,6 +222,9 @@ class Runner:
         # Admission-gated pil access: no directory walk, one candidate file per admitted lane,
         # and a denied lane never reaches the open at all.
         self.pil = identity.PilAccess(self.paths.pil_dir or None, policy)
+        # The fleet role records are a source of their own: a lane's role is never inferred
+        # from its name, so it is either read here or reported absent/unknown.
+        self.roles = pil_roles.RoleAccess(self.paths.roles_dir or None, policy)
         self.models = pi_state.model_catalog(self.paths.models_store, policy)
         recent = str(self.paths.state_dir) + "/dagr/recent" if self.paths.state_dir else None
         self.dagr = fleet_state.load_dagr_runs(recent, policy)
@@ -499,6 +502,7 @@ class Runner:
             as_of=self.as_of,
             as_of_iso=self.as_of_iso,
             pil=self.pil,
+            roles=self.roles,
             models=self.models,
             dagr=self.dagr,
             beads=self.beads,
@@ -609,10 +613,23 @@ class Runner:
             }
             m4_state = global_profile.get("state", "present")
         else:
+            # Two different reasons produce an empty set, and they are not the same fact.
+            # A projection that names no session-derived field never parses a session, so no
+            # identity is verified and no instance can be attributed -- that is the caller's
+            # choice, not an access failure. Saying "noaccess" there would blame the machine
+            # for the query, so the reason names the projection instead.
+            if not self.read_sessions:
+                m4_reason = (
+                    f"{lane_mod.SKIPPED_BY_PROJECTION}: no session file was parsed (the "
+                    f"projection names no session-derived field), so no lane's identity could "
+                    f"be verified and no instance could be attributed; this is a projection "
+                    f"effect, not an access denial")
+            else:
+                m4_reason = "noaccess: no admitted+trusted lane to attribute a global setting from"
             global_profile = {
                 "activeProfile": None,
                 "state": "unknown",
-                "reason": "noaccess: no admitted+trusted lane to attribute a global setting from",
+                "reason": m4_reason,
                 "scope": "global_file",
             }
             m4_state = "unknown"

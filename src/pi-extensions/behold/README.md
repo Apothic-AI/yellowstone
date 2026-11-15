@@ -351,7 +351,10 @@ The first line is `behold --help`, the second is `behold roster --help`, both ve
 | `--cache-db PATH` | the cache database. Defaults to `$BEHOLD_CACHE_DB`, else `~/.local/state/behold/behold.db` |
 | `--markdown` | render Markdown instead of JSON |
 | `--full` | with `--markdown`: emit every field for every lane, not just the summary table |
-| `--lane PANE_ID` | restrict to one lane, by pane id such as `w1A:p1` |
+| `--lane SELECTOR` | restrict to one lane: an exact pane id such as `w1A:p1`, or an exact lane name matched on the same layers `H-4` uses (tab label, agent name, display agent, pane label, terminal title), case-sensitively first and case-insensitively only if that finds nothing. A selector that matches nothing, or matches two lanes, is a **usage error with a non-zero exit** that names the keys it tried — never an empty `lanes` list |
+| `--fields LIST` | comma-separated projection: field ids (`H-5`, `L-1`), a wildcard (`P-*`), and lane keys (`key`, `handles`, `admission`, `identity`). Everything not named is **omitted**, never nulled, and no field state is altered. Naming no session-derived field skips the session parse entirely |
+| `--summary` | the documented preset for a supervision loop: see [The `--summary` preset](#the---summary-preset). A selection, not a claim of completeness |
+| `--json` | accepted alias for the default JSON output, so a caller that guesses does not have to discover the default |
 | `--filter KEY=OP` | repeatable. Keeps lanes whose flattened `KEY` satisfies the operator |
 | `--sort KEY[:desc]` | repeatable. Defaults to `key` (the pane id) |
 | `--proc-root DIR` | an explicit `/proc` tree to read. The host `/proc` is never read unless you name it |
@@ -366,6 +369,32 @@ The first line is `behold --help`, the second is `behold roster --help`, both ve
 | `--deny-pane ID` | add a reserved pane. Defaults are never removed |
 
 `behold --version` prints `behold 0.1.0-p1p2`.
+
+### The `--summary` preset
+
+`--summary` names this selection and nothing else; the document repeats the selection and
+its meaning under `behold.projection`:
+
+| Entry | What it carries |
+|---|---|
+| `key`, `handles`, `admission` | the row identity, the snapshot handles, and whether (and why not) the lane was admitted |
+| `H-4` | the resolved lane name and the layer that produced it |
+| `H-5` | herdr's own `agent_status`, verbatim, with its observed sequence numbers |
+| `L-1` | the lane's fleet role, from its `pil` role record: `present` with the record path, `absent` when there is no record, `unknown` with a reason when the record is unusable. **Never inferred** from the lane name, the profile or the model |
+| `P-2` | the selected vs physical model |
+| `P-4`, `P-7` | the session the validated pin points at, and its duration, both `DISK_RECONSTRUCTED` |
+| `P-11` | the reporter's last observation: fresh/stale/absent, its age and incarnation (not a liveness proof) |
+| `T-1`, `T-2`, `T-3` | context tokens, the window, and the percentage (unknown when either input is unknown) |
+| `D-1` | todo counts; subjects are never exported |
+
+**Freshness, and what a cached value means.** Every field carries its own `state`,
+`observed_at` and `age_s`; the document carries `behold.as_of` for the evaluation instant,
+and `behold.session_reads` says whether session files were parsed at all. Nothing in the
+roster is served from the SQLite cache except the reporter's `P-11` observation, which is
+stored *with* its observation time and returned with a freshness verdict — so a cached
+observation cannot look freshly observed. The snapshot is re-captured every run
+(`behold.snapshot.source`). Treat `absent`/`unknown` as "no reading", never as a pass: for a
+supervision loop, the absence of a reading is not evidence that a lane is alive **or** dead.
 
 ### Exit codes
 

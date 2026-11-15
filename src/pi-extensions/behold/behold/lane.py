@@ -166,6 +166,9 @@ class Context:
     as_of: float
     as_of_iso: str
     pil: "identity.PilAccess"
+    #: The fleet role records (``<lane>.env``). Separate from ``pil``: a lane can have a
+    #: session record without a role record, and the other way round.
+    roles: Any = None
     leaf_hint: str | None = None
     models: dict[tuple[str, str | None], dict[str, Any]] = dc_field(default_factory=dict)
     dagr: list[dict[str, Any]] = dc_field(default_factory=list)
@@ -229,6 +232,38 @@ def _add(fields: dict[str, F.Field], f: F.Field) -> None:
 
 def _value(fields: dict[str, F.Field], key: str, default: Any = None) -> Any:
     return F.value_of(fields, key, default)
+
+
+def _fill_role(fields: dict[str, F.Field], ctx: Context, pane_id: str | None,
+               workspace_id: str | None, tab_id: str | None) -> None:
+    """``L-1`` — the lane's fleet role, from its role record and nothing else.
+
+    The role is the one field in this document that has no independent corroboration: a
+    lane name ending in ``-leader``, the selected profile and the model all correlate with
+    it and none of them prove it. So the record is read (admission first) or the field says
+    ``absent``/``unknown``; a guess here would be a lie that reads exactly like a fact.
+    """
+    if ctx.roles is None:
+        _add(fields, F.unknown("L-1", "no role-record access for this run",
+                              source="pil role records (not configured)"))
+        return
+    name_hint = _value(fields, "H-4")
+    name_hint = name_hint if isinstance(name_hint, str) and name_hint else None
+    access = ctx.roles.role_for(name_hint=name_hint, pane_id=pane_id,
+                                workspace_id=workspace_id, tab_id=tab_id)
+    state = access.get("state")
+    source = access.get("source") or "pil role records"
+    reason = access.get("reason")
+    if state == "refused":
+        return  # a refused lane carries no fields at all; the admission block says why
+    if state == "present":
+        _add(fields, F.present("L-1", access.get("role"), source=source,
+                              observed_at=ctx.as_of_iso,
+                              note="the launch role record; not a claim that the process is alive"))
+    elif state == "absent":
+        _add(fields, F.absent("L-1", reason or "no role record for this lane", source=source))
+    else:
+        _add(fields, F.unknown("L-1", reason or "role record unusable", source=source))
 
 
 @dataclass
@@ -383,7 +418,7 @@ def build_lane(agent: dict[str, Any], ctx: Context) -> BuiltLane:
                 _add(fields, F.unknown(key, _no_session_reason(ident, ctx),
                                        source="identity resolution"))
         _fill_reporter_observation(fields, ctx, ident, pane_id)
-        _fill_state_only(fields, ctx, ident, instance, cwd, pane_id, workspace_id)
+        _fill_state_only(fields, ctx, ident, instance, cwd, pane_id, workspace_id, tab_id)
         return lane
 
     now = ctx.as_of
@@ -561,6 +596,7 @@ def build_lane(agent: dict[str, Any], ctx: Context) -> BuiltLane:
 
     # -- mode / profile / rooms -------------------------------------------------
     _fill_mode_profile_rooms(fields, ctx, view, ident, instance, pane_id)
+    _fill_role(fields, ctx, pane_id, workspace_id, tab_id)
 
     # -- goals / todos / crons --------------------------------------------------
     _fill_goals_todos_crons(fields, ctx, view, ident, instance, cwd)
@@ -603,7 +639,7 @@ _ALL_FIELD_KEYS = (
     "M-1", "M-2", "M-3", "M-5", "M-6", "M-7",
     "G-1", "G-2", "G-3", "G-4", "D-1", "D-2", "C-1", "C-2",
     "E-1", "E-2", "S-1", "S-2", "S-3", "S-4",
-    "J-1", "J-2", "J-3", "B-1", "B-2",
+    "J-1", "J-2", "J-3", "B-1", "B-2", "L-1",
 )
 
 _PATH_DERIVED_KEYS = (
@@ -1082,14 +1118,15 @@ def _fill_dagr_beads(fields: dict[str, F.Field], ctx: Context, ident: identity.I
 
 def _fill_state_only(fields: dict[str, F.Field], ctx: Context, ident: identity.Identity,
                      instance: str | None, cwd: str | None, pane_id: str | None,
-                     workspace_id: str | None) -> None:
-    """Fill the fields that do not need a session file (repo, rooms, crons, dagr, beads)."""
+                     workspace_id: str | None, tab_id: str | None = None) -> None:
+    """Fill the fields that do not need a session file (repo, rooms, crons, dagr, beads, role)."""
     fake_view = session.SessionView(
         path="", realpath="", version=None, header_id=None, header_cwd=cwd,
         header_ts=None, parent_session=None, entries=[], by_id={}, leaf_id=None,
         leaf_source="none", chain=[], chain_state=session.CHAIN_EMPTY,
     )
     agent = {"cwd": cwd}
+    _fill_role(fields, ctx, pane_id, workspace_id, tab_id)
     _fill_repo(fields, ctx, fake_view, agent, ctx.snapshot.workspace(workspace_id))
     pin = fleet_state.room_pin(ctx.paths.agent_dir, pane_id, ctx.policy)
     if pin.get("name"):

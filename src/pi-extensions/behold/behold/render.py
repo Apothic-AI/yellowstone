@@ -52,7 +52,7 @@ FIELD_IDS = (
     "M-1", "M-2", "M-3", "M-5", "M-6", "M-7",
     "G-1", "G-2", "G-3", "G-4", "D-1", "D-2", "C-1", "C-2",
     "E-1", "E-2", "S-1", "S-2", "S-3", "S-4",
-    "J-1", "J-2", "J-3", "B-1", "B-2",
+    "J-1", "J-2", "J-3", "B-1", "B-2", "L-1",
 )
 
 #: Lane-level keys a projection may name. ``identity`` is session-derived (it is the
@@ -71,7 +71,7 @@ SESSION_FREE_FIELDS = frozenset({
     "C-1", "C-2",
     "M-5", "M-6",
     "G-3", "G-4",
-    "B-1", "B-2", "D-2",
+    "B-1", "B-2", "D-2", "L-1",
 })
 
 #: The documented ``--summary`` preset. Each entry is a field id or lane key; the preset
@@ -82,7 +82,7 @@ SUMMARY_TOKENS = (
     "H-4", "H-5",
     "P-2", "P-4", "P-7", "P-11",
     "T-1", "T-2", "T-3",
-    "D-1",
+    "D-1", "L-1",
 )
 
 #: What each ``--summary`` entry means, field by field. Published in the document and in
@@ -101,6 +101,7 @@ SUMMARY_MEANING = {
     "T-2": "the model's contextWindow from the models store",
     "T-3": "context used as a percentage of the window; unknown when T-1 or T-2 is unknown",
     "D-1": "todo counts (open/completed/total); subjects are never exported",
+    "L-1": "the lane's fleet role from its pil role record (PI_MODE), or absent/unknown; never inferred from the lane name",
 }
 
 SUMMARY_NOTE = (

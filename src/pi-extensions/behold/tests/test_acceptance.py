@@ -29,7 +29,7 @@ class TestFleetRenders(unittest.TestCase):
             "M-1", "M-2", "M-3", "M-5", "M-6", "M-7",
             "G-1", "G-2", "G-3", "G-4", "D-1", "D-2", "C-1", "C-2",
             "E-1", "E-2", "S-1", "S-2", "S-3", "S-4",
-            "J-1", "J-2", "J-3", "B-1", "B-2",
+            "J-1", "J-2", "J-3", "B-1", "B-2", "L-1",
         }
         for pane, lane in self.by.items():
             self.assertEqual(set(lane["fields"]), expected, pane)

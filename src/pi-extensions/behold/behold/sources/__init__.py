@@ -27,6 +27,9 @@ class Paths:
     snapshot: str | None = None
     proc_root: str = "/proc"
     pil_dir: str | None = None
+    #: The fleet role records ``pil`` writes at launch (``<lane>.env``). Distinct from
+    #: ``pil_dir`` (the session records): a lane can have one without the other.
+    roles_dir: str | None = None
     instances_dir: str | None = None
     profiles_dir: str | None = None
     agent_dir: str | None = None
@@ -46,6 +49,7 @@ class Paths:
         p.snapshot = os.path.join(root, "herdr", "snapshot.json")
         p.proc_root = os.path.join(root, "proc")
         p.pil_dir = os.path.join(root, "pil", "sessions")
+        p.roles_dir = os.path.join(root, "pil", "roles")
         p.instances_dir = os.path.join(root, "instances")
         p.profiles_dir = os.path.join(root, "profiles")
         p.agent_dir = os.path.join(root, "agent")
@@ -65,6 +69,7 @@ class Paths:
         p.snapshot = None
         p.proc_root = "/proc"
         p.pil_dir = os.path.join(home, ".local/state/pil/sessions")
+        p.roles_dir = os.path.join(home, ".local/state/pil/roles")
         p.instances_dir = os.path.join(home, ".pi-profile-switch/instances")
         p.profiles_dir = os.path.join(home, ".pi-profile-switch/profiles")
         p.agent_dir = os.path.join(home, ".pi/agent")
@@ -83,6 +88,7 @@ class Paths:
             "snapshot": self.snapshot,
             "proc_root": self.proc_root,
             "pil_dir": self.pil_dir,
+            "roles_dir": self.roles_dir,
             "instances_dir": self.instances_dir,
             "profiles_dir": self.profiles_dir,
             "agent_dir": self.agent_dir,
