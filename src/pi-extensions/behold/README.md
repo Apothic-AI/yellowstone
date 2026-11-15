@@ -396,6 +396,32 @@ observation cannot look freshly observed. The snapshot is re-captured every run
 (`behold.snapshot.source`). Treat `absent`/`unknown` as "no reading", never as a pass: for a
 supervision loop, the absence of a reading is not evidence that a lane is alive **or** dead.
 
+### Liveness: what `H-5` can and cannot tell you
+
+`H-5` is **herdr's own** `agent_status`, quoted verbatim with its sequence numbers. Behold
+does not probe a process to improve on it, so it inherits herdr's lag exactly — and that lag
+is measurable. In a probe on this machine, a disposable lane's `pi` process was killed with
+SIGTERM while its pane stayed open, and `--summary --lane <name>` was sampled every ~0.4 s:
+
+| After SIGTERM | herdr `agent_status` | `--summary --lane <name>` |
+|---|---|---|
+| 0.0 s, 1.0 s | `idle` (herdr had not noticed yet) | exit 0, one lane, `H-5 present idle` |
+| 2.0 s onward | agent gone | **exit 5**, `lane-not-found`, no lanes |
+
+So the two directions are not symmetric, and a supervision loop should use them that way:
+
+* **A lane absent from the roster is evidence.** Once herdr drops the agent, the row is gone
+  and the selector fails loudly; `lanes: []` is never how that news is delivered.
+* **A lane present with `H-5 present/idle` is not proof of a live process.** For about a
+  second after a process dies, herdr still reports `idle`, and Behold — correctly — repeats
+  it. A direct `herdr agent list` at that instant says the same thing from the same source;
+  the projection adds no staleness of its own, but it also cannot remove herdr's.
+* **A pane with no agent is not a lane.** Roster rows come from the snapshot's `agents[]`, so
+  a pane that outlives its agent (a bare shell) simply has no row.
+
+Treat absence as the signal, and treat presence as "as of the capture, herdr recognized this
+agent" — which is exactly what `H-5` says and no more.
+
 ### Exit codes
 
 | Code | Meaning | Example message |
