@@ -257,6 +257,48 @@ test("unsigned thinking block is OMITTED by the chat-completions serialiser", as
   assert.equal(serialised.includes("unsigned reasoning"), false);
 });
 
+// FT-63: the unterminated opener observed on subrouter-grok / grok-4.7-Heavy. The session
+// recorded `usage.reasoning: 0` for these turns — the reasoning was billed as ordinary output
+// because it travelled in the visible content field. This asserts the repair reaches the wire.
+test("an unterminated reasoning block reaches the request as reasoning, not as prose", async () => {
+  const truncated = {
+    role: "assistant",
+    api: "openai-completions",
+    provider: "subrouter-grok",
+    model: "grok-4.7-Heavy",
+    stopReason: "toolUse",
+    timestamp: Date.now(),
+    usage: {
+      input: 1,
+      output: 1,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 2,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
+    content: [
+      { type: "text", text: "<thinking>I should read the fixture first, then answer." },
+      { type: "toolCall", id: "call-1", name: "read", arguments: { path: "fixture.txt" } },
+    ],
+  };
+
+  const normalized = normalizeAssistantMessage(truncated as any);
+  assert.ok(normalized, "the hook must rewrite a truncated reasoning block that ends in a tool call");
+
+  const body = await captureRequestBody({
+    target: model("openai-completions", "subrouter-grok"),
+    content: normalized.content as any[],
+  });
+  const assistant = body.messages.find((entry: any) => entry.role === "assistant");
+
+  assert.equal(assistant.reasoning_content, "I should read the fixture first, then answer.");
+  // The markup must not survive as prose, which is precisely the FT-63 symptom.
+  assert.equal(JSON.stringify(body).includes("<thinking>"), false);
+  assert.equal(JSON.stringify(body).includes("</thinking>"), false);
+  // The tool call is still dispatched: reclassifying text must never disturb it.
+  assert.equal(assistant.tool_calls?.[0]?.function?.name, "read");
+});
+
 test("a reasoning_content field name carries the block onto the wire", async () => {
   const body = await captureRequestBody({
     target: model("openai-completions"),

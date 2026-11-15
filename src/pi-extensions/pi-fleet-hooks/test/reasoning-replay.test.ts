@@ -465,3 +465,75 @@ test("total text content is conserved across promotion", () => {
     .join("");
   assert.equal(rejoined, LEAK.replace("<thinking>", "").replace("</thinking>", ""));
 });
+
+// --- FT-63: the unterminated opener, end to end ---------------------------------------------
+//
+// The recorded message shape, reproduced exactly: text block opening with `<thinking>` and never
+// closing it, followed by a native toolCall. The safety question the detector cannot answer is
+// decided here: the tool call is what makes the remainder safe to file as reasoning.
+
+const TRUNCATED =
+  "<thinking>The find might have been slow or returned nothing because of the ls first. " +
+  "Let me read the skill and search more specifically.";
+const toolCall = {
+  type: "toolCall",
+  id: "call-1",
+  name: "bash",
+  arguments: { command: "ls" },
+} as unknown as BlockLike;
+
+test("an unterminated block is promoted when the message continues into a tool call", () => {
+  const result = normalizeContent(
+    [{ type: "text", text: TRUNCATED }, toolCall],
+    "openai-completions",
+  );
+
+  assert.equal(result.changed, true);
+  assert.equal(result.deferred, false);
+  assert.deepEqual(
+    result.content.map((block) => block.type),
+    ["thinking", "toolCall"],
+  );
+  const thinking = result.content[0] as { thinking: string; thinkingSignature?: string };
+  assert.equal(thinking.thinking.startsWith("The find might have been slow"), true);
+  // openai-completions replays a thinking block only through a recognised field name, so the
+  // recovered block must carry it or the reasoning silently vanishes from the next request.
+  assert.equal(thinking.thinkingSignature, "reasoning_content");
+  assert.equal(result.plan.mode, "field-signature");
+});
+
+test("the same text is left alone when there is no tool call to justify it", () => {
+  const result = normalizeContent([{ type: "text", text: TRUNCATED }], "openai-completions");
+
+  assert.equal(result.changed, false);
+  assert.deepEqual(result.content, [{ type: "text", text: TRUNCATED }]);
+});
+
+test("a truncated turn that also ended in an error is never reclassified", () => {
+  const message = assistant([{ type: "text", text: TRUNCATED }, toolCall], {
+    stopReason: "error",
+  });
+  assert.equal(normalizeAssistantMessage(message), undefined);
+});
+
+test("a signed text block is untouched even with an unterminated tag and a tool call", () => {
+  const signed = { type: "text", text: TRUNCATED, textSignature: "opaque" } as unknown as BlockLike;
+  const result = normalizeContent([signed, toolCall], "openai-completions");
+
+  assert.equal(result.changed, false);
+});
+
+test("an unterminated block with a tool call still leaves the tool call intact and ordered", () => {
+  const result = normalizeContent(
+    [{ type: "text", text: "lead-in " }, { type: "text", text: TRUNCATED }, toolCall],
+    "openai-completions",
+  );
+
+  assert.equal(result.changed, true);
+  assert.deepEqual(
+    result.content.map((block) => block.type),
+    ["text", "thinking", "toolCall"],
+  );
+  // The tool call is byte-identical: this hook must never synthesise or reshape one.
+  assert.deepEqual(result.content[2], toolCall);
+});

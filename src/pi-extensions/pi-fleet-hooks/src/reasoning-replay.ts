@@ -277,6 +277,13 @@ export interface NormalizeResult {
  *
  *   - Text blocks carrying a `textSignature` are never touched. The signature validates the
  *     text on replay, so rewriting it would invalidate provider state.
+ *   - An unterminated reasoning block is promoted only when this message also carries a tool
+ *     call. That is the FT-63 shape: a model opens `<thinking>` and goes straight to a tool
+ *     call, so the close tag is never emitted (10 openers, 0 closers in the recorded session).
+ *     The tool call is what makes it safe to read the remainder as reasoning — a turn that
+ *     continues into a tool call has no answer to withhold from the reader, so the worst case
+ *     is prose filed as reasoning rather than prose deleted. Without a tool call the shape is
+ *     still refused, because there the remainder could be the entire answer.
  *   - Native thinking blocks are never modified, reordered or merged away.
  *   - No `toolCall` block is ever created, from `<tool_call>` prose or anything else.
  *   - Relative order is preserved, and a message that already contains native thinking is
@@ -298,13 +305,17 @@ export function normalizeContent(content: readonly BlockLike[], api: string): No
   const next: BlockLike[] = [];
   let changed = false;
 
+  // Safety context the pure detector cannot see: an unterminated opener is only interpretable
+  // when the turn continues into a tool call. See the guarantee list above.
+  const allowUnterminated = content.some((block) => block.type === "toolCall");
+
   for (const block of content) {
     if (!isText(block) || block.textSignature || !block.text.includes("<")) {
       next.push(block);
       continue;
     }
 
-    const segments: Segment[] = splitReasoning(block.text);
+    const segments: Segment[] = splitReasoning(block.text, { allowUnterminated });
     if (!segments.some((segment) => segment.kind === "reasoning")) {
       next.push(block);
       continue;

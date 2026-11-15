@@ -351,3 +351,95 @@ test("four-space indentation is refused by startsBlock even without masking", ()
   assert.equal(startsBlock("    <thinking>x", 4), false);
   assert.equal(startsBlock("   <thinking>x", 3), true);
 });
+
+// --- FT-63: the unterminated opener ---------------------------------------------------------
+//
+// The recorded shape (session 01a1d1b5, provider subrouter-grok, model grok-4.7-Heavy,
+// api openai-completions): a single text block that BEGINS with `<thinking>` and runs to the
+// end with no close tag at all, followed by a toolCall block. 10 openers and 0 closers across
+// that session, and `usage.reasoning: 0` — the reasoning was billed as ordinary output.
+//
+// `allowUnterminated` is opt-in, so the default behaviour — refuse — is pinned first.
+
+test("an unterminated opener is refused by default (the pre-FT-63 behaviour)", () => {
+  const input = "<thinking>The find might have been slow.";
+  assert.deepEqual(bodies(input), []);
+  assert.deepEqual(findReasoningBlocks(input), []);
+  assert.equal(hasReasoningTags(input), false);
+});
+
+test("an unterminated opener is promoted to the end of the text when the caller opts in", () => {
+  const input = "<thinking>The find might have been slow. Let me read the skill.";
+  const segments = splitReasoning(input, { allowUnterminated: true });
+
+  assert.deepEqual(
+    segments.map((segment) => segment.kind),
+    ["reasoning"],
+  );
+  assert.equal(segments[0].text, "The find might have been slow. Let me read the skill.");
+});
+
+test("a closed block followed by an unterminated one promotes both, in order", () => {
+  const input = "<thinking>first</thinking>answer text\n<thinking>second";
+  const segments = splitReasoning(input, { allowUnterminated: true });
+
+  assert.deepEqual(
+    segments.map((segment) => segment.kind),
+    ["reasoning", "text", "reasoning"],
+  );
+  assert.deepEqual(
+    segments.map((segment) => segment.text),
+    ["first", "answer text\n", "second"],
+  );
+});
+
+test("an unterminated opener that does not start its block is still refused", () => {
+  const prose = "I should note that <thinking> is a tag.";
+  assert.deepEqual(bodies(prose), []);
+  assert.deepEqual(splitReasoning(prose, { allowUnterminated: true }) , [
+    { kind: "text", text: prose },
+  ]);
+  const indented = "    <thinking>indented example";
+  assert.deepEqual(splitReasoning(indented, { allowUnterminated: true }), [
+    { kind: "text", text: indented },
+  ]);
+});
+
+test("an unterminated opener inside a code fence is still an example", () => {
+  const input = "```xml\n<thinking>example only\n```";
+  assert.deepEqual(splitReasoning(input, { allowUnterminated: true }), [
+    { kind: "text", text: input },
+  ]);
+});
+
+test("an unterminated opener in a blockquote is still a quotation", () => {
+  const input = "> <thinking>quoted example";
+  assert.deepEqual(splitReasoning(input, { allowUnterminated: true }), [
+    { kind: "text", text: input },
+  ]);
+});
+
+test("two unterminated openers stay refused even when the caller opts in", () => {
+  const input = "<thinking>first<thinking>second";
+  assert.deepEqual(splitReasoning(input, { allowUnterminated: true }), [
+    { kind: "text", text: input },
+  ]);
+});
+
+test("an empty unterminated body is refused", () => {
+  const input = "<thinking>   \n";
+  assert.deepEqual(splitReasoning(input, { allowUnterminated: true }), [
+    { kind: "text", text: input },
+  ]);
+});
+
+test("the opted-in promotion is idempotent and round-trips byte for byte", () => {
+  const input = "<thinking>only reasoning, never closed";
+  const first = splitReasoning(input, { allowUnterminated: true });
+  const rejoined = first
+    .map((segment) => (segment.kind === "reasoning" ? `<thinking>${segment.text}` : segment.text))
+    .join("");
+  assert.equal(rejoined, input);
+  // The promoted body contains no tag, so a second pass over it finds nothing.
+  assert.deepEqual(bodies(first[0].text), []);
+});

@@ -31,7 +31,17 @@
 //      one — EVERY block in the text is refused, because which close terminates which body is
 //      unknowable and guessing is how answer text gets eaten. Orphan closing tags are dropped
 //      rather than treated as nesting; they are common leftover markup and carry no ambiguity.
-//   5. A block needs a matching close tag. An unterminated opener is refused, never swallowed.
+//   5. A block needs a matching close tag, with one narrow exception the caller must ask for
+//      (`allowUnterminated`). Some models open the block and then go straight to a tool call,
+//      so the close tag is never written at all. Refusing that shape — which is what FT-37
+//      originally did — leaves the reasoning in visible text forever, and it is the single
+//      most common non-conforming shape in the corpus (FT-63: 10 openers, 0 closers). The
+//      exception is granted only when the opener is the last protocol tag, starts its block,
+//      and there is no close tag anywhere after it; then the remainder of the text is
+//      reasoning because nothing else in the text can be delimited from it. The caller is
+//      responsible for the remaining safety question — `reasoning-replay.ts` grants it only
+//      for a message that also carries a tool call, i.e. a turn that cannot be the final
+//      answer.
 //   6. Text between and around recognised blocks is preserved byte for byte, in order.
 
 /** A run of the original text, classified. */
@@ -282,7 +292,21 @@ function tagHits(text: string, mask: boolean[]): TagHit[] {
  * durable path and any future display path cannot drift into two different definitions of
  * "looks like a tag".
  */
-export function findReasoningBlocks(text: string): ReasoningBlock[] {
+/**
+ * Recognition options.
+ *
+ * `allowUnterminated` is opt-in because the string alone cannot tell a truncated reasoning
+ * block from an answer that merely opens with markup and continues as prose. Callers that hold
+ * the surrounding message context pass it; the detector never assumes it.
+ */
+export interface ReasoningOptions {
+  allowUnterminated?: boolean;
+}
+
+export function findReasoningBlocks(
+  text: string,
+  options: ReasoningOptions = {},
+): ReasoningBlock[] {
   if (!text.includes("<")) return [];
 
   const mask = codeMask(text);
@@ -303,9 +327,21 @@ export function findReasoningBlocks(text: string): ReasoningBlock[] {
     }
   }
 
-  // Strict alternation, and names must match within each pair. Anything else — nested openers,
-  // mixed <think>/<thinking> nesting, an unterminated opener — refuses the whole text.
-  if (balanced.length % 2 !== 0) return [];
+  // Strict alternation, and names must match within each pair. Anything else — nested openers
+  // or mixed <think>/<thinking> nesting — refuses the whole text.
+  //
+  // An odd count means exactly one more opener than closer survived the depth pass. That single
+  // trailing opener is the model-goes-straight-to-a-tool-call shape, and it is promotable only
+  // when the caller opted in; every other odd shape (two unmatched openers among matched pairs)
+  // still fails the alternation check below.
+  let unterminated: TagHit | undefined;
+  if (balanced.length % 2 !== 0) {
+    const last = balanced[balanced.length - 1];
+    if (!options.allowUnterminated || last.closing) return [];
+    unterminated = last;
+    balanced.pop();
+  }
+
   const pairs: Array<{ open: TagHit; close: TagHit }> = [];
   for (let i = 0; i < balanced.length; i += 2) {
     const open = balanced[i];
@@ -328,6 +364,21 @@ export function findReasoningBlocks(text: string): ReasoningBlock[] {
     });
   }
 
+  // The opted-in trailing opener: same block-start and non-empty guards as a closed block, and
+  // the body runs to the end of the text because there is nothing after it to delimit against.
+  if (unterminated) {
+    const body = text.slice(unterminated.end);
+    if (startsBlock(text, unterminated.start) && body.trim().length > 0) {
+      blocks.push({
+        name: unterminated.name,
+        start: unterminated.start,
+        bodyStart: unterminated.end,
+        bodyEnd: text.length,
+        end: text.length,
+      });
+    }
+  }
+
   return blocks;
 }
 
@@ -335,8 +386,8 @@ export function findReasoningBlocks(text: string): ReasoningBlock[] {
  * Splits `text` into ordered segments, promoting delimited reasoning and leaving everything
  * else untouched.
  */
-export function splitReasoning(text: string): Segment[] {
-  const blocks = findReasoningBlocks(text);
+export function splitReasoning(text: string, options: ReasoningOptions = {}): Segment[] {
+  const blocks = findReasoningBlocks(text, options);
   if (blocks.length === 0) return [{ kind: "text", text }];
 
   const segments: Segment[] = [];
@@ -358,6 +409,6 @@ export function splitReasoning(text: string): Segment[] {
 }
 
 /** True when `splitReasoning` would promote anything. */
-export function hasReasoningTags(text: string): boolean {
-  return findReasoningBlocks(text).length > 0;
+export function hasReasoningTags(text: string, options: ReasoningOptions = {}): boolean {
+  return findReasoningBlocks(text, options).length > 0;
 }
