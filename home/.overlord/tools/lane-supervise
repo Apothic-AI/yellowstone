@@ -353,9 +353,22 @@ def hold_state() -> tuple[bool, str]:
     return True, f"ownerless hold, {int(age)}s of {int(ttl)}s ({rec.get('reason') or 'no reason given'})"
 
 
+def hold_lane() -> str:
+    """The lane a hold names, or "" — re-read per lane, because a helper moves through targets."""
+    path = os.path.join(SUPERVISE, "_hold")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            rec = json.loads(fh.read().strip() or "{}")
+    except (OSError, json.JSONDecodeError):
+        return ""
+    if not isinstance(rec, dict):
+        return ""
+    return rec.get("lane") or ""
+
+
 def one_pass(only: str | None, dry: bool) -> int:
     held, why = hold_state()
-    if held:
+    if held and not hold_lane():
         out(f"skip: supervision paused — {why}")
         return 0
     lanes, _ = discovery()
@@ -372,7 +385,16 @@ def one_pass(only: str | None, dry: bool) -> int:
             out("skip: another pass holds the lock")
             return 0
         rc = 0
+        skipped_for_hold: list[str] = []
         for lane in sorted(lanes):
+            # A helper may be mid-replacement of one lane right now. Skip exactly that lane and
+            # keep supervising the rest: a hold naming a lane is a precise window, not a global
+            # outage, and skipping everything would delay a real death elsewhere for no reason.
+            held_now, why_now = hold_state()
+            named = hold_lane() if held_now else ""
+            if held_now and named and named == lane:
+                skipped_for_hold.append(lane)
+                continue
             st = read_json(state_path(lane), {}) or {}
             pane = st.get("pane") or ""
             pid = pi_pid(pane)
@@ -402,6 +424,8 @@ def one_pass(only: str | None, dry: bool) -> int:
                         pass
                 continue
             rc = max(rc, resume(lane, st, dry))
+        if skipped_for_hold:
+            out(f"held by a helper, skipped: {', '.join(skipped_for_hold)}")
         return rc
 
 

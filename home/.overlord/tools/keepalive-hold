@@ -142,7 +142,8 @@ def write_hold(data: dict | None, zero: bool = False) -> None:
 
 def cmd_start(args) -> int:
     owner = args.owner if args.owner is not None else os.getppid()
-    record = {"since": time.time(), "pid": int(owner), "reason": args.reason or ""}
+    record = {"since": time.time(), "pid": int(owner), "reason": args.reason or "",
+              "lane": args.lane or ""}
     write_hold(record)
     log(f"hold started: pid {owner}, reason {args.reason or '(none)'}")
     if args.json:
@@ -172,13 +173,54 @@ def cmd_end(args) -> int:
     return 0
 
 
+def cmd_set_lane(args) -> int:
+    """Point the existing hold at the lane currently being worked on.
+
+    A hold with a lane pauses supervision for THAT lane only: the helper has stopped it and has not
+    started it again, and everything else the timer would normally do is still worth doing. A hold
+    with no lane is a blanket pause (an ad-hoc sequence whose targets are not known up front).
+    """
+    record = read_hold()
+    if record is None:
+        return cmd_start(argparse.Namespace(owner=None, reason=args.reason or "set-lane", lane=args.lane,
+                                           json=args.json))
+    if record.get("pid") not in (None, args.if_owner) and not args.force:
+        log(f"set-lane refused: hold owner is {record.get('pid')}, caller is {args.if_owner}")
+        return 0
+    record["lane"] = args.lane or ""
+    record["lane_since"] = time.time()
+    write_hold(record)
+    if not args.quiet:
+        log(f"hold now names lane: {args.lane or '(none — blanket pause)'}")
+    if args.json:
+        print(json.dumps(record))
+    return 0
+
+
+def cmd_clear_lane(args) -> int:
+    record = read_hold()
+    if record is None:
+        return 0
+    if record.get("pid") not in (None, args.if_owner) and not args.force:
+        return 0
+    record["lane"] = ""
+    record.pop("lane_since", None)
+    write_hold(record)
+    if not args.quiet:
+        log("hold no longer names a lane (blanket pause until released)")
+    return 0
+
+
 def cmd_status(args) -> int:
     record = read_hold()
     paused, why = evaluate(record, args.ttl)
+    lane = (record or {}).get("lane") or ""
     if args.json:
-        print(json.dumps({"paused": paused, "reason": why, "hold": record}, indent=1))
+        print(json.dumps({"paused": paused, "reason": why, "skip_lane": lane or None,
+                          "hold": record}, indent=1))
     else:
-        print(f"{'PAUSED' if paused else 'running'}: {why}")
+        scope = f" [lane {lane}]" if lane else (" [all lanes]" if paused else "")
+        print(f"{'PAUSED' if paused else 'running'}{scope}: {why}")
     return 3 if paused else 0
 
 
@@ -241,7 +283,22 @@ def main(argv: list[str]) -> int:
     p = sub.add_parser("start", help="pause supervision")
     p.add_argument("--reason")
     p.add_argument("--owner", type=int)
+    p.add_argument("--lane", help="pause only for this lane (default: all lanes)")
     p.set_defaults(func=cmd_start)
+
+    p = sub.add_parser("set-lane", help="name the lane currently being worked on")
+    p.add_argument("lane")
+    p.add_argument("--if-owner", type=int, default=os.getppid())
+    p.add_argument("--force", action="store_true")
+    p.add_argument("--reason")
+    p.add_argument("--quiet", action="store_true")
+    p.set_defaults(func=cmd_set_lane)
+
+    p = sub.add_parser("clear-lane", help="keep the hold but stop naming a lane (blanket pause)")
+    p.add_argument("--if-owner", type=int, default=os.getppid())
+    p.add_argument("--force", action="store_true")
+    p.add_argument("--quiet", action="store_true")
+    p.set_defaults(func=cmd_clear_lane)
 
     p = sub.add_parser("end", help="release the hold")
     p.add_argument("--if-owner", type=int)

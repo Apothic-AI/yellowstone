@@ -46,6 +46,8 @@ label=$(herdr tab get "$tab" 2>/dev/null | python3 -c 'import json,sys
 print(json.load(sys.stdin)["result"]["tab"]["label"])')
 lane=$(printf '%s' "$label" | tr '[:upper:]' '[:lower:]' | sed -e 's/[^a-z0-9]\+/-/g' -e 's/^-//' -e 's/-$//')
 case "$lane" in [a-z]*) ;; *) say "REFUSE $pane: label '$label' does not yield a usable lane name"; exit 1 ;; esac
+# Name the lane being replaced so lane-supervise skips this one and keeps watching the rest.
+keepalive-hold set-lane "$lane" --quiet >/dev/null 2>&1 || true
 case "$status" in idle|done) ;; *) say "REFUSE $lane: status=$status"; exit 1 ;; esac
 cont="$here/../continuations/$lane.md"
 mkdir -p "$here/../continuations"

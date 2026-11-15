@@ -75,6 +75,8 @@ while [ $# -gt 0 ]; do
 done
 
 [ -n "$lane" ] || { usage >&2; exit 2; }
+# Name the lane being replaced so lane-supervise skips this one and keeps watching the rest.
+keepalive-hold set-lane "$lane" --quiet >/dev/null 2>&1 || true
 
 herdr_get() { herdr agent get "$1" 2>/dev/null; }
 jq_field() { python3 -c 'import json,sys

@@ -30,6 +30,8 @@ trap 'keepalive-hold end --if-owner $$ >/dev/null 2>&1 || true' EXIT INT TERM
 
 here=$(cd "$(dirname "$0")" && pwd)
 lane="${1:?usage: migrate-lane.sh <lane-name> [--skip-continuation]}"
+# Name the lane being replaced so lane-supervise skips this one and keeps watching the rest.
+keepalive-hold set-lane "$lane" --quiet >/dev/null 2>&1 || true
 skip_cont="${2:-}"
 cont="$here/../continuations/$lane.md"
 mkdir -p "$here/../continuations"

@@ -18,6 +18,8 @@ set -uo pipefail
 keepalive-hold start --reason self-restart >/dev/null 2>&1 || true
 trap 'keepalive-hold end --if-owner $$ >/dev/null 2>&1 || true' EXIT INT TERM
 lane="${1:-overlord}"
+# Name the lane being replaced so lane-supervise skips this one and keeps watching the rest.
+keepalive-hold set-lane "$lane" --quiet >/dev/null 2>&1 || true
 pane="${2:-wE:p1}"
 cwd="${3:-/home/bitnom/.overlord}"
 log=/tmp/overlord-self-restart.log

@@ -637,6 +637,10 @@ def main() -> int:
             details.append({k: lane_info.get(k) for k in ("pane", "name", "status", "stale", "blockers", "warnings")}
                            | {"outcome": "current"})
             continue
+        # Name the lane in flight, so lane-supervise skips exactly this one and keeps watching
+        # everything else. A helper window is precise, not a fleet-wide outage.
+        _sp.run(["keepalive-hold", "set-lane", str(lane_info.get("name") or ""),
+                 "--if-owner", str(os.getpid()), "--quiet"], capture_output=True)
         outcome = restart_lane(lane_info, dry_run=args.dry_run,
                                interrupt_working=args.interrupt_working,
                                idle_timeout=args.idle_timeout,
