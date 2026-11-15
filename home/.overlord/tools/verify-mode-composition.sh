@@ -19,6 +19,12 @@
 # Usage:
 #   verify-mode-composition.sh <pane> <base-marker> <overlay-marker> [--forbid <marker> ...]
 # Exit: 0 both present (and no forbidden marker), 1 otherwise, 2 no session yet.
+case "${1:-}" in
+  -h|--help)
+    sed -n "2,21p" "$0" | sed "s/^#[ ]*//"
+    exit 0
+    ;;
+esac
 set -uo pipefail
 pane="${1:?usage: verify-mode-composition.sh <pane> <base-marker> <overlay-marker> [--forbid <marker>]}"
 base="${2:?base marker required}"

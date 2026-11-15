@@ -8,6 +8,12 @@
 #
 # Usage: watch-until-idle.sh <lane> [ctx_threshold_pct]
 # Emits one line when the lane settles (or if it disappears), then exits.
+case "${1:-}" in
+  -h|--help)
+    sed -n "2,10p" "$0" | sed "s/^#[ ]*//"
+    exit 0
+    ;;
+esac
 set -uo pipefail
 LANE="${1:?usage: watch-until-idle.sh <lane> [ctx_threshold_pct]}"
 THRESH="${2:-25}"

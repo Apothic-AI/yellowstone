@@ -15,6 +15,9 @@ Usage: verify-space-split.py <space-cwd> [--orig <path>]
 Exit: 0 all hard checks pass, 1 otherwise.
 """
 import json, os, re, subprocess, sys
+if any(a in ("-h", "--help") for a in sys.argv[1:]):
+    print(__doc__ or "")
+    raise SystemExit(0)
 
 LAUNCH = "PI_MODE=leader PI_PROFILE=leader PI_MODE_CONFIRM_PROJECT=1"
 OPENERS = {"leader": "You are the", "worker": "You are a worker in the"}

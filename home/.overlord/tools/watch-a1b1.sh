@@ -2,6 +2,12 @@
 # Watch the sealed a1-b1 pilot. Emits one event per newly sealed ask turn, then a
 # full summary when the graded artifact lands — and an explicit FAILED line if the
 # driver disappears without producing one, so silence is never read as success.
+case "${1:-}" in
+  -h|--help)
+    sed -n "2,4p" "$0" | sed "s/^#[ ]*//"
+    exit 0
+    ;;
+esac
 set -uo pipefail
 cd /home/bitnom/bc-restore-qa || { echo "FAILED: work root missing"; exit 1; }
 

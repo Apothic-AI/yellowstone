@@ -15,6 +15,12 @@
 # Exit status is 1 ONLY for DEFECT. "Four old branches" must never read as a red gate, or
 # the check becomes permanently red and gets ignored — the vacuous-red failure this repo has
 # already been bitten by once.
+case "${1:-}" in
+  -h|--help)
+    sed -n "2,17p" "$0" | sed "s/^#[ ]*//"
+    exit 0
+    ;;
+esac
 set -uo pipefail
 
 repo="${1:-$HOME/Code/yellowstone}"

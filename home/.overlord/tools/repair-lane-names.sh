@@ -10,6 +10,12 @@
 # Idempotent and quiet: nothing to do prints nothing. A numeric tab label is skipped, not
 # renamed — herdr auto-names a fresh tab "1", and pil deliberately refuses those rather than
 # baking a number into a lane identity.
+case "${1:-}" in
+  -h|--help)
+    sed -n "2,12p" "$0" | sed "s/^#[ ]*//"
+    exit 0
+    ;;
+esac
 set -uo pipefail
 LOG="$HOME/.local/state/overlord/lane-names.log"
 python3 - "$LOG" <<'PY'

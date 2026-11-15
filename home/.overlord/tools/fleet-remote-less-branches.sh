@@ -10,6 +10,12 @@
 # checkout, is precisely what this sweep hunts, and `@{u}` errors out or lies there.
 #
 # Nothing is pushed or deleted. Output is a decision list.
+case "${1:-}" in
+  -h|--help)
+    sed -n "2,12p" "$0" | sed "s/^#[ ]*//"
+    exit 0
+    ;;
+esac
 set -uo pipefail
 
 repo="${1:-$HOME/Code/yellowstone}"

@@ -9,6 +9,12 @@
 # pass grades against 36 expected, so `absent` mixes "never asked" with "asked but
 # unanswered" and reads as 24–32 failures when nothing failed. The split is the honest
 # number and is computed here from pilot-qids.txt.
+case "${1:-}" in
+  -h|--help)
+    sed -n "2,11p" "$0" | sed "s/^#[ ]*//"
+    exit 0
+    ;;
+esac
 set -uo pipefail
 PASS="${1:?usage: watch-pilot.sh <pass> [pane]}"
 PANE="${2:-w25:p1}"

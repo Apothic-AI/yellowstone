@@ -43,6 +43,9 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+if any(a in ("-h", "--help") for a in sys.argv[1:]):
+    print(__doc__ or "")
+    raise SystemExit(0)
 
 HERE = Path(__file__).resolve().parent
 BOARD = HERE / "leader-board.py"

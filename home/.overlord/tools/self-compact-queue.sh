@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 # Queue-based self-compaction. A prompt to a working lane QUEUES behind the live turn
 # (operator ruling 2026-11-09), so no idle gate is needed and none can deadlock.
+case "${1:-}" in
+  -h|--help)
+    sed -n "2,3p" "$0" | sed "s/^#[ ]*//"
+    exit 0
+    ;;
+esac
 set -uo pipefail
 LANE=overlord
 HANDOFF=/home/bitnom/.overlord/continuations/overlord-continuation-2026-11-11T0025Z.md

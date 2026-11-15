@@ -15,6 +15,12 @@
 #   land-mode-fixes.sh --dry-run     show the edits and validate, change nothing
 #   land-mode-fixes.sh               apply, back up, relaunch this lane
 #   land-mode-fixes.sh --beads-dir   also fix the BEADS_DIR sentence (needs the operator's word)
+case "${1:-}" in
+  -h|--help)
+    sed -n "2,17p" "$0" | sed "s/^#[ ]*//"
+    exit 0
+    ;;
+esac
 set -uo pipefail
 
 LANE="${LANE:-self-improvement-leader}"

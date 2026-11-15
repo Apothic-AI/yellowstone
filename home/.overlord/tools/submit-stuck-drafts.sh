@@ -15,6 +15,12 @@
 #   * Success requires an observed lifecycle change, not an exit code.
 #
 # Usage: tools/submit-stuck-drafts.sh [pane-or-lane ...]   (default: every -leader lane)
+case "${1:-}" in
+  -h|--help)
+    sed -n "2,17p" "$0" | sed "s/^#[ ]*//"
+    exit 0
+    ;;
+esac
 set -uo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)

@@ -55,6 +55,9 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+if any(a in ("-h", "--help") for a in sys.argv[1:]):
+    print(__doc__ or "")
+    raise SystemExit(0)
 
 STATE_DIR = Path(
     os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local" / "state"))

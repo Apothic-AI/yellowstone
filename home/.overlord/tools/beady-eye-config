@@ -27,6 +27,12 @@
 #
 # Re-run this as spaces are initialized. bdi re-reads the config while running,
 # so no restart is needed.
+case "${1:-}" in
+  -h|--help)
+    sed -n "2,29p" "$0" | sed "s/^#[ ]*//"
+    exit 0
+    ;;
+esac
 
 set -uo pipefail
 

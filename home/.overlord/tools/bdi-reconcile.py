@@ -32,6 +32,9 @@ import os
 import subprocess
 import sys
 import time
+if any(a in ("-h", "--help") for a in sys.argv[1:]):
+    print(__doc__ or "")
+    raise SystemExit(0)
 
 BD = os.environ.get("BDI_RECONCILE_BD", "/home/bitnom/.local/bin/bd")
 HDRD = os.environ.get("BDI_RECONCILE_HERDR", "herdr")

@@ -60,6 +60,10 @@ pil — start a pi lane inside herdr under a stable, derived name.
   pil [pi args...]        start pi as this lane
   pil --lane-name         print the name this pane would get, then exit
   pil --rename [name]     re-identify this running lane (herdr name + pin)
+  pil --role leader|worker
+                          set the role contract explicitly and record it, so no caller
+                          needs to inline "env PI_MODE=... PI_PROFILE=... PI_MODE_CONFIRM_PROJECT=1".
+                          An explicit role wins over the recorded one, then is recorded.
   pil --help
 
 The name comes from the herdr tab label, slugified. An auto-generated numeric
@@ -195,6 +199,44 @@ with open(tmp, "w") as f:
 os.replace(tmp, path)
 EOS
 }
+
+# --role: derive the three role variables from one word and strip the flag before any other
+# dispatch. Without it every launch and relaunch in this fleet writes
+#
+#   env PI_MODE=leader PI_PROFILE=leader PI_MODE_CONFIRM_PROJECT=1 PI_ROOMS_NAME=<lane> pil ...
+#
+# where three of the four are restorable (restore_role, from this lane own record) and the
+# fourth is derived from the tab label. An inline prefix is therefore not configuration, it is a
+# chance to get the role wrong - which is what happened on 2026-11-13, when a repair sourced a
+# space .pi/launch.env (which describes that space LEADER) and promoted the worker lane
+# ft55-parameter-plan to leader. Setting it here makes the role explicit and durable: the normal
+# record_role path persists it for every later bare `pil`.
+newargs=()
+role=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --role)
+      role="${2:-}"
+      if [ -z "$role" ]; then printf 'pil: --role needs a value (leader or worker)\n' >&2; exit 2; fi
+      shift 2
+      ;;
+    --role=*) role="${1#*=}"; shift ;;
+    *) newargs+=("$1"); shift ;;
+  esac
+  if [ -n "${role:-}" ]; then
+    case "$role" in
+      leader|worker)
+        export PI_MODE="$role" PI_PROFILE="$role" PI_MODE_CONFIRM_PROJECT=1
+        ;;
+      *)
+        printf 'pil: unknown role "%s" - use leader or worker\n' "$role" >&2
+        exit 2
+        ;;
+    esac
+    role=""
+  fi
+done
+set -- "${newargs[@]}"
 
 case "${1:-}" in
   --lane-name)

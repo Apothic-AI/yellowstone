@@ -17,6 +17,12 @@
 #
 #   herdr-binary-guard.sh            one pass (the timer's ExecStart)
 #   herdr-binary-guard.sh --pin      pin the current serving build as expected (deploy step)
+case "${1:-}" in
+  -h|--help)
+    sed -n "2,19p" "$0" | sed "s/^#[ ]*//"
+    exit 0
+    ;;
+esac
 set -uo pipefail
 
 LAUNCHER="${HERDR_BIN_PATH:-$HOME/.local/bin/herdr}"

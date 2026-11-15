@@ -12,6 +12,14 @@
 #   6. reorient the fresh session at its continuation file
 #
 # Usage: tools/migrate-lane.sh <lane-name> [--skip-continuation]
+#
+# Canonical: relaunch-lane.sh <lane>. migrate-lane.sh additionally writes a continuation note first.
+case "${1:-}" in
+  -h|--help)
+    sed -n "2,14p" "$0" | sed "s/^#[ ]*//"
+    exit 0
+    ;;
+esac
 set -uo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)

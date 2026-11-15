@@ -1,0 +1,229 @@
+#!/usr/bin/env python3
+"""spawn-lane — create a pane for a lane and start it through pil, flags instead of an env prefix.
+
+Why this exists
+---------------
+Every spawn in this fleet was hand-rolled, and the hand-rolled version has four moving parts that
+are easy to get individually right and collectively wrong:
+
+    herdr tab create --workspace wE --label pi-profile-ext-repair | python3 -c '...'
+    herdr pane run wE:p3K "env PI_MODE=worker PI_PROFILE=worker PI_MODE_CONFIRM_PROJECT=1 pil"
+    for i in $(seq 1 60); do ... herdr agent get ... sleep 1; done
+    herdr agent prompt pi-profile-ext-repair "$(cat /tmp/brief.txt)"
+
+The env prefix is the part that bites: three of those variables come from the lane's own role
+record and the fourth from the tab label, so inlining them is not configuration — it is a chance to
+assign the wrong role. A repair on 2026-11-13 did exactly that, promoting the worker lane
+`ft55-parameter-plan` to leader by sourcing a space's `.pi/launch.env`. `pil --role` makes the role
+one word and records it; this tool wraps the rest of the sequence around it.
+
+Usage
+-----
+  spawn-lane --workspace <ws> --label <name> --role leader|worker [options]
+
+Options
+-------
+  --workspace WS        herdr workspace id (required), e.g. wE
+  --label NAME          tab label, which pil slugifies into the lane name (required)
+  --role ROLE           leader or worker (required); passed to `pil --role`, never as env
+  --cwd DIR             working directory for the new tab
+  --session PATH        resume this session file, must exist (refused otherwise: a missing path
+                        makes pi start an empty conversation under that name)
+  --prompt-file FILE    after the lane is idle, submit this file as its first prompt
+  --prompt-text TEXT    same, inline
+  --wait SECS           how long to wait for the lane to register and go idle (default 90)
+  --json                machine-readable summary
+  --dry-run             print the exact commands, create nothing
+  --help                this text
+
+Guards
+  * refuses if an agent by that name is already live — pick a different label, or relaunch the
+    existing lane with relaunch-lane.sh instead of shadowing it
+  * refuses `--session` on a path that does not exist; also refuses an instance-scoped session path
+    (`~/.pi-profile-switch/instances/...`), which dies with the instance
+  * the label must slugify to a non-numeric name, because pil refuses auto-generated numeric labels
+  * never prompts the lane until it is idle, so the first turn is the brief and not a greeting
+
+Exit codes: 0 spawned and registered · 1 spawn failed a gate · 2 refused before creating anything.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+
+PANE_RE = re.compile(r"\bw[0-9A-Za-z]+:p[0-9A-Za-z]+\b")
+
+
+def die(msg: str, code: int = 2) -> "None":
+    print(f"spawn-lane: {msg}", file=sys.stderr)
+    raise SystemExit(code)
+
+
+def herdr(*args: str) -> str:
+    try:
+        proc = subprocess.run(["herdr", *args], capture_output=True, text=True, timeout=60)
+    except FileNotFoundError:
+        die("herdr not on PATH")
+    except subprocess.TimeoutExpired:
+        die(f"herdr {' '.join(args)} timed out")
+    if proc.returncode != 0:
+        die(f"herdr {' '.join(args)} failed: {(proc.stderr or proc.stdout).strip()[:300]}", 1)
+    return proc.stdout
+
+
+def agent_status(lane: str) -> str | None:
+    try:
+        proc = subprocess.run(["herdr", "agent", "get", lane], capture_output=True, text=True, timeout=20)
+    except Exception:
+        return None
+    if proc.returncode != 0:
+        return None
+    try:
+        rec = json.loads(proc.stdout)["result"]["agent"]
+    except Exception:
+        return None
+    return rec.get("agent_status")
+
+
+def slug(text: str) -> str:
+    out = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+    return out
+
+
+def pane_from_tab_create(out: str) -> tuple[str | None, str | None]:
+    """tab create returns JSON on some builds and plain '<tab> <pane>' on others."""
+    try:
+        data = json.loads(out)
+        res = data.get("result") or {}
+        tab = (res.get("tab") or {}).get("id") or (res.get("tab_id"))
+        pane = (res.get("pane") or {}).get("id") or res.get("pane_id")
+        if pane:
+            return tab, pane
+    except json.JSONDecodeError:
+        pass
+    panes = PANE_RE.findall(out)
+    pane = panes[-1] if panes else None
+    tab = None
+    return tab, pane
+
+
+def main(argv: list[str]) -> int:
+    p = argparse.ArgumentParser(
+        prog="spawn-lane",
+        description="Create a pane and start a lane through `pil --role`, without an inline env prefix.",
+        epilog="Ownership: lane launches belong to the overlord lane. This tool only removes the "
+               "hand-rolled shell around them.",
+    )
+    p.add_argument("--workspace", required=True, help="herdr workspace id, e.g. wE")
+    p.add_argument("--label", required=True, help="tab label; pil slugifies it into the lane name")
+    p.add_argument("--role", required=True, choices=("leader", "worker"))
+    p.add_argument("--cwd", help="working directory for the new tab")
+    p.add_argument("--session", help="session file to resume (must exist)")
+    p.add_argument("--prompt-file", help="file submitted as the lane's first prompt once idle")
+    p.add_argument("--prompt-text", help="inline first prompt")
+    p.add_argument("--wait", type=float, default=90.0, help="seconds to wait for idle (default 90)")
+    p.add_argument("--json", action="store_true")
+    p.add_argument("--dry-run", action="store_true")
+    args = p.parse_args(argv)
+
+    lane = slug(args.label)
+    if not lane or lane.isdigit():
+        die(f"label '{args.label}' slugifies to '{lane}' — pil refuses numeric/empty names; "
+            f"name the tab deliberately")
+
+    if agent_status(lane) is not None:
+        die(f"an agent named '{lane}' is already live; relaunch it with relaunch-lane.sh "
+            f"instead of spawning a second one", 2)
+
+    if args.session:
+        if not os.path.exists(args.session):
+            die(f"--session path does not exist: {args.session} — pi would start an empty "
+                f"conversation under that name", 2)
+        if "/.pi-profile-switch/instances/" in args.session:
+            die("--session names an instance-scoped path, which dies with that instance; "
+                "pass the shared-store path (~/.pi/agent/sessions/...)", 2)
+
+    pil_args = ["pil", "--role", args.role]
+    if args.session:
+        pil_args += ["--session", args.session]
+    launch = " ".join(f"'{a}'" if " " in a else a for a in pil_args)
+
+    tab_cmd = ["herdr", "tab", "create", "--workspace", args.workspace, "--label", args.label]
+    if args.cwd:
+        tab_cmd += ["--cwd", args.cwd]
+
+    summary = {"lane": lane, "label": args.label, "workspace": args.workspace, "role": args.role,
+               "session": args.session, "tab_create": tab_cmd, "launch": launch,
+               "pane": None, "tab": None, "status": None, "prompted": False, "ok": False}
+
+    if args.dry_run:
+        if args.json:
+            print(json.dumps(summary, indent=2))
+        else:
+            print("dry-run: would run")
+            print("  " + " ".join(tab_cmd))
+            print(f"  herdr pane run <pane> \"{launch}\"")
+            if args.prompt_file or args.prompt_text:
+                src = args.prompt_file or "<inline text>"
+                print(f"  herdr agent prompt {lane} \"$(cat {src})\"   # once idle")
+        return 0
+
+    out = herdr(*tab_cmd)
+    tab, pane = pane_from_tab_create(out)
+    if not pane:
+        die(f"could not read a pane id from tab create output: {out.strip()[:200]}", 1)
+    summary.update(tab=tab, pane=pane)
+
+    herdr("pane", "run", pane, launch)
+
+    deadline = time.time() + args.wait
+    status = None
+    while time.time() < deadline:
+        status = agent_status(lane)
+        if status in ("idle", "done"):
+            break
+        time.sleep(1.0)
+    summary["status"] = status
+
+    if status not in ("idle", "done"):
+        print(f"spawn-lane: {lane} did not reach idle within {args.wait:g}s "
+              f"(status={status}); pane {pane} left running", file=sys.stderr)
+        if args.json:
+            print(json.dumps(summary, indent=2))
+        return 1
+
+    prompt = None
+    if args.prompt_file:
+        try:
+            with open(args.prompt_file, "r", encoding="utf-8") as fh:
+                prompt = fh.read()
+        except OSError as exc:
+            die(f"cannot read --prompt-file: {exc}", 1)
+    elif args.prompt_text:
+        prompt = args.prompt_text
+
+    if prompt:
+        herdr("agent", "prompt", lane, prompt)
+        summary["prompted"] = True
+
+    summary["ok"] = True
+    if args.json:
+        print(json.dumps(summary, indent=2))
+    else:
+        print(f"{lane}  pane={pane}  tab={tab or '?'}  role={args.role}  status={status}")
+        print(f"  launched: {launch}")
+        if prompt:
+            print("  first prompt submitted")
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main(sys.argv[1:]))
+    except KeyboardInterrupt:
+        raise SystemExit(130)

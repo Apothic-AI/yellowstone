@@ -13,6 +13,14 @@
 #   * resume the RECORDED session explicitly, so the conversation is not lost
 #   * verify from /proc and the transcript preamble, never from the footer: the footer
 #     still prints `profile: leader` when the composition was dropped
+#
+# Canonical: pil --role leader|worker records the role at launch. This backfills lanes launched before that existed.
+case "${1:-}" in
+  -h|--help)
+    sed -n "2,15p" "$0" | sed "s/^#[ ]*//"
+    exit 0
+    ;;
+esac
 set -uo pipefail
 LANES=(dxdb-leader gemini-accts-leader lynx-leader omebian-leader personal-leader seeker-leader sysops-leader vpn2proxy-leader)
 

@@ -10,6 +10,12 @@
 # misattribute — herdr never reuses a closed pane id — and a lane restarted in the same pane
 # needs nothing. Re-run it whenever a pane id changes (a pane moved to another workspace gets
 # a new workspace-qualified id).
+case "${1:-}" in
+  -h|--help)
+    sed -n "2,12p" "$0" | sed "s/^#[ ]*//"
+    exit 0
+    ;;
+esac
 set -uo pipefail
 lane="${1:?usage: stamp-lane-pane.sh <lane>}"
 

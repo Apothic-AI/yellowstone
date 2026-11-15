@@ -15,6 +15,14 @@
 #      at startup by PI_MODE_CONFIRM_PROJECT=1 in .pi/launch.env, which self-restart reads).
 #   2. reorient            — point the fresh session at the continuation; self-restart does
 #      not prompt afterwards the way migrate-lane does, so without this the lane idles.
+#
+# Canonical: new-self.py for a fresh session in this lane.
+case "${1:-}" in
+  -h|--help)
+    sed -n "2,17p" "$0" | sed "s/^#[ ]*//"
+    exit 0
+    ;;
+esac
 set -uo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 lane=self-improvement-leader

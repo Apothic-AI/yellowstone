@@ -19,6 +19,14 @@
 #     that existing file.
 #
 # Usage: tools/rollout-modes.sh [lane ...]
+#
+# Canonical: rollout-profiles.sh for the profile form. This one only writes mode records.
+case "${1:-}" in
+  -h|--help)
+    sed -n "2,21p" "$0" | sed "s/^#[ ]*//"
+    exit 0
+    ;;
+esac
 set -uo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)

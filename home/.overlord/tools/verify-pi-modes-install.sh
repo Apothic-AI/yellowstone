@@ -7,6 +7,12 @@
 #   1. the settings entry names a path (our fork), not the npm spec, and
 #   2. the installed manifest's version/commit matches what we built.
 # A lane still only picks it up at its next launch — report "installed" and "active" separately.
+case "${1:-}" in
+  -h|--help)
+    sed -n "2,9p" "$0" | sed "s/^#[ ]*//"
+    exit 0
+    ;;
+esac
 set -uo pipefail
 settings="$HOME/.pi/agent/settings.json"
 manifest="$HOME/.pi/agent/npm/node_modules/@tryinget/pi-modes/package.json"

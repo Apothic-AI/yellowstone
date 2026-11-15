@@ -9,6 +9,12 @@
 #
 # Usage: remote-less-branches.sh [ROOT]        default ROOT=$HOME/Code
 # Output: one pipe-separated row per branch, plus a summary. Nothing is pushed or deleted.
+case "${1:-}" in
+  -h|--help)
+    sed -n "2,11p" "$0" | sed "s/^#[ ]*//"
+    exit 0
+    ;;
+esac
 set -uo pipefail
 
 root="${1:-$HOME/Code}"

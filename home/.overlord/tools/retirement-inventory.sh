@@ -13,6 +13,12 @@
 #
 # FETCH FIRST. UNPUBLISHED is computed with `--not --remotes`, which reads *local*
 # remote-tracking refs; without a fetch a recently-pushed branch looks local-only.
+case "${1:-}" in
+  -h|--help)
+    sed -n "2,15p" "$0" | sed "s/^#[ ]*//"
+    exit 0
+    ;;
+esac
 set -uo pipefail
 repo="${1:-$HOME/Code/yellowstone}"
 root="${2:-$HOME/Code}"

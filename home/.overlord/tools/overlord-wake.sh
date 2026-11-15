@@ -27,6 +27,12 @@
 # Exit 0 in every skip case: a skipped wake is a healthy wake, not a failure.
 #
 # `--dry-run` logs the decision and prints the exact prompt without sending it.
+case "${1:-}" in
+  -h|--help)
+    sed -n "2,29p" "$0" | sed "s/^#[ ]*//"
+    exit 0
+    ;;
+esac
 set -uo pipefail
 DRY_RUN=0
 [ "${1:-}" = "--dry-run" ] && DRY_RUN=1

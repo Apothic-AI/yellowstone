@@ -37,6 +37,9 @@ import subprocess
 import sys
 import time
 from datetime import datetime, timezone
+if any(a in ("-h", "--help") for a in sys.argv[1:]):
+    print(__doc__ or "")
+    raise SystemExit(0)
 
 ASK_DB = os.path.expanduser("~/.local/state/unblock/queue.db")
 

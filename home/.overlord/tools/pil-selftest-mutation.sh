@@ -22,6 +22,12 @@
 #
 # Usage: tools/pil-selftest-mutation.sh
 # Exit: 0 all mutations behaved as required; 1 otherwise.
+case "${1:-}" in
+  -h|--help)
+    sed -n "2,24p" "$0" | sed "s/^#[ ]*//"
+    exit 0
+    ;;
+esac
 
 set -uo pipefail
 SRC="${1:-$(dirname "$0")/../bin/pil}"

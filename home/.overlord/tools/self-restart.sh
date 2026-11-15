@@ -2,6 +2,14 @@
 # self-restart — relaunch this lane through the launcher with the env from <cwd>/.pi/launch.env.
 # Unlike migrate-lane.sh this has no idle gate: a lane that is always mid-turn when it acts can
 # never satisfy that gate, and the scheduled run keeps losing the race with its own turn.
+#
+# Canonical: restart-fleet --include-self (deferred) or new-self.py. This restarts the calling lane in place.
+case "${1:-}" in
+  -h|--help)
+    sed -n "2,4p" "$0" | sed "s/^#[ ]*//"
+    exit 0
+    ;;
+esac
 set -uo pipefail
 lane="${1:-overlord}"
 pane="${2:-wE:p1}"

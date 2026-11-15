@@ -19,6 +19,12 @@
 # Modes:
 #   overlord-watchdog.sh --record   save the live lane's session as the resume target
 #   overlord-watchdog.sh            one pass (the timer's ExecStart)
+case "${1:-}" in
+  -h|--help)
+    sed -n "2,21p" "$0" | sed "s/^#[ ]*//"
+    exit 0
+    ;;
+esac
 set -uo pipefail
 
 PANE="${OVERLORD_PANE:-wE:p1}"

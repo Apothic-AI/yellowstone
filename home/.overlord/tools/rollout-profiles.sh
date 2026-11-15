@@ -13,6 +13,14 @@
 #
 # Usage: tools/rollout-profiles.sh [lane ...]     (no args = every lane the board lists)
 #   Log: /home/bitnom/.local/state/overlord/rollout-<UTC>.log
+#
+# Canonical: restart-fleet (many lanes) or relaunch-lane.sh (one). This is the bulk migration.
+case "${1:-}" in
+  -h|--help)
+    sed -n "2,15p" "$0" | sed "s/^#[ ]*//"
+    exit 0
+    ;;
+esac
 set -uo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)

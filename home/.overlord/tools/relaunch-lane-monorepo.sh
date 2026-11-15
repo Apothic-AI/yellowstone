@@ -16,6 +16,14 @@
 #     Enter is sent separately and retried. An unsubmitted line looks exactly like a
 #     lane that exited and never came back — that mistake cost two lanes a second pass.
 #   * /exit is not a pi command; ctrl+c twice is the documented exit.
+#
+# Canonical: relaunch-lane.sh <lane>. This variant is for monorepo worktrees.
+case "${1:-}" in
+  -h|--help)
+    sed -n "2,18p" "$0" | sed "s/^#[ ]*//"
+    exit 0
+    ;;
+esac
 set -uo pipefail
 
 HERDR="${HERDR_BIN_PATH:-$HOME/.local/bin/herdr}"

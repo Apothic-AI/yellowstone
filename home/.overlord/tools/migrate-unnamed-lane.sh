@@ -12,6 +12,14 @@
 # pil inside the target pane, footer verification with retries.
 #
 # Usage: tools/migrate-unnamed-lane.sh <pane-id> [--skip-continuation]
+#
+# Canonical: relaunch-lane.sh <lane>. This one handles a pane whose pi agent has no name yet.
+case "${1:-}" in
+  -h|--help)
+    sed -n "2,14p" "$0" | sed "s/^#[ ]*//"
+    exit 0
+    ;;
+esac
 set -uo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)

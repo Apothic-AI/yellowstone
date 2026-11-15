@@ -28,6 +28,12 @@
 #
 # A DANGLING line means: this unit cannot start until the fragment is repointed. It is the
 # only check here that survives the machine rebooting, which is why it drives the exit code.
+case "${1:-}" in
+  -h|--help)
+    sed -n "2,30p" "$0" | sed "s/^#[ ]*//"
+    exit 0
+    ;;
+esac
 
 set -uo pipefail
 
