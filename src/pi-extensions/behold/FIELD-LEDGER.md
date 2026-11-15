@@ -336,12 +336,12 @@ in `behold.lanes.by_field_state`.
 
 ## Identity count (re-derived, not hand-kept)
 
-There are **58 unique field ids** in this ledger: **57 per-lane** ids plus `M-4`, which is
+There are **59 unique field ids** in this ledger: **58 per-lane** ids plus `M-4`, which is
 global-only and never a lane field. The two code-side lists agree exactly and are the
 source of truth:
 
-* `behold/lane.py::_ALL_FIELD_KEYS` — the 57 ids a lane must carry;
-* `behold/render.py::field_order()` — the same 57 ids, in render order;
+* `behold/lane.py::_ALL_FIELD_KEYS` — the 58 ids a lane must carry;
+* `behold/render.py::field_order()` — the same 58 ids, in render order;
 * `behold/cli.py` `Runner.document()` — emits `global["M-4"]` **once**, outside the lane
   list.
 
@@ -481,6 +481,7 @@ review, **not** a flag flip — and today `argparse` rejects `--git`, `--jj` and
 | M-5 | rooms lane name | `M-5` | 0 | A / absent | `rooms/names.json` `pins["pane:<id>"]` | — |
 | M-6 | rooms membership | `M-6` | 1 | A / U | `registry/` count + `rooms/*` membership, **names only** | — |
 | M-7 | presence / inbox depth | `M-7` | 1 | **U** (always) | deferred by the plan to P3 | P3 |
+| L-1 | fleet role (`PI_MODE`) | `L-1` | 1 | **LO** / absent / unknown | the lane's `pil` role record `<roles dir>/<lane>.env`, read only after admission, path composed from the admitted lane name (never a listing); `present` carries the value and the record path, `absent` says no record exists, `unknown` names the parse/unread problem. Never inferred from the lane-name suffix, the profile or the model | one lane launched by `pil` whose role record exists |
 | G-1 | goals count + statuses | `G-1` | 1 | A / absent / U | per-session goal `custom` entry, structured counts only; a text-only store ⇒ `unknown(goal state is text-only; count withheld)` | confirm the live goal entry's shape |
 | G-2 | goals queue depth | `G-2` | 1 | A / absent / U | same entry, depth only | same |
 | D-1 | TODO counts + conflict | `D-1` | 1 | A / conflict / absent | session `pi-core-todo-state` (active branch) vs instance `pi-todo-state.json` for the same session UUID | — |
@@ -539,6 +540,7 @@ separately and never mixed.
 | T tokens / context / perf | 8 | `T-8` | — | `T-8` | `T-1` `T-2` `T-3` `T-4` `T-5` `T-6` `T-7` (7) |
 | R repository | 7 | `R-1` `R-2` `R-3` `R-4` `R-6` | — | — | `R-5` `R-7` (2) |
 | M mode / profile / rooms | 6 | `M-7` | — | `M-7` | `M-1` `M-2` `M-3` `M-5` `M-6` (5) |
+| L lane role | 1 | — | — | — | `L-1` (1) |
 | G goals / dagr | 4 | — | — | — | `G-1` `G-2` `G-3` `G-4` (4) |
 | D TODOs | 2 | — | `D-2` | — | `D-1` (1) |
 | C crons | 2 | — | `C-2` | — | `C-1` (1) |

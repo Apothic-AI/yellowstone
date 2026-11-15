@@ -3,9 +3,13 @@
 Exit codes
 ----------
 0   roster rendered
-2   usage error (argparse; also an unknown flag such as ``--include-todo-subjects``)
+2   usage error (argparse; also an unknown flag such as ``--include-todo-subjects``, a
+    malformed ``--filter``/``--sort``, and an invalid ``--fields``/``--summary`` spec)
 3   source error (snapshot missing/unreadable/unsupported protocol, capture failed)
 4   guard violation (a write or network attempt was refused)
+5   ``--lane`` did not resolve to exactly one lane (no match, or an ambiguous name). The
+    diagnostic names the selector and, for an ambiguity, the candidate pane ids. An empty
+    ``lanes: []`` is never returned for a selector that matched nothing.
 
 The guard is installed for the whole run. There is no default live *discovery*: the roster
 is built from one herdr snapshot plus the stores that already exist on disk, and the
@@ -30,12 +34,13 @@ from . import cache as cache_mod
 from . import field as F
 from . import guard, identity, lane as lane_mod, render, util, watch
 from . import admission
-from .sources import Paths, SourceError, fleet_state, herdr, herdr_capture, pi_state
+from .sources import Paths, SourceError, fleet_state, herdr, herdr_capture, pi_state, pil_roles
 
 EXIT_OK = 0
 EXIT_USAGE = 2
 EXIT_SOURCE = 3
 EXIT_GUARD = 4
+EXIT_NO_MATCH = 5
 
 #: How the cache participates in a run.
 CACHE_MODES = ("auto", "on", "off")
@@ -70,8 +75,23 @@ def build_parser() -> argparse.ArgumentParser:
                         help="cache database path (default: $BEHOLD_CACHE_DB or "
                              "~/.local/state/behold/behold.db)")
     roster.add_argument("--markdown", action="store_true", help="render Markdown instead of JSON")
+    roster.add_argument("--json", action="store_true",
+                        help="render JSON. This is the default; the flag exists so callers "
+                             "state their format instead of guessing. Mutually exclusive "
+                             "with --markdown")
     roster.add_argument("--full", action="store_true", help="with --markdown: every field for every lane")
-    roster.add_argument("--lane", help="single lane by pane id")
+    roster.add_argument("--lane", metavar="PANE_ID|NAME",
+                        help="one lane, by pane id (w17:p1) or by lane/agent name "
+                             "(yellowstone-leader). No match and an ambiguous name are "
+                             "exit 5 with a diagnostic, never an empty lane list")
+    roster.add_argument("--fields", metavar="SPEC",
+                        help="project each lane to exactly these lane keys and field ids, "
+                             "comma-separated (e.g. 'key,handles,H-5'; 'H-*' selects every "
+                             "H field). Everything not listed is omitted, never nulled")
+    roster.add_argument("--summary", action="store_true",
+                        help="project to the documented supervision preset (see "
+                             "behold.projection in the output and README.md); a selection, "
+                             "not a complete roster")
     roster.add_argument("--filter", action="append", default=[], metavar="KEY=OP",
                         help="repeatable, e.g. --filter 'H-5.value.status=working'")
     roster.add_argument("--sort", action="append", default=[], metavar="KEY[:desc]",
@@ -161,6 +181,13 @@ class Runner:
         # a fixed as_of is refused rather than silently frozen.
         self.as_of = util.parse_iso(args.as_of) if args.as_of else self.clock()
         self.as_of_iso = util.iso(self.as_of)
+        #: The amount of the run this projection asks for. ``None`` is a full roster, which
+        #: parses every session; a projection that names no session-derived field parses
+        #: no session at all.
+        self.projection = render.parse_projection(fields=args.fields, summary=args.summary)
+        self.read_sessions = self.projection is None or self.projection.needs_session
+        #: Which lanes ``--lane`` resolved to, for the Markdown single-lane sections.
+        self.lane_selection: lane_mod.LaneSelection | None = None
         self.cache_mode = _cache_mode(args, self.mode)
         self.cache_requested = args.cache
         self.cache_path = _cache_path(args)
@@ -195,6 +222,9 @@ class Runner:
         # Admission-gated pil access: no directory walk, one candidate file per admitted lane,
         # and a denied lane never reaches the open at all.
         self.pil = identity.PilAccess(self.paths.pil_dir or None, policy)
+        # The fleet role records are a source of their own: a lane's role is never inferred
+        # from its name, so it is either read here or reported absent/unknown.
+        self.roles = pil_roles.RoleAccess(self.paths.roles_dir or None, policy)
         self.models = pi_state.model_catalog(self.paths.models_store, policy)
         recent = str(self.paths.state_dir) + "/dagr/recent" if self.paths.state_dir else None
         self.dagr = fleet_state.load_dagr_runs(recent, policy)
@@ -472,12 +502,14 @@ class Runner:
             as_of=self.as_of,
             as_of_iso=self.as_of_iso,
             pil=self.pil,
+            roles=self.roles,
             models=self.models,
             dagr=self.dagr,
             beads=self.beads,
             # The reporter cache, when it is enabled: the lane's P-11 joins against it.
             runtime_cache=self.cache,
             cache_freshness_s=cache_mod.DEFAULT_FRESHNESS_S,
+            read_sessions=self.read_sessions,
         )
 
     def dependency_paths(self, built: list[Any]) -> list[str]:
@@ -536,7 +568,12 @@ class Runner:
         ctx = self.context()
         agents = self.snapshot.agents
         if self.args.lane:
-            agents = [a for a in agents if a.get("pane_id") == self.args.lane]
+            # A selector answers with exactly one lane or not at all: a name that matched
+            # nothing used to return an empty roster with a success exit, which reads as
+            # "this fleet has no such lane".
+            selection = lane_mod.select_agents(agents, self.snapshot, self.args.lane)
+            self.lane_selection = selection
+            agents = selection.agents
         built = [lane_mod.build_lane(agent, ctx) for agent in agents]
         lanes = [b.to_dict() for b in built]
         lanes = render.apply_filters(lanes, self.args.filter)
@@ -576,10 +613,23 @@ class Runner:
             }
             m4_state = global_profile.get("state", "present")
         else:
+            # Two different reasons produce an empty set, and they are not the same fact.
+            # A projection that names no session-derived field never parses a session, so no
+            # identity is verified and no instance can be attributed -- that is the caller's
+            # choice, not an access failure. Saying "noaccess" there would blame the machine
+            # for the query, so the reason names the projection instead.
+            if not self.read_sessions:
+                m4_reason = (
+                    f"{lane_mod.SKIPPED_BY_PROJECTION}: no session file was parsed (the "
+                    f"projection names no session-derived field), so no lane's identity could "
+                    f"be verified and no instance could be attributed; this is a projection "
+                    f"effect, not an access denial")
+            else:
+                m4_reason = "noaccess: no admitted+trusted lane to attribute a global setting from"
             global_profile = {
                 "activeProfile": None,
                 "state": "unknown",
-                "reason": "noaccess: no admitted+trusted lane to attribute a global setting from",
+                "reason": m4_reason,
                 "scope": "global_file",
             }
             m4_state = "unknown"
@@ -612,7 +662,24 @@ class Runner:
             global_block=global_block,
             wall_ms=getattr(ctx, "state_only_wall_ms", 0.0),
             cache=self.cache_summary().to_dict(),
+            projection=self.projection,
         )
+        # How much session reading this run did, so a caller can see that a projection
+        # skipped it rather than guess from the wall time.
+        document["behold"]["session_reads"] = {
+            "mode": "parsed" if self.read_sessions else "skipped_by_projection",
+            "files_parsed": ctx.session_reads["parsed"],
+            "loads_requested": ctx.session_reads["requested"],
+            "deduped": ctx.session_reads["deduped"],
+            "note": ("one parse per distinct session file per run; a file named twice by one "
+                     "lane (pin + lane record) or shared by two lanes is parsed once"
+                     if self.read_sessions else
+                     "no session file was parsed: the requested projection names no "
+                     "session-derived field, so every session-derived field is unknown "
+                     "with reason skipped_by_projection"),
+        }
+        if self.lane_selection is not None:
+            document["behold"]["lane_selector"] = self.lane_selection.to_dict()
         if self.capture is not None:
             # The capture's own receipt: what ran, how long it took, and every note the
             # normalizer made about the document it was given.
@@ -671,6 +738,12 @@ def main(argv: Sequence[str] | None = None, *,
         except guard.NetworkViolation as exc:
             sys.stderr.write(f"behold: network guard refused an action: {exc}\n")
             return EXIT_GUARD
+        except lane_mod.LaneSelectorError as exc:
+            # A selector that resolves to no lane, or to more than one, is answered with a
+            # diagnostic and a non-zero exit. An empty lane list would be indistinguishable
+            # from a fleet with no lanes.
+            sys.stderr.write(f"behold: {exc.code}: {exc}\n")
+            return EXIT_NO_MATCH
         except SourceError as exc:
             sys.stderr.write(f"behold: {exc}\n")
             return EXIT_SOURCE
@@ -724,6 +797,11 @@ class WatchDeriver:
 
 def _run_roster(args: argparse.Namespace, *,
                 clock: Callable[[], float] = time.time) -> int:
+    if args.markdown and args.json:
+        sys.stderr.write(
+            "behold: --json is the default format and --markdown replaces it; "
+            "pass one of them\n")
+        return EXIT_USAGE
     if args.watch and args.as_of:
         sys.stderr.write(
             "behold: --as-of is a single-run override and cannot be combined with --watch "
@@ -740,6 +818,17 @@ def _run_roster(args: argparse.Namespace, *,
     )
     with guard.enforce():
         runner = Runner(args, policy, clock=clock)
+
+        def _render(doc: dict[str, Any]) -> str:
+            """Markdown for this run, honouring both the lane selector and the projection.
+
+            The selector's resolved pane ids are read back from the document, so a watch
+            iteration (which builds its own Runner) renders the same single lane.
+            """
+            selector = (doc["behold"].get("lane_selector") or {}).get("pane_ids")
+            return render.to_markdown(doc, full=args.full, lane_keys=selector or None,
+                                      projection=runner.projection)
+
         # The admission map is published BEFORE the ingest: the ingest refuses a
         # refused lane's record before opening it, and it needs the map that describes
         # this run's topology.
@@ -749,8 +838,8 @@ def _run_roster(args: argparse.Namespace, *,
             lanes, _inputs, _sessions = runner.lanes_and_inputs()
             ctx = runner.last_ctx
             doc = runner.document(lanes, ctx)
-            _emit(render.to_markdown(doc, full=args.full, lane_key=args.lane) if args.markdown
-                  else render.to_json(doc))
+            _emit(_render(doc)
+                  if args.markdown else render.to_json(doc))
             runner.close()
             return EXIT_OK
 
@@ -758,8 +847,7 @@ def _run_roster(args: argparse.Namespace, *,
 
         def emit(doc: dict[str, Any], step: watch.WatchStep) -> None:
             doc["behold"]["watch"] = step.to_dict()
-            text = render.to_markdown(doc, full=args.full, lane_key=args.lane) if args.markdown \
-                else render.to_json(doc)
+            text = _render(doc) if args.markdown else render.to_json(doc)
             _emit(text)
 
         steps = watch.run_watch(

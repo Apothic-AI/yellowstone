@@ -49,6 +49,11 @@ TUPLE_DISAGREEMENT = "process_tuple_disagreement"
 ENVPANE_DISAGREEMENT = "envpane_disagreement"
 HELD = "held_by_policy"
 
+#: The session was **not read**, because the run's projection named no session-derived
+#: field. It is a distinct state from ``no_session_source``: a lane whose reader was not
+#: asked is not a lane without a session, and neither is a lane whose process is down.
+SESSION_READ_SKIPPED = "session_read_skipped_by_projection"
+
 #: Only agreement states may be used for an explicit join or for profile/instance resolution.
 TRUSTED_STATES = frozenset({VERIFIED})
 
@@ -315,6 +320,27 @@ def _check_process(
     return None
 
 
+def _pil_summary(record: dict[str, Any] | None, directory: str | None,
+                 name_hint: str | None) -> dict[str, Any] | None:
+    """The allowlisted fields of a lane record, or ``None`` when there is no record."""
+    if not record:
+        return None
+    return {
+        "file": os.path.join(directory or "", f"{name_hint}.json") if name_hint else None,
+        "lane": record.get("lane"),
+        "session": record.get("session"),
+        "sessionId": record.get("sessionId"),
+        "paneId": record.get("paneId"),
+        "workspaceId": record.get("workspaceId"),
+        "pid": record.get("pid"),
+        "boot_id": record.get("boot_id"),
+        "starttime": record.get("starttime"),
+        "updatedAt": record.get("updatedAt"),
+        "source": record.get("source"),
+        "lookup": "pane-matched record via admitted lane name hint (no directory scan)",
+    }
+
+
 def resolve(
     agent: dict[str, Any],
     *,
@@ -324,6 +350,7 @@ def resolve(
     loader: Callable[[str, guard.Policy], session.SessionView] = lambda p, pol: session.load(p, pol),
     leaf_hint: str | None = None,
     name_hint: str | None = None,
+    read_sessions: bool = True,
 ) -> Identity:
     pane_id = agent.get("pane_id") if isinstance(agent.get("pane_id"), str) else None
     workspace_id = agent.get("workspace_id") if isinstance(agent.get("workspace_id"), str) else None
@@ -354,6 +381,27 @@ def resolve(
 
     pin_view = None
     pin_problems: list[str] = []
+    if not read_sessions:
+        # The projection named no session-derived field, so no session file is opened.
+        # Everything that needs one is reported as unread (not absent), and the lane record
+        # lookup and /proc checks still run: they are small reads, not session parses.
+        identity.state = SESSION_READ_SKIPPED
+        identity.checks.append(Check(
+            "session.read", None,
+            "not read: the requested projection names no session-derived field, so this "
+            "run parses no session file (the file itself is not known to be missing)"))
+        record, record_problem = pil.record_for(pane_id, name_hint, workspace_id, tab_id)
+        identity.pil = _pil_summary(record, pil.directory, name_hint)
+        identity.checks.append(Check("pil.lookup", bool(record),
+                                     f"paneId={pane_id} -> {record_problem or 'matched'}"))
+        _check_process(identity, proc_root=proc_root, pane_id=pane_id, tab_id=tab_id,
+                       workspace_id=workspace_id, policy=policy)
+        identity.note = (
+            "session files were not parsed for this run: --fields/--summary named no "
+            "session-derived field. Identity is therefore unverified here, and every "
+            "session-derived field is unknown with reason skipped_by_projection -- never "
+            "absent, and never a substituted 0/null/empty value.")
+        return identity
     if pin_path:
         pin_view, checks, pin_problems = _candidate_checks(
             pin_path, policy=policy, loader=loader, expected_id=pin_uuid, label="pin")
@@ -364,24 +412,7 @@ def resolve(
         identity.checks.append(Check("pin.exists", None, "snapshot has no agent_session pin"))
 
     record, record_problem = pil.record_for(pane_id, name_hint, workspace_id, tab_id)
-    identity.pil = (
-        {
-            "file": os.path.join(pil.directory or "", f"{name_hint}.json") if name_hint else None,
-            "lane": record.get("lane"),
-            "session": record.get("session"),
-            "sessionId": record.get("sessionId"),
-            "paneId": record.get("paneId"),
-            "workspaceId": record.get("workspaceId"),
-            "pid": record.get("pid"),
-            "boot_id": record.get("boot_id"),
-            "starttime": record.get("starttime"),
-            "updatedAt": record.get("updatedAt"),
-            "source": record.get("source"),
-            "lookup": "pane-matched record via admitted lane name hint (no directory scan)",
-        }
-        if record
-        else None
-    )
+    identity.pil = _pil_summary(record, pil.directory, name_hint)
     identity.checks.append(Check(
         "pil.lookup", bool(record),
         f"paneId={pane_id} -> {record_problem or 'matched'}"))

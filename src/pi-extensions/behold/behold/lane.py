@@ -17,7 +17,7 @@ from __future__ import annotations
 import os
 import time
 from dataclasses import dataclass, field as dc_field
-from typing import Any, Callable
+from typing import Any, Callable, Sequence
 
 from . import field as F
 from . import cache as cache_mod
@@ -25,6 +25,137 @@ from . import guard, identity, procfs, session, util
 from .sources import Paths, fleet_state, herdr, pi_state, repo
 
 HELD_REASON_PREFIX = "deny_pre_read_policy"
+
+#: The reason prefix for a field that is unknown because this run's projection named no
+#: session-derived field. It is a distinct reason from "no session" and from "down": a
+#: lane whose session was not read is not a lane without a session.
+SKIPPED_BY_PROJECTION = "skipped_by_projection"
+
+
+class LaneSelectorError(ValueError):
+    """``--lane`` did not resolve to exactly one lane.
+
+    An empty roster is not an answer to "which lane is this": it looks like a fleet with
+    no lanes. So a selector that matches nothing, or matches more than one lane, is a
+    refusal with a diagnostic and its own exit code.
+    """
+
+    def __init__(self, code: str, message: str, *, selector: str,
+                 candidates: Sequence[str] = ()) -> None:
+        super().__init__(message)
+        self.code = code
+        self.selector = selector
+        self.candidates = list(candidates)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"code": self.code, "selector": self.selector,
+                "candidates": self.candidates, "message": str(self)}
+
+
+@dataclass
+class LaneSelection:
+    """Which lanes a ``--lane`` selector names, and why each one matched."""
+
+    selector: str
+    agents: list[dict[str, Any]] = dc_field(default_factory=list)
+    matched_by: dict[str, str] = dc_field(default_factory=dict)
+    searched: int = 0
+
+    @property
+    def pane_ids(self) -> list[str]:
+        return [str(agent.get("pane_id")) for agent in self.agents if agent.get("pane_id")]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"selector": self.selector, "pane_ids": self.pane_ids,
+                "matched_by": self.matched_by, "lanes_searched": self.searched}
+
+
+def _name_layers(agent: dict[str, Any], pane: dict[str, Any],
+                 tab: dict[str, Any]) -> tuple[tuple[str, str], ...]:
+    """Every layer that can name a lane (the H-4 precedence, as separate layers).
+
+    A selector is allowed to match **any** layer, not just the winning one: an operator
+    who knows the agent name should not have to discover that a tab label overrides it.
+    """
+    layers = (
+        ("tab_label", tab.get("label")),
+        ("agent_name", agent.get("name")),
+        ("display_agent", agent.get("display_agent")),
+        ("pane_label", pane.get("label")),
+        ("terminal_title", agent.get("terminal_title_stripped")),
+    )
+    return tuple((name, value.strip()) for name, value in layers
+                 if isinstance(value, str) and value.strip())
+
+
+def select_agents(agents: list[dict[str, Any]], snapshot: Any,
+                  selector: str) -> LaneSelection:
+    """Resolve ``--lane`` to lanes: exact pane id first, then any lane-name layer.
+
+    Name matching is exact and case-sensitive first; only when that finds nothing is a
+    case-insensitive pass tried. Both passes are recorded in ``matched_by`` so the document
+    says how the selector answered rather than only what it returned.
+
+    Raises :class:`LaneSelectorError` for no match and for an ambiguous match. Never returns
+    an empty selection: an empty ``lanes`` list would read as "the fleet has no lanes".
+    """
+    selection = LaneSelection(selector=selector, searched=len(agents))
+    if not selector or not selector.strip():
+        raise LaneSelectorError(
+            "lane-not-found",
+            "--lane was given an empty value; pass a pane id (w17:p1) or a lane name",
+            selector=selector or "")
+    wanted = selector.strip()
+
+    by_pane = [agent for agent in agents if agent.get("pane_id") == wanted]
+    if by_pane:
+        selection.agents = by_pane
+        selection.matched_by = {str(agent.get("pane_id")): "pane_id" for agent in by_pane}
+        _refuse_ambiguous(selection)
+        return selection
+
+    def scan(casefold: bool) -> list[tuple[dict[str, Any], str]]:
+        needle = wanted.casefold() if casefold else wanted
+        found: list[tuple[dict[str, Any], str]] = []
+        for agent in agents:
+            pane = snapshot.pane(agent.get("pane_id"))
+            tab = snapshot.tab(agent.get("tab_id"))
+            for layer, value in _name_layers(agent, pane, tab):
+                haystack = value.casefold() if casefold else value
+                if haystack == needle:
+                    found.append((agent, layer))
+                    break
+        return found
+
+    found = scan(casefold=False)
+    suffix = ""
+    if not found:
+        found = scan(casefold=True)
+        if found:
+            suffix = " (case-insensitive match; no exact match existed)"
+    if not found:
+        raise LaneSelectorError(
+            "lane-not-found",
+            f"--lane {wanted!r} matched no lane by pane id or by name in {len(agents)} "
+            f"lanes; a name is matched on tab label, agent name, display_agent, pane "
+            f"label and terminal title",
+            selector=wanted)
+    selection.agents = [agent for agent, _layer in found]
+    selection.matched_by = {
+        str(agent.get("pane_id")): f"name_layer:{layer}{suffix}" for agent, layer in found}
+    _refuse_ambiguous(selection)
+    return selection
+
+
+def _refuse_ambiguous(selection: LaneSelection) -> None:
+    pane_ids = selection.pane_ids
+    if len(pane_ids) <= 1:
+        return
+    raise LaneSelectorError(
+        "lane-ambiguous",
+        f"--lane {selection.selector!r} matches {len(pane_ids)} lanes "
+        f"({', '.join(pane_ids)}); pass a pane id to name exactly one",
+        selector=selection.selector, candidates=pane_ids)
 
 
 @dataclass
@@ -35,6 +166,9 @@ class Context:
     as_of: float
     as_of_iso: str
     pil: "identity.PilAccess"
+    #: The fleet role records (``<lane>.env``). Separate from ``pil``: a lane can have a
+    #: session record without a role record, and the other way round.
+    roles: Any = None
     leaf_hint: str | None = None
     models: dict[tuple[str, str | None], dict[str, Any]] = dc_field(default_factory=dict)
     dagr: list[dict[str, Any]] = dc_field(default_factory=list)
@@ -46,8 +180,31 @@ class Context:
     runtime_cache: Any = None
     #: The freshness window for a cached observation, in seconds.
     cache_freshness_s: float = 120.0
+    #: Whether this run may parse session files at all. ``False`` only when the requested
+    #: projection names no session-derived field; every session-derived field then stays
+    #: ``unknown`` with :data:`SKIPPED_BY_PROJECTION` as its reason.
+    read_sessions: bool = True
+    #: One parse per session file per run, keyed by resolved path: a session can be named
+    #: twice by one lane (pin + lane record, two spellings of one file) and shared by two
+    #: lanes, and neither is a reason to parse it twice.
+    session_cache: dict[str, session.SessionView] = dc_field(default_factory=dict)
+    session_reads: dict[str, int] = dc_field(
+        default_factory=lambda: {"requested": 0, "parsed": 0, "deduped": 0})
     _settings: dict[str, dict[str, Any]] = dc_field(default_factory=dict)
     _crons: dict[str, dict[str, Any]] = dc_field(default_factory=dict)
+
+    def load_session(self, path: str, policy: guard.Policy) -> session.SessionView:
+        """The one session loader for a run, deduped by resolved path."""
+        key = util.realpath(path)
+        self.session_reads["requested"] += 1
+        cached = self.session_cache.get(key)
+        if cached is not None:
+            self.session_reads["deduped"] += 1
+            return cached
+        view = session.load(path, policy, leaf_hint=self.leaf_hint)
+        self.session_cache[key] = view
+        self.session_reads["parsed"] += 1
+        return view
 
     def time(self, name: str, started: float) -> None:
         self.timings.setdefault(name, []).append((time.perf_counter() - started) * 1000.0)
@@ -75,6 +232,38 @@ def _add(fields: dict[str, F.Field], f: F.Field) -> None:
 
 def _value(fields: dict[str, F.Field], key: str, default: Any = None) -> Any:
     return F.value_of(fields, key, default)
+
+
+def _fill_role(fields: dict[str, F.Field], ctx: Context, pane_id: str | None,
+               workspace_id: str | None, tab_id: str | None) -> None:
+    """``L-1`` — the lane's fleet role, from its role record and nothing else.
+
+    The role is the one field in this document that has no independent corroboration: a
+    lane name ending in ``-leader``, the selected profile and the model all correlate with
+    it and none of them prove it. So the record is read (admission first) or the field says
+    ``absent``/``unknown``; a guess here would be a lie that reads exactly like a fact.
+    """
+    if ctx.roles is None:
+        _add(fields, F.unknown("L-1", "no role-record access for this run",
+                              source="pil role records (not configured)"))
+        return
+    name_hint = _value(fields, "H-4")
+    name_hint = name_hint if isinstance(name_hint, str) and name_hint else None
+    access = ctx.roles.role_for(name_hint=name_hint, pane_id=pane_id,
+                                workspace_id=workspace_id, tab_id=tab_id)
+    state = access.get("state")
+    source = access.get("source") or "pil role records"
+    reason = access.get("reason")
+    if state == "refused":
+        return  # a refused lane carries no fields at all; the admission block says why
+    if state == "present":
+        _add(fields, F.present("L-1", access.get("role"), source=source,
+                              observed_at=ctx.as_of_iso,
+                              note="the launch role record; not a claim that the process is alive"))
+    elif state == "absent":
+        _add(fields, F.absent("L-1", reason or "no role record for this lane", source=source))
+    else:
+        _add(fields, F.unknown("L-1", reason or "role record unusable", source=source))
 
 
 @dataclass
@@ -193,9 +382,10 @@ def build_lane(agent: dict[str, Any], ctx: Context) -> BuiltLane:
         policy=ctx.policy,
         pil=ctx.pil,
         proc_root=ctx.paths.proc_root,
-        loader=lambda p, pol: session.load(p, pol, leaf_hint=ctx.leaf_hint),
+        loader=ctx.load_session,
         leaf_hint=ctx.leaf_hint,
         name_hint=pin_for_name.get("name"),
+        read_sessions=ctx.read_sessions,
     )
     ctx.time("identity+session", started)
     view = ident.session
@@ -225,10 +415,10 @@ def build_lane(agent: dict[str, Any], ctx: Context) -> BuiltLane:
     if view is None:
         for key in _PATH_DERIVED_KEYS:
             if key not in fields:
-                _add(fields, F.unknown(key, f"no validated session: {ident.state}",
+                _add(fields, F.unknown(key, _no_session_reason(ident, ctx),
                                        source="identity resolution"))
         _fill_reporter_observation(fields, ctx, ident, pane_id)
-        _fill_state_only(fields, ctx, ident, instance, cwd, pane_id, workspace_id)
+        _fill_state_only(fields, ctx, ident, instance, cwd, pane_id, workspace_id, tab_id)
         return lane
 
     now = ctx.as_of
@@ -406,6 +596,7 @@ def build_lane(agent: dict[str, Any], ctx: Context) -> BuiltLane:
 
     # -- mode / profile / rooms -------------------------------------------------
     _fill_mode_profile_rooms(fields, ctx, view, ident, instance, pane_id)
+    _fill_role(fields, ctx, pane_id, workspace_id, tab_id)
 
     # -- goals / todos / crons --------------------------------------------------
     _fill_goals_todos_crons(fields, ctx, view, ident, instance, cwd)
@@ -428,6 +619,18 @@ def build_lane(agent: dict[str, Any], ctx: Context) -> BuiltLane:
 
 # --- helpers -----------------------------------------------------------------------
 
+def _no_session_reason(ident: identity.Identity, ctx: Context) -> str:
+    """Why a session-derived field has no value: not read, or read and unavailable.
+
+    These are different facts and are never merged: ``skipped_by_projection`` means this run
+    asked for no session-derived field, so nothing was read; it is not a lane without a
+    session, and it is not a down lane.
+    """
+    if not ctx.read_sessions:
+        return (f"{SKIPPED_BY_PROJECTION}: no session file was parsed because the requested "
+                f"projection names no session-derived field (identity.state={ident.state})")
+    return f"no validated session: {ident.state}"
+
 _ALL_FIELD_KEYS = (
     "H-1", "H-2", "H-3", "H-4", "H-5", "H-6",
     "P-1", "P-2", "P-3", "P-4", "P-5", "P-6", "P-7", "P-8", "P-9", "P-10", "P-11",
@@ -436,7 +639,7 @@ _ALL_FIELD_KEYS = (
     "M-1", "M-2", "M-3", "M-5", "M-6", "M-7",
     "G-1", "G-2", "G-3", "G-4", "D-1", "D-2", "C-1", "C-2",
     "E-1", "E-2", "S-1", "S-2", "S-3", "S-4",
-    "J-1", "J-2", "J-3", "B-1", "B-2",
+    "J-1", "J-2", "J-3", "B-1", "B-2", "L-1",
 )
 
 _PATH_DERIVED_KEYS = (
@@ -474,6 +677,10 @@ def _fill_reporter_observation(fields: dict[str, F.Field], ctx: Context,
     if cache is None:
         _add(fields, F.absent("P-11", "the cache is not enabled for this run",
                               source="behold cache (not enabled)"))
+        return
+    if not ctx.read_sessions:
+        _add(fields, F.unknown("P-11", _no_session_reason(ident, ctx),
+                               source="behold cache pi_state_current (not read)"))
         return
     if not pane_id:
         _add(fields, F.unknown("P-11", "the lane has no pane id to join on",
@@ -911,14 +1118,15 @@ def _fill_dagr_beads(fields: dict[str, F.Field], ctx: Context, ident: identity.I
 
 def _fill_state_only(fields: dict[str, F.Field], ctx: Context, ident: identity.Identity,
                      instance: str | None, cwd: str | None, pane_id: str | None,
-                     workspace_id: str | None) -> None:
-    """Fill the fields that do not need a session file (repo, rooms, crons, dagr, beads)."""
+                     workspace_id: str | None, tab_id: str | None = None) -> None:
+    """Fill the fields that do not need a session file (repo, rooms, crons, dagr, beads, role)."""
     fake_view = session.SessionView(
         path="", realpath="", version=None, header_id=None, header_cwd=cwd,
         header_ts=None, parent_session=None, entries=[], by_id={}, leaf_id=None,
         leaf_source="none", chain=[], chain_state=session.CHAIN_EMPTY,
     )
     agent = {"cwd": cwd}
+    _fill_role(fields, ctx, pane_id, workspace_id, tab_id)
     _fill_repo(fields, ctx, fake_view, agent, ctx.snapshot.workspace(workspace_id))
     pin = fleet_state.room_pin(ctx.paths.agent_dir, pane_id, ctx.policy)
     if pin.get("name"):

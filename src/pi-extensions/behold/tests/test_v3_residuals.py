@@ -283,12 +283,12 @@ class TestHonesty(unittest.TestCase):
 
     def test_field_id_count_is_unique_and_matches_the_ledger(self):
         per_lane = {k for lane in self.doc["lanes"] for k in lane["fields"]}
-        self.assertEqual(len(per_lane), 57, sorted(per_lane))
+        self.assertEqual(len(per_lane), 58, sorted(per_lane))
         ledger = os.path.join(ROOT, "FIELD-LEDGER.md")
         with open(ledger, encoding="utf-8") as fh:
             text = fh.read()
-        self.assertIn("58 unique field ids", text)
-        self.assertIn("57 per-lane", text)
+        self.assertIn("59 unique field ids", text)
+        self.assertIn("58 per-lane", text)
 
     def test_e1_does_not_promise_exact_extension_inventory(self):
         lane = lanes(self.doc)["w1A:p1"]
