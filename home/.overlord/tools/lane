@@ -47,7 +47,11 @@ Gates in `lane check` (all required for "pass")
   3. profile token   the footer shows `profile: <name>` — the only valid discriminator for the
                      missing-profile-UI defect class
   4. footer present  a status line was found at all; absent output is UNKNOWN, never "clean"
-  5. session intact  the recorded session file exists and the pil pin matches it (when a pin exists)
+  5. session pin     the pil pin agrees with agent_session (a mismatch is a hard failure)
+  6. session file    the recorded session file exists. Soft by default: a lane that has been spawned
+                     but never prompted has no JSONL yet, so absence there is UNKNOWN rather than
+                     lossy. --strict-session makes it a hard failure, which is what you want when
+                     auditing lanes that have certainly had turns, or before a --session relaunch.
 
 Exit codes: 0 pass, 1 fail, 2 usage error or refusal.
 """
@@ -371,9 +375,16 @@ def cmd_check(rec, lane, args):
          "mode token clean" if f["drift"] is False else (f"mode:{f['mode']}" if f["drift"] else "UNKNOWN"))
     gate("profile token", f["profile"] is not None,
          f"profile: {f['profile']}" if f["profile"] else "no profile token in footer")
-    gate("session intact", obj["session_exists"] and obj["pin_matches"] in (True, None),
-         ("exists" if obj["session_exists"] else "session file absent")
-         + ("" if obj["pin_matches"] is None else (", pin matches" if obj["pin_matches"] else ", pin MISMATCH")))
+    mismatch = obj["pin_matches"] is False
+    gate("session pin", not mismatch,
+         "pin matches agent_session" if obj["pin_matches"]
+         else ("pin MISMATCH — pil pin and agent_session disagree" if mismatch else "no pin recorded"))
+    strict = bool(getattr(args, "strict_session", False))
+    gate("session file", obj["session_exists"],
+         "exists" if obj["session_exists"]
+         else ("session file absent" if strict
+               else "no JSONL yet — a spawned but unprompted lane writes one on its first turn"),
+         hard=strict)
     ok = all(g["ok"] for g in gates if g["hard"])
     obj["gates"] = gates
     obj["pass"] = ok
@@ -383,7 +394,13 @@ def cmd_check(rec, lane, args):
         for g in gates:
             mark = "PASS" if g["ok"] else ("warn" if not g["hard"] else "FAIL")
             print(f"  {mark:<4} {g['gate']:<15} {g['detail']}")
-        print(f"  {'PASS' if ok else 'FAIL'} overall (soft gates do not fail the check)")
+        soft = [g for g in gates if not g["hard"] and not g["ok"]]
+        tail = ""
+        if ok and soft:
+            tail = f" (soft: {', '.join(g['gate'] for g in soft)} — reported, not failed)"
+        elif not ok:
+            tail = f" (hard: {', '.join(g['gate'] for g in gates if not g['ok'] and g['hard'])})"
+        print(f"  {'PASS' if ok else 'FAIL'} overall{tail}")
 
     if args.json:
         print(json.dumps(obj, indent=2))
@@ -433,6 +450,10 @@ def main(argv: list[str]) -> int:
         p = sub.add_parser(name, help=help_text)
         p.add_argument("lane")
         p.set_defaults(func=fn)
+
+    sub.choices["check"].add_argument(
+        "--strict-session", action="store_true",
+        help="fail when the session file is absent (default: warn, because an unprompted lane has none)")
 
     p_env = sub.add_parser("env", help="selected variables from the pi process env")
     p_env.add_argument("lane")
