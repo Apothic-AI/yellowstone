@@ -64,6 +64,10 @@ pil — start a pi lane inside herdr under a stable, derived name.
                           set the role contract explicitly and record it, so no caller
                           needs to inline "env PI_MODE=... PI_PROFILE=... PI_MODE_CONFIRM_PROJECT=1".
                           An explicit role wins over the recorded one, then is recorded.
+                          May appear anywhere among pil's own arguments, and is stripped before
+                          pi sees them: "pil --session X --role worker" and
+                          "pil --role worker --session X" are identical. A pi argument literally
+                          named --role therefore cannot be forwarded through pil.
   pil --help
 
 The name comes from the herdr tab label, slugified. An auto-generated numeric
