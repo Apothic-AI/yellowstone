@@ -701,9 +701,32 @@ class Runner:
                 # not the age of the republication.
                 "age_s": round(self.admission.age_s(self.clock()), 3),
                 "stale": self.admission.is_stale(self.clock()),
-                "ingest": self.cache_ingest,
+                "ingest": _published_ingest(self.cache_ingest),
             }
         return document
+
+
+def _published_ingest(ingest: dict[str, Any] | None, *,
+                      keep: int = render.PUBLISHED_REFUSALS) -> Any:
+    """The ingest report as the *document* publishes it.
+
+    The ingester keeps the whole refusal list, because a refusal is evidence and the
+    receipts must be able to show it. The document is a different thing: on a busy spool
+    that list is hundreds of long prose refusals (~90 KB on this machine), and it dominated
+    a `--summary` document whose whole point is to be small. So the document carries the
+    counts, the first few refusals verbatim, and an explicit `refused_omitted` — an
+    omission that says how much it omitted, never a silently shorter list.
+    """
+    if not isinstance(ingest, dict):
+        return ingest
+    refused = ingest.get("refused")
+    if not isinstance(refused, list) or len(refused) <= keep:
+        return ingest
+    published = dict(ingest)
+    published["refused"] = refused[:keep]
+    published["refused_total"] = len(refused)
+    published["refused_omitted"] = len(refused) - keep
+    return published
 
 
 def _emit(text: str) -> None:

@@ -1,6 +1,6 @@
 # FT-21 field ledger — every operator field, its state in this tranche, and its remaining gate
 
-**Ledger revision V11 · code under test `behold 0.1.0-p1p2` (tree status V5).**
+**Ledger revision V11 · code under test `behold 0.2.0-ft67` (tree status V5).**
 
 **V11 is the reporter's lifecycle correction.** It changes *when* the reporter writes,
 not the field contract:

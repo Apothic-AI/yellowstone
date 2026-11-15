@@ -104,6 +104,11 @@ SUMMARY_MEANING = {
     "L-1": "the lane's fleet role from its pil role record (PI_MODE), or absent/unknown; never inferred from the lane name",
 }
 
+#: The document publishes at most this many refusal entries from the ingester; the rest are
+#: counted in ``admission.ingest.refused_omitted``. A refusal is evidence, so the omission is
+#: stated rather than silent -- but a `--summary` document must not carry ~90 KB of prose.
+PUBLISHED_REFUSALS = 5
+
 SUMMARY_NOTE = (
     "--summary is a documented selection, not a complete roster: every field it does not "
     "name is omitted, not nulled, and no field state is altered. For completeness use no "

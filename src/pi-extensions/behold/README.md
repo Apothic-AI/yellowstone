@@ -176,7 +176,7 @@ interpreter for a fleet tool.
 ```sh
 python3.10 -m venv ~/.venvs/behold
 source ~/.venvs/behold/bin/activate
-behold --version          # -> behold 0.1.0-p1p2
+behold --version          # -> behold 0.2.0-ft67
 ```
 
 Deactivate with `deactivate`. The venv holds no packages; it only pins the interpreter.
@@ -191,7 +191,7 @@ correctly from anywhere:
 mkdir -p ~/.local/bin
 ln -s "$HOME/Code/behold/bin/behold" ~/.local/bin/behold
 hash -r
-behold --version          # -> behold 0.1.0-p1p2
+behold --version          # -> behold 0.2.0-ft67
 ```
 
 Make sure `~/.local/bin` is on your `PATH`:
@@ -368,7 +368,7 @@ The first line is `behold --help`, the second is `behold roster --help`, both ve
 | `--deny-workspace ID` | add a held workspace. Defaults are never removed |
 | `--deny-pane ID` | add a reserved pane. Defaults are never removed |
 
-`behold --version` prints `behold 0.1.0-p1p2`.
+`behold --version` prints `behold 0.2.0-ft67`. The version lives in `behold/__init__.py::__version__` and `behold/render.py::VERSION`, which must agree; `tests/test_version_truth.py` fails if a documented version string drifts from them.
 
 ### The `--summary` preset
 
@@ -884,7 +884,7 @@ see `pi-extension/README.md` for the exact status.
 
 | Key | What it holds |
 |---|---|
-| `version` | the tool version, here `0.1.0-p1p2` |
+| `version` | the tool version, here `0.2.0-ft67` |
 | `generated_at` | when this document was produced |
 | `as_of` | the clock the ages were evaluated against (`--as-of`, or now) |
 | `mode` | always `derive-on-demand-read-only` |
@@ -1058,7 +1058,7 @@ A trimmed but real lane, from the fixture fleet:
 ```json
 {
   "behold": {
-    "version": "0.1.0-p1p2",
+    "version": "0.2.0-ft67",
     "generated_at": "2026-11-12T04:03:05Z",
     "as_of": "2026-11-11T03:00:00Z",
     "mode": "derive-on-demand-read-only",
