@@ -262,6 +262,26 @@ def notify(lane: str) -> None:
         out(f"{lane}: resume notice not delivered ({(proc.stderr or proc.stdout).strip()[:120]})")
 
 
+def behold_still_sees(lane: str) -> bool | None:
+    """Second opinion before a resume: True if behold still lists the lane, None if it cannot say.
+
+    behold publishes an explicit negative (`lane-not-found`, exit 5), which is the only direction
+    worth trusting here: a lane it still lists means herdr lagged, so resuming would race. Any
+    other failure returns None so the caller proceeds on herdr rather than treating a broken
+    helper as evidence of death.
+    """
+    try:
+        proc = subprocess.run(["behold", "roster", "--summary", "--lane", lane],
+                              capture_output=True, text=True, timeout=30)
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return None
+    if proc.returncode == 0:
+        return True
+    if proc.returncode == 5:
+        return False
+    return None
+
+
 def resume(lane: str, st: dict, dry: bool) -> int:
     pane = st.get("pane") or ""
     sid = st.get("session_id") or ""
@@ -284,6 +304,19 @@ def resume(lane: str, st: dict, dry: bool) -> int:
     if not pane:
         out(f"{lane}: DOWN with no known pane — needs a human (start it once while supervision runs)")
         return 1
+
+    # Second, independent confirmation before creating a second writer. herdr can report a lane
+    # down while it is merely between states, and a wrong resume here means two processes on one
+    # session. behold reads the same topology but publishes an explicit negative: exit 5 with
+    # `lane-not-found`. Only the irreversible path pays for this; the normal pass stays on herdr.
+    confirm = behold_still_sees(lane)
+    if confirm is True:
+        out(f"{lane}: herdr reports it down but behold still lists it — NOT resuming "
+            f"(healers disagree; a second writer is worse than a late resume)")
+        return 1
+    if confirm is None:
+        out(f"{lane}: behold unavailable for confirmation; proceeding on the herdr reading")
+
     cmd = f"cd {shquote(cwd)} && pil --role {role} --session {shquote(sid)}"
     if dry:
         out(f"{lane}: would run in {pane}: {cmd}")

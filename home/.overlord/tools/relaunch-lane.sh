@@ -151,7 +151,10 @@ run_gates() {
   mode=$(tok mode "$line")
   case "$mode" in
     *'!'*) echo "GATE drift       FAIL  mode token carries a bang: mode:$mode"; ok=0 ;;
-    '')    echo "GATE drift       FAIL  no mode token in the footer"; ok=0 ;;
+    # No mode token is not drift: a lane that does not run pi-modes (or whose footer omits the
+    # segment) has no composed mode to be stale, and treating absence as failure is the mistake
+    # this fleet keeps correcting. Reported, never failed.
+    '')    echo "GATE drift       warn  no mode token in the footer (no composed mode to check)" ;;
     *)     echo "GATE drift       PASS  mode:$mode" ;;
   esac
   got=$(tok profile "$line")
