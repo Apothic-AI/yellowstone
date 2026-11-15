@@ -47,7 +47,8 @@
     "@YELLOWSTONE_REPO@/src/pi-extensions/pi-persist",
     "@YELLOWSTONE_REPO@/src/pi-extensions/pi-goal",
     "@YELLOWSTONE_REPO@/src/pi-extensions/pi-modes",
-    "@YELLOWSTONE_REPO@/src/pi-extensions/pi-fleet-hooks"
+    "@YELLOWSTONE_REPO@/src/pi-extensions/pi-fleet-hooks",
+    "npm:pi-dsml"
   ],
   "enabledModels": [
     "openrouter/xiaomi/mimo-v2.6-flash:nitro",

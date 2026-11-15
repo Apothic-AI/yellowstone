@@ -322,6 +322,53 @@ def write_result(path: Path, payload: dict) -> None:
 
 # ---------------------------------------------------------------------------- probe
 
+AGENT_SETTINGS = Path(os.environ.get("PI_AGENT_SETTINGS", Path.home() / ".pi/agent/settings.json"))
+
+
+def declared_packages() -> list[str]:
+    """Package sources the live agent settings declare, reduced to short identities.
+
+    Used only to answer "is a declared package absent from this instance". restart-fleet replaces
+    processes; it never installs or removes a package.
+    """
+    try:
+        data = json.loads(AGENT_SETTINGS.read_text())
+    except (OSError, json.JSONDecodeError):
+        return []
+    names: list[str] = []
+    for entry in data.get("packages") or []:
+        source = entry.get("source") if isinstance(entry, dict) else entry
+        if not isinstance(source, str):
+            continue
+        names.append(short_package(source))
+    return [n for n in names if n]
+
+
+def short_package(source: str) -> str:
+    return source.rsplit("/", 1)[-1] if source.startswith("/") else source.split(":", 1)[-1]
+
+
+DECLARED_PACKAGES = declared_packages()
+
+
+def missing_packages(agent_dir: str, declared: list[str]) -> list[str]:
+    """Declared packages absent from a lane frozen instance settings.
+
+    Empty when the instance cannot be read (no plan is not evidence of a missing package) and
+    empty when every declared package is present. A local package matches by directory basename,
+    an npm one by its name after the registry prefix.
+    """
+    if not agent_dir:
+        return []
+    try:
+        settings = json.loads((Path(agent_dir) / "settings.json").read_text())
+    except (OSError, json.JSONDecodeError):
+        return []
+    present = {short_package(e.get("source") if isinstance(e, dict) else e)
+               for e in (settings.get("packages") or [])}
+    return [name for name in declared if name and name not in present]
+
+
 def probe(lane: dict, bundle_mtime: float, bundle_version: str) -> dict:
     """Collect everything a restart decision needs for one lane, without acting."""
     pane = lane.get("pane_id") or ""
@@ -370,6 +417,19 @@ def probe(lane: dict, bundle_mtime: float, bundle_version: str) -> dict:
     info["started"] = started
     info["stale"] = bool(started and started < bundle_mtime)
     info["on_bundle"] = bundle_version if (started and started >= bundle_mtime) else None
+
+    # A package set is ALSO resolved at exec: an instance settings.json is frozen when the
+    # launcher materializes it, so a package installed into the agent dir afterwards reaches no
+    # running lane until its process is replaced. The bundle comparison alone therefore reports
+    # "already current" for a fleet missing the package, which is exactly what happened with
+    # pi-dsml on 2026-11-15: 34 of 37 lanes lacked it while every one ran the current bundle.
+    # The lane env is read from its own process, never from a launch.env file: the instance dir
+    # is what the running process actually uses.
+    lane_env = proc_env(lane_pid) if lane_pid else {}
+    info["missing_packages"] = missing_packages(lane_env.get("PI_CODING_AGENT_DIR", ""), DECLARED_PACKAGES)
+    if info["missing_packages"] and not info["stale"]:
+        info["stale"] = True
+        info["stale_reason"] = "package set changed: " + ", ".join(info["missing_packages"])
 
     if not session:
         info["warnings"].append("no live session reported by herdr; pil falls back to its recorded path")
@@ -621,7 +681,10 @@ def main() -> int:
                     break
         probes.append(probe(lane, bundle_mtime, bundle_version))
     stale = [p for p in probes if p.get("stale")]
-    print(f"on old bundle: {len(stale)}   already current: {len(probes) - len(stale)}")
+    bundle_stale = [p for p in probes if p.get("stale") and p.get("stale_reason") is None]
+    pkg_stale = [p for p in probes if p.get("missing_packages")]
+    print(f"stale: {len(stale)} (old bundle {len(bundle_stale)}, package drift {len(pkg_stale)})"
+          f"   already current: {len(probes) - len(stale)}")
     if not args.only and not stale and not args.include_self:
         print("nothing to restart")
         return 0

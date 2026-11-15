@@ -1,0 +1,8 @@
+{
+  "enabled": true,
+  "models": [
+    "deepseek"
+  ],
+  "hideWhileStreaming": true,
+  "debug": false
+}
