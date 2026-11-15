@@ -1,0 +1,12 @@
+; DO NOT EDIT (unless you know what you are doing)
+;
+; This subdirectory is a git "subrepo", and this file is maintained by the
+; git-subrepo command. See https://github.com/ingydotnet/git-subrepo#readme
+;
+[subrepo]
+	remote = https://github.com/Apothic-AI/behold.git
+	branch = master
+	commit = 01a91d62f0b7b89e788b1efd09d8a308d6e6a0c7
+	parent = cf675d547c246206aeef5e8e2b335ae5d0adc5e4
+	method = merge
+	cmdver = 0.4.9
