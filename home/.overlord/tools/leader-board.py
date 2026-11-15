@@ -25,6 +25,20 @@ Design notes
   token count -- so the footer's `21.5%/1.0M (auto)` is the only cheap source.
   The footer's *other* percentage, `CH99.8%`, is the cache-hit rate; reading it
   as context supports an entirely wrong diagnosis.
+* **That percentage is a forward projection, not occupancy, and it is NOT a
+  compaction signal.** `estimateProjectedContextTokens(projection, branchEntries)`
+  (pi's `dist/core/compaction/compaction.js`) re-estimates the tokens of the
+  projected message list on the current branch, reusing a cached usage figure only
+  when no `context_edit`/`compaction` entry invalidates it. It is therefore
+  recomputed as the branch changes, and an ordinary turn moves it: measured on
+  `sibyl-leader` 2026-11-15, 61.2% -> 39.0% across a single turn that only wrote a
+  continuation file, with the session JSONL byte-for-byte unchanged and zero
+  compaction events. A high projection means the *next* turns are near the window
+  (cost and latency), not that a compaction is due.
+  Use the `size` column (session JSONL bytes) plus turn count and the lane's own
+  report to decide that; the projection is displayed with a `~` to keep the two
+  apart. The `CTX-RESET` note keeps its name for watchers that match on it, but it
+  flags a projection crossing a line, not a lane that needs compacting.
 * A lane with no agent has no footer, so its context is `None`, not 0. The
   difference decides whether a lane is one tranche from losing its history or
   simply not running.
@@ -278,6 +292,14 @@ def collect() -> list[dict]:
         goal, footer, goal_elapsed, ctx = (
             pane_footer(pane_id) if agent else (None, "", None, None)
         )
+        # Session size is the durable signal that the projection is not: it only
+        # grows with real content, and it is a stat, not a parse.
+        sess = (agent or {}).get("agent_session") or {}
+        sess_path = sess.get("value") if isinstance(sess, dict) else None
+        try:
+            session_bytes = os.path.getsize(sess_path) if sess_path else None
+        except OSError:
+            session_bytes = None
         rows.append(
             {
                 "workspace": tab["workspace_id"],
@@ -290,6 +312,7 @@ def collect() -> list[dict]:
                 "goal_elapsed": goal_elapsed,
                 "footer": footer,
                 "ctx": ctx,
+                "session_bytes": session_bytes,
             }
         )
     rows.sort(key=lambda r: (r["workspace"], r["label"]))
@@ -358,6 +381,17 @@ def human(secs: int | None) -> str:
     if secs < 172800:
         return f"{secs // 3600}h"
     return f"{secs // 86400}d"
+
+
+def size_label(n: int | None) -> str:
+    """Session JSONL size. "-" for a lane with no session, which is not "0 bytes"."""
+    if n is None:
+        return "-"
+    if n >= 1024 * 1024:
+        return f"{n / (1024 * 1024):.1f}M"
+    if n >= 1024:
+        return f"{n // 1024}K"
+    return f"{n}B"
 
 
 def ctx_label(ctx: float | None) -> str:
@@ -437,9 +471,9 @@ def render(rows: list[dict], freshness_secs: int, ctx_reset: float = CTX_RESET) 
         print()
     print(
         f"{'workspace':9} {'leader':{width}} {'pane':8} {'status':9} {'goal':13} "
-        f"{'ctx':7} {'held':6} note"
+        f"{'ctx~':7} {'size':7} {'held':6} note"
     )
-    print("-" * (9 + width + 8 + 9 + 13 + 7 + 6 + 40))
+    print("-" * (9 + width + 8 + 9 + 13 + 7 + 7 + 6 + 40))
     for row in rows:
         notes = []
         if row["status"] in NEEDS_ATTENTION:
@@ -459,6 +493,7 @@ def render(rows: list[dict], freshness_secs: int, ctx_reset: float = CTX_RESET) 
             f"{row['workspace']:9} {row['label'][:width]:{width}} "
             f"{row['pane_id']:8} {row['status']:9} {(row['goal'] or '-'):13} "
             f"{ctx_label(row.get('ctx')):7} "
+            f"{size_label(row.get('session_bytes')):7} "
             f"{human(row['secs']) + ('' if row.get('secs_source') != 'goal' else '*'):6} "
             f"{' '.join(notes)}"
         )
@@ -469,7 +504,7 @@ def render(rows: list[dict], freshness_secs: int, ctx_reset: float = CTX_RESET) 
     hot = [r for r in rows if (r.get("ctx") or 0) >= ctx_threshold(r["label"], ctx_reset)]
     if hot:
         print(
-            f"\n{len(hot)} lane(s) at or above their context reset threshold: "
+            f"\n{len(hot)} lane(s) whose projected context is at or above the line: "
             + ", ".join(
                 f"{r['workspace']} ({r['label']}, {ctx_label(r.get('ctx'))}, {r['status']}"
                 + (
@@ -482,7 +517,10 @@ def render(rows: list[dict], freshness_secs: int, ctx_reset: float = CTX_RESET) 
             )
         )
         print(
-            "  Act at a stop boundary: have the lane write a continuation prompt, then /compact or /new."
+            "  ctx~ is a forward projection over the current branch, not occupancy and not a compaction\n"
+            "  signal: an ordinary turn moves it by 20+ points with the session unchanged. Compare the\n"
+            "  size column and the turn count before deciding to compact; the lane's own report is the\n"
+            "  third input. Crossing the line is a prompt to check, not an instruction to /compact."
         )
     if no_agent:
         print(
