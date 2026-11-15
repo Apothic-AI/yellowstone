@@ -827,9 +827,37 @@ suite_mirror() {
   # directory, so a plain copy would have shipped files that only run when
   # called through an interpreter, and nothing would have noticed.
   check "ships the fleet tooling" test -d "$REPO/home/.overlord/tools"
+  # A file is a *tool* when its first two bytes are a shebang: that is the only form the
+  # shell or the kernel will execute directly. A Python module without one is imported or
+  # run through an interpreter, and demanding +x from it would not make it runnable -- it
+  # would only move the failure from "not executable" to "ENOEXEC, no shebang", while the
+  # gate called it healthy. So the rule is: shebang implies executable, and that is what is
+  # checked. (The original all-files rule flagged test_mode_propagation_safety.py, a
+  # unittest module with no shebang, in both the mirror and the live fleet.)
   local nonexec
-  nonexec="$(find "$REPO/home/.overlord/tools" "$REPO/home/.overlord/bin" -maxdepth 1 -type f ! -perm -u+x | wc -l)"
-  check_eq "every mirrored tool is executable" 0 "$nonexec"
+  nonexec="$(
+    find "$REPO/home/.overlord/tools" "$REPO/home/.overlord/bin" -maxdepth 1 -type f -print0 \
+      | while IFS= read -r -d '' f; do
+          head -c 2 "$f" 2>/dev/null | grep -q '#!' || continue
+          [ -x "$f" ] || printf '%s\n' "$f"
+        done | wc -l
+  )"
+  check_eq "every mirrored shebang tool is executable" 0 "$nonexec"
+  # Positive control: the rule must still catch a shebang tool that lost its bit, or the
+  # filter above would be indistinguishable from "check nothing".
+  local probe_dir probe_missing
+  probe_dir="$(mktemp -d)"
+  printf '#!/bin/sh\ntrue\n' > "$probe_dir/probe-tool"
+  chmod -x "$probe_dir/probe-tool"
+  probe_missing="$(
+    find "$probe_dir" -maxdepth 1 -type f -print0 \
+      | while IFS= read -r -d '' f; do
+          head -c 2 "$f" 2>/dev/null | grep -q '#!' || continue
+          [ -x "$f" ] || printf '%s\n' "$f"
+        done | wc -l
+  )"
+  rm -rf "$probe_dir"
+  check_eq "the executability rule still catches a shebang tool missing its bit" 1 "$probe_missing"
   # relaunch-lane-monorepo.sh names the pattern on purpose: it is the tool that
   # measures loose references. `unit-path-refs.sh` does the same job for systemd
   # units, so it carries the prefix it searches for in its own header (and in the
