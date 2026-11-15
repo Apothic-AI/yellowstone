@@ -422,6 +422,20 @@ So the two directions are not symmetric, and a supervision loop should use them 
 Treat absence as the signal, and treat presence as "as of the capture, herdr recognized this
 agent" — which is exactly what `H-5` says and no more.
 
+### Published size versus derived size
+
+A projection changes the *document*, not the work: `--summary` still names session-derived
+fields (`P-4`, `P-7`, `P-11`, `T-1`..`T-3`), so it parses the same session files the full
+roster does — measured here at 2.5 s versus 2.8 s for the full document, with 0.29 MB versus
+14.2 MB. The same asymmetry holds for a single lane: `--summary --lane <name>` is 419 ms and
+18 KB, because the parse is per-file and a lane has one file.
+
+So: projections buy **bytes and downstream parsing**, not wall time. Wall time is the session
+parse, and the only ways to cut it are a tail-only reader or an on-disk parse cache — neither
+is in this build. The document's ingest report is capped for the same reason: the full refusal
+list (953 entries, ~90 KB here) is kept by the cache but not republished in full; the document
+carries counts, five verbatim refusals and an explicit `refused_omitted`.
+
 ### Exit codes
 
 | Code | Meaning | Example message |
