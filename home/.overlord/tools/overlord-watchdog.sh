@@ -158,8 +158,11 @@ if [ -z "$session" ]; then
 fi
 
 say "gone — resuming $PANE into session $session"
+# pil --role leader sets and records PI_MODE/PI_PROFILE/PI_MODE_CONFIRM_PROJECT from one word.
+# The inline env prefix this used to carry was redundant (the lane own role record restores all
+# three), and it is the exact shape that once promoted a worker lane to leader.
 if ! "$HERDR" pane run "$PANE" \
-      "cd $(printf '%q' "$CWD") && PI_MODE=leader PI_PROFILE=leader PI_MODE_CONFIRM_PROJECT=1 pil --session $(printf '%q' "$session")" \
+      "cd $(printf '%q' "$CWD") && pil --role leader --session $(printf '%q' "$session")" \
       >/dev/null 2>&1; then
   say "resume command failed to send"; exit 1
 fi
