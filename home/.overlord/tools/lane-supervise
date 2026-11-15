@@ -1,52 +1,58 @@
 #!/usr/bin/env python3
-"""lane-supervise — resume lanes that should always be up, after their process disappears.
+"""lane-supervise — keep leader lanes up, without the overlord lane doing it by hand.
 
-What already exists, and why this file does not replace it
----------------------------------------------------------
-`overlord-watchdog.sh` + `overlord-watchdog.timer` (OnCalendar every minute) do exactly this for
-ONE lane, the overlord on `wE:p1`. Its design notes are the source of the invariants below, and
-they were learned the hard way:
+History, because it explains every guard here
+---------------------------------------------
+`overlord-watchdog.sh` (unit `overlord-watchdog.timer`, every minute) resumed ONE lane, the
+overlord on `wE:p1`, and its invariants were learned from the 2026-11-02 `pkill -f 'pi$'` that
+killed ~46 lanes while the operator was away:
 
   * never resume over a live lane — a resumed lane that was merely slow means two writers on one
     session, which is a second outage, not a fix;
   * resume, never start fresh — the coordination state lives in the session, so a blank session is
     an outage with a healthy pid;
-  * record the session UUID, not the path — pi-profile-switch creates a new instance dir per launch
+  * record the session UUID, not the path — pi-profile-switch makes a new instance dir per launch
     and sweeps old ones, so a recorded path can be gone by the next pass;
-  * only overwrite a recorded target with one whose file exists.
+  * never overwrite a good target with a path whose file does not exist yet.
 
-What it does not do is cover any other lane, which is why a self-improvement-leader process that
-exited on 2026-11-14 sat dead until the operator noticed and told the overlord.
+Staying-up was then a job the *overlord lane* did by reading its board, which meant a killed lane
+waited for the next round (or for the operator to notice, as happened on 2026-11-14 to
+self-improvement-leader). This tool moves that job to a timer: every LEADER lane is covered
+automatically, and a new space's leader is picked up without editing any unit.
 
-This tool keeps every one of those invariants and generalises the *registry*, not the policy:
-lanes are supervised only when explicitly added, so nothing is resurrected because a human closed
-it on purpose. Default state is empty — no lane changes behaviour until one is added.
+How a lane is discovered
+------------------------
+Roles, not live state: `~/.local/state/pil/roles/<lane>.env` is written by `pil` at launch and
+carries `PI_MODE=leader|worker`. A leader lane is therefore discoverable **while it is down**, which
+is the only moment supervision matters. The live read (`herdr agent get`) is used to refresh pane,
+cwd and session UUID while the lane is up; those are persisted per lane, so a resume needs no live
+information.
+
+  * every role record with `PI_MODE=leader`            -> supervised automatically
+  * `--add <lane>` (any role)                          -> supervised because you asked
+  * `--exclude <lane>`                                 -> never touched, for holds
+  * `~/.local/state/pil/supervise/<lane>.json`         -> last known pane/cwd/session, refreshed live
 
 Usage
 -----
-  lane-supervise --add <lane> [--role leader|worker] [--dry-run]
-  lane-supervise --remove <lane>
-  lane-supervise --list [--json]
-  lane-supervise [--dry-run] [--only <lane>]     one pass over the registry
+  lane-supervise                      one pass (this is what the timer runs)
+  lane-supervise --dry-run            report what would happen; never launch, never write
+  lane-supervise --list [--json]      discovered lanes, their state, and why each is included
+  lane-supervise --add <lane>         also supervise a non-leader lane
+  lane-supervise --remove <lane>      drop an --add
+  lane-supervise --exclude <lane>     never supervise this lane (holds, deliberately-down lanes)
+  lane-supervise --unexclude <lane>
+  lane-supervise --only <lane>        restrict a pass to one lane
 
-Options
--------
-  --dry-run     report what would happen; never launch, never write a marker
-  --only LANE   restrict a pass to one lane
-  --json        machine-readable output
-  --help        this text
-
-Safety
+Guards
 ------
-  * a lane with a live pi process in its pane is left alone, and its recorded session is refreshed
-  * a lane with no recorded session id is NOT started fresh; it is reported for a human
-  * a lane whose recorded session file has vanished is reported, not resumed (nothing to resume)
-  * the pass takes the same flock as the watchdog (`watchdog.lock`), so the two can never resume
-    the same lane concurrently
-  * backoff: after a failed resume the lane is not retried for 60s * 2^attempts, capped at 30 min,
-    so a bundle that cannot start does not become a restart loop
-  * the resumed lane is told it was resumed by a machine and when, because a lane that silently
-    continues cannot tell which of its own memories have a gap
+  * a lane with a live pi process in its pane is left alone and its state is refreshed
+  * a lane with no recorded session id is NOT started fresh; it is reported and retried slowly
+  * a lane with no persisted pane is reported as needing a human (it must be started once, alive)
+  * the pass takes the same flock the watchdog used, so two supervisors can never race one lane
+  * backoff: 60s, doubling, capped at 30 min — a bundle that cannot start must not become a loop
+  * the resumed lane is told it was resumed by a machine, with the timestamp, so it can reason
+    about the gap instead of silently continuing
 
 Exit codes: 0 nothing needed doing or everything resumed · 1 something failed or needs a human ·
 2 refusal before reading anything.
@@ -62,9 +68,11 @@ import sys
 import time
 
 STATE = os.path.join(os.environ.get("XDG_STATE_HOME", os.path.expanduser("~/.local/state")), "pil")
-REGISTRY = os.path.join(STATE, "supervise")
+SUPERVISE = os.path.join(STATE, "supervise")
 ROLES = os.path.join(STATE, "roles")
 LOCK = os.path.join(os.path.dirname(STATE), "overlord", "watchdog.lock")
+EXCLUDE_FILE = os.path.join(SUPERVISE, "_exclude.json")
+EXTRA_FILE = os.path.join(SUPERVISE, "_extra.json")
 BACKOFF_BASE = 60.0
 BACKOFF_CAP = 1800.0
 
@@ -95,6 +103,104 @@ def agent(lane: str) -> dict:
     return (herdr("agent", "get", lane).get("result") or {}).get("agent") or {}
 
 
+def read_json(path: str, default):
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, json.JSONDecodeError):
+        return default
+
+
+def write_json(path: str, data) -> None:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(data, fh, indent=1)
+    os.replace(tmp, path)
+
+
+def exclusions() -> set[str]:
+    data = read_json(EXCLUDE_FILE, [])
+    return set(data if isinstance(data, list) else [])
+
+
+def extras() -> set[str]:
+    data = read_json(EXTRA_FILE, [])
+    return set(data if isinstance(data, list) else [])
+
+
+def role_records() -> dict[str, str]:
+    """lane -> PI_MODE, from the role file pil writes at launch. Survives the lane being down."""
+    found: dict[str, str] = {}
+    try:
+        names = os.listdir(ROLES)
+    except OSError:
+        return found
+    for name in names:
+        if not name.endswith(".env"):
+            continue
+        lane = name[:-4]
+        try:
+            with open(os.path.join(ROLES, name), encoding="utf-8") as fh:
+                mode = ""
+                for token in fh.read().split():
+                    if token.startswith("PI_MODE="):
+                        mode = token.split("=", 1)[1]
+                        break
+        except OSError:
+            continue
+        if mode:
+            found[lane] = mode
+    return found
+
+
+def live_agents() -> set[str]:
+    data = herdr("agent", "list").get("result", {}) or {}
+    names = set()
+    for rec in data.get("agents") or []:
+        name = rec.get("name") or ""
+        if name:
+            names.add(name)
+    return names
+
+
+def lanes_with_state() -> set[str]:
+    try:
+        names = os.listdir(SUPERVISE)
+    except OSError:
+        return set()
+    return {n[:-5] for n in names if n.endswith(".json") and not n.startswith("_")}
+
+
+def discovery() -> tuple[dict[str, str], set[str]]:
+    """Return (lane -> reason, excluded) for what this pass would consider.
+
+    A lane is supervised only once it has been OBSERVED: either it is alive now with a leader
+    role record, or a previous pass persisted its pane and session. That scoping keeps retired
+    spaces out - herdr-leader, mycord-leader, palette-probe and friends still have role records
+    on disk from spaces that no longer exist, and resurrecting them is not recovery, it is
+    archaeology.
+    """
+    excluded = exclusions()
+    roles = role_records()
+    alive = live_agents()
+    lanes: dict[str, str] = {}
+    for lane, mode in roles.items():
+        if mode == "leader" and lane in alive:
+            lanes[lane] = "leader, alive"
+    for lane in lanes_with_state():
+        lanes.setdefault(lane, "observed earlier")
+    for lane in extras():
+        lanes.setdefault(lane, "added explicitly")
+    for lane in excluded:
+        lanes.pop(lane, None)
+    return lanes, excluded
+
+
+def state_path(lane: str) -> str:
+    return os.path.join(SUPERVISE, f"{lane}.json")
+
+
 def session_of(rec: dict) -> str | None:
     sess = rec.get("agent_session") or {}
     path = sess.get("value") if isinstance(sess, dict) else None
@@ -109,6 +215,8 @@ def session_id(path: str) -> str:
 
 
 def pi_pid(pane: str) -> str | None:
+    if not pane:
+        return None
     procs = ((herdr("pane", "process-info", "--pane", pane).get("result") or {})
              .get("process_info") or {}).get("foreground_processes") or []
     for proc in procs:
@@ -117,116 +225,64 @@ def pi_pid(pane: str) -> str | None:
     return None
 
 
-def role_of(lane: str) -> str:
-    path = os.path.join(ROLES, f"{lane}.env")
-    try:
-        with open(path, encoding="utf-8") as fh:
-            for token in fh.read().split():
-                if token.startswith("PI_MODE="):
-                    return token.split("=", 1)[1]
-    except OSError:
-        pass
-    return "leader"
-
-
-def marker_path(lane: str) -> str:
-    return os.path.join(REGISTRY, f"{lane}.json")
-
-
-def load_marker(lane: str) -> dict:
-    try:
-        with open(marker_path(lane), encoding="utf-8") as fh:
-            return json.load(fh)
-    except (OSError, json.JSONDecodeError):
-        return {}
-
-
-def save_marker(lane: str, data: dict) -> None:
-    os.makedirs(REGISTRY, exist_ok=True)
-    tmp = marker_path(lane) + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as fh:
-        json.dump(data, fh, indent=1)
-    os.replace(tmp, marker_path(lane))
-
-
-def all_markers() -> list[str]:
-    try:
-        return sorted(n[:-5] for n in os.listdir(REGISTRY) if n.endswith(".json"))
-    except OSError:
-        return []
-
-
-def cmd_add(lane: str, role: str | None, dry: bool) -> int:
-    rec = agent(lane)
-    if not rec:
-        die(f"no live agent named {lane} — start it once, then add it")
-    pane = rec.get("pane_id")
-    cwd = rec.get("cwd") or ""
+def refresh(lane: str, st: dict, rec: dict) -> dict:
+    """Update the persisted state from a live lane."""
     sess = session_of(rec)
-    data = {
+    st = dict(st)
+    st.update({
         "lane": lane,
-        "pane": pane,
-        "cwd": cwd,
-        "role": role or role_of(lane),
-        "session_id": session_id(sess) if sess else "",
-        "session_path": sess or "",
-        "added_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "attempts": 0,
-    }
-    if dry:
-        print(json.dumps(data, indent=1))
-        return 0
-    save_marker(lane, data)
-    print(f"supervising {lane} on {pane} role={data['role']} "
-          f"session={data['session_id'] or '<none yet>'}")
-    if not sess:
-        print(f"  note: {lane} has no session file yet; a resume target appears after its first turn")
-    return 0
+        "pane": rec.get("pane_id") or st.get("pane"),
+        "cwd": rec.get("cwd") or st.get("cwd"),
+        "status": rec.get("agent_status") or st.get("status"),
+        "refreshed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    })
+    if sess:
+        st["session_id"] = session_id(sess)
+        st["session_path"] = sess
+    return st
 
 
-def cmd_remove(lane: str) -> int:
-    try:
-        os.unlink(marker_path(lane))
-    except FileNotFoundError:
-        print(f"{lane} was not supervised")
-        return 0
-    print(f"no longer supervising {lane}")
-    return 0
+def shquote(text: str) -> str:
+    return "'" + text.replace("'", "'\\''") + "'"
 
 
-def cmd_list(as_json: bool) -> int:
-    lanes = all_markers()
-    if as_json:
-        print(json.dumps([load_marker(l) for l in lanes], indent=1))
-        return 0
-    if not lanes:
-        print("no lanes supervised (the overlord is covered by overlord-watchdog.timer regardless)")
-        return 0
-    for lane in lanes:
-        m = load_marker(lane)
-        alive = "live" if pi_pid(m.get("pane") or "") else "DOWN"
-        print(f"{lane:26} {str(m.get('pane')):9} {m.get('role'):7} {alive:5} "
-              f"session={m.get('session_id') or '<none>'} attempts={m.get('attempts', 0)}")
-    return 0
+def notify(lane: str) -> None:
+    msg = (f"[lane-supervise — automated resume, NOT from the operator] This lane was found down and "
+           f"resumed into its previous session at {time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}. "
+           f"Nothing was restarted; whatever was in flight is still in this session. Check the gap.")
+    rec = agent(lane)
+    if rec.get("agent_status") in ("working", "blocked"):
+        out(f"{lane}: back but {rec.get('agent_status')} — not interrupting with the notice")
+        return
+    proc = subprocess.run(["herdr", "agent", "prompt", lane, msg, "--wait", "--timeout", "30000"],
+                          capture_output=True, text=True)
+    if proc.returncode == 0:
+        out(f"{lane}: told the lane it was resumed")
+    else:
+        out(f"{lane}: resume notice not delivered ({(proc.stderr or proc.stdout).strip()[:120]})")
 
 
-def resume(lane: str, m: dict, dry: bool) -> int:
-    pane = m.get("pane") or ""
-    sid = m.get("session_id") or ""
-    cwd = m.get("cwd") or os.path.expanduser("~")
-    role = m.get("role") or "leader"
-    if not pane:
-        out(f"{lane}: marker has no pane — remove and re-add")
-        return 1
+def resume(lane: str, st: dict, dry: bool) -> int:
+    pane = st.get("pane") or ""
+    sid = st.get("session_id") or ""
+    cwd = st.get("cwd") or os.path.expanduser("~")
+    role = st.get("role") or "leader"
     if not sid:
-        out(f"{lane}: DOWN with no recorded session id — a human must start it once")
+        out(f"{lane}: DOWN with no recorded session id — needs a human to start it once")
+        st["needs_human"] = True
+        st["last_attempt_epoch"] = time.time()
+        st["attempts"] = int(st.get("attempts") or 0) + 1
+        if not dry:
+            write_json(state_path(lane), st)
         return 1
-    given = time.time()
-    wait = min(BACKOFF_CAP, BACKOFF_BASE * (2 ** max(0, int(m.get("attempts") or 0))))
-    tried = float(m.get("last_attempt_epoch") or 0)
-    if m.get("attempts") and given - tried < wait:
-        out(f"{lane}: DOWN, backing off another {int(wait - (given - tried))}s "
-            f"(attempt {m.get('attempts')})")
+    now = time.time()
+    wait = min(BACKOFF_CAP, BACKOFF_BASE * (2 ** max(0, int(st.get("attempts") or 0))))
+    tried = float(st.get("last_attempt_epoch") or 0)
+    if st.get("attempts") and now - tried < wait:
+        out(f"{lane}: DOWN, backing off {int(wait - (now - tried))}s (attempt {st.get('attempts')})")
+        return 1
+    if not pane:
+        out(f"{lane}: DOWN with no known pane — needs a human (start it once while supervision runs)")
         return 1
     cmd = f"cd {shquote(cwd)} && pil --role {role} --session {shquote(sid)}"
     if dry:
@@ -240,97 +296,132 @@ def resume(lane: str, m: dict, dry: bool) -> int:
         pid = pi_pid(pane)
         if pid:
             break
-    m["last_attempt_epoch"] = given
+    st["last_attempt_epoch"] = now
     if pid:
-        m["attempts"] = 0
-        sess = session_of(agent(lane))
-        if sess:
-            m["session_id"] = session_id(sess)
-            m["session_path"] = sess
-        save_marker(lane, m)
+        st["attempts"] = 0
+        st.pop("needs_human", None)
+        write_json(state_path(lane), refresh(lane, st, agent(lane)))
         out(f"{lane}: resumed, pid={pid}")
-        notify(lane, pane)
+        notify(lane)
         return 0
-    m["attempts"] = int(m.get("attempts") or 0) + 1
-    save_marker(lane, m)
-    out(f"{lane}: resume did not bring it back (attempt {m['attempts']})")
+    st["attempts"] = int(st.get("attempts") or 0) + 1
+    write_json(state_path(lane), st)
+    out(f"{lane}: resume failed (attempt {st['attempts']})")
     return 1
 
 
-def notify(lane: str, pane: str) -> None:
-    """Tell the lane it was resumed by a machine. Best effort, never blocking, never a second turn."""
-    msg = (f"[lane-supervise — automated resume, NOT from the operator] This lane was found down and "
-           f"resumed into its previous session at {time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}. "
-           f"Nothing was restarted; whatever was in flight is still in this session. Check the gap.")
-    rec = agent(lane)
-    if rec.get("agent_status") in ("working", "blocked"):
-        out(f"{lane}: resumed but is {rec.get('agent_status')} — not interrupting for the notice")
-        return
-    proc = subprocess.run(["herdr", "agent", "prompt", lane, msg, "--wait", "--timeout", "30000"],
-                          capture_output=True, text=True)
-    if proc.returncode == 0:
-        out(f"{lane}: notified of the resume")
-    else:
-        out(f"{lane}: notice not delivered ({(proc.stderr or proc.stdout).strip()[:120]})")
-
-
-def shquote(text: str) -> str:
-    return "'" + text.replace("'", "'\\''") + "'"
-
-
 def one_pass(only: str | None, dry: bool) -> int:
-    lanes = [only] if only else all_markers()
+    lanes, _ = discovery()
+    if only:
+        lanes = {only: "restricted by --only"}
     if not lanes:
+        out("nothing to supervise (no leader role records and no explicit adds)")
         return 0
     os.makedirs(os.path.dirname(LOCK), exist_ok=True)
     with open(LOCK, "a+") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
-            out("skip: another pass holds the lock (watchdog or a previous run)")
+            out("skip: another pass holds the lock")
             return 0
         rc = 0
-        for lane in lanes:
-            m = load_marker(lane)
-            if not m:
-                out(f"{lane}: no marker — skipping")
+        for lane in sorted(lanes):
+            st = read_json(state_path(lane), {}) or {}
+            pane = st.get("pane") or ""
+            pid = pi_pid(pane)
+            if pid:
+                rec = agent(lane)
+                new = refresh(lane, st, rec)
+                if new != st and not dry:
+                    write_json(state_path(lane), new)
+                elif new != st:
+                    out(f"{lane}: would refresh state (pane {new.get('pane')}, session {new.get('session_id')})")
                 continue
-            pane = m.get("pane") or ""
-            if pi_pid(pane):
-                # Live. Refresh the resume target if the session has produced a file.
-                sess = session_of(agent(lane))
-                if sess and session_id(sess) != m.get("session_id"):
-                    m["session_id"] = session_id(sess)
-                    m["session_path"] = sess
-                    m["attempts"] = 0
-                    if not dry:
-                        save_marker(lane, m)
-                    out(f"{lane}: live, resume target updated to {m['session_id']}")
+            # Not in its recorded pane. If it moved panes, herdr still knows it by name.
+            rec = agent(lane)
+            if rec:
+                new = refresh(lane, st, rec)
+                if new != st and not dry:
+                    write_json(state_path(lane), new)
                 continue
-            rc = max(rc, resume(lane, m, dry))
+            # Down with nothing to resume and no pane to put it in: it cannot come back without a
+            # human, so drop the observation instead of reporting it every minute forever.
+            if not (st.get("session_id") or st.get("pane")):
+                out(f"{lane}: dropped — not live, no pane and no session id recorded")
+                if not dry:
+                    try:
+                        os.unlink(state_path(lane))
+                    except OSError:
+                        pass
+                continue
+            rc = max(rc, resume(lane, st, dry))
         return rc
+
+
+def cmd_list(as_json: bool) -> int:
+    lanes, excluded = discovery()
+    rows = []
+    for lane, reason in sorted(lanes.items()):
+        st = read_json(state_path(lane), {}) or {}
+        pane = st.get("pane") or ""
+        alive = bool(pi_pid(pane)) or bool(agent(lane))
+        rows.append({
+            "lane": lane, "reason": reason, "pane": pane or None,
+            "alive": alive, "session_id": st.get("session_id") or None,
+            "attempts": st.get("attempts", 0), "needs_human": bool(st.get("needs_human")),
+            "cwd": st.get("cwd") or None,
+        })
+    if as_json:
+        print(json.dumps({"supervised": rows, "excluded": sorted(excluded)}, indent=1))
+        return 0
+    if not rows:
+        print("no lanes supervised")
+    for r in rows:
+        print(f"{r['lane']:28} {str(r['pane'] or '-'):9} {'live' if r['alive'] else 'DOWN':5} "
+              f"{r['reason']:22} session={r['session_id'] or '<none>'}"
+              + (" NEEDS-HUMAN" if r["needs_human"] else ""))
+    if excluded:
+        print(f"excluded (never touched): {', '.join(sorted(excluded))}")
+    return 0
+
+
+def edit_set(path: str, lane: str, add: bool) -> int:
+    data = read_json(path, [])
+    items = set(data if isinstance(data, list) else [])
+    if add:
+        items.add(lane)
+    else:
+        items.discard(lane)
+    write_json(path, sorted(items))
+    return 0
 
 
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(
         prog="lane-supervise",
-        description="Resume lanes that should always be up, after their process disappears.",
-        epilog="Opt-in by design: only lanes added with --add are supervised. The overlord lane is "
-               "already covered by overlord-watchdog.timer and is not managed here.",
+        description="Keep leader lanes up: resume any leader whose process disappeared.",
+        epilog="Discovery is by role record (~/.local/state/pil/roles/<lane>.env, PI_MODE=leader), so a "
+               "new space's leader is covered without editing any unit, and a lane is discoverable "
+               "while it is down. Holds go in --exclude.",
     )
-    ap.add_argument("--add", metavar="LANE", help="supervise this lane from now on")
-    ap.add_argument("--remove", metavar="LANE", help="stop supervising this lane")
-    ap.add_argument("--list", action="store_true", help="show the registry")
+    ap.add_argument("--add", metavar="LANE", help="also supervise this non-leader lane")
+    ap.add_argument("--remove", metavar="LANE", help="drop an --add")
+    ap.add_argument("--exclude", metavar="LANE", help="never supervise this lane")
+    ap.add_argument("--unexclude", metavar="LANE")
+    ap.add_argument("--list", action="store_true", help="show discovered lanes and their state")
     ap.add_argument("--only", metavar="LANE", help="restrict a pass to one lane")
-    ap.add_argument("--role", choices=("leader", "worker"), help="role to relaunch with (default: from the role record)")
     ap.add_argument("--dry-run", action="store_true", help="report, never launch or write")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args(argv)
 
     if args.add:
-        return cmd_add(args.add, args.role, args.dry_run)
+        return edit_set(EXTRA_FILE, args.add, True)
     if args.remove:
-        return cmd_remove(args.remove)
+        return edit_set(EXTRA_FILE, args.remove, False)
+    if args.exclude:
+        return edit_set(EXCLUDE_FILE, args.exclude, True)
+    if args.unexclude:
+        return edit_set(EXCLUDE_FILE, args.unexclude, False)
     if args.list:
         return cmd_list(args.json)
     return one_pass(args.only, args.dry_run)
