@@ -8,4 +8,4 @@ deny-before-read) and ``guard.enforce()`` (a fail-closed CPython audit hook).
 from __future__ import annotations
 
 __all__ = ["cli", "field", "guard", "identity", "lane", "procfs", "render", "session", "util", "watch"]
-__version__ = "0.1.0-p1p2"
+__version__ = "0.2.0-ft67"

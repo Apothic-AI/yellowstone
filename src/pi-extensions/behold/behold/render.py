@@ -15,7 +15,7 @@ from typing import Any, Iterable
 
 from . import field as F
 
-VERSION = "0.1.0-p1p2"
+VERSION = "0.2.0-ft67"
 
 BUDGET_TARGETS = {
     "note": "targets, not measured whole-fleet proof",
