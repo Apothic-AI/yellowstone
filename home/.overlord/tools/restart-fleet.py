@@ -665,4 +665,13 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    # Pause lane-supervise for the whole pass. Stopping a lane and starting it again is a
+    # window in which the timer would otherwise see it down and resume it, giving two
+    # processes one session. The hold carries this pid, so a crash here auto-releases.
+    import subprocess as _sp
+    _hold = ["keepalive-hold", "start", "--reason", "restart-fleet", "--owner", str(os.getpid())]
+    _sp.run(_hold, capture_output=True)
+    try:
+        sys.exit(main())
+    finally:
+        _sp.run(["keepalive-hold", "end", "--if-owner", str(os.getpid())], capture_output=True)

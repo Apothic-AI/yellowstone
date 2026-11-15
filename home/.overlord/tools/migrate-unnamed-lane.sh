@@ -22,6 +22,12 @@ case "${1:-}" in
 esac
 set -uo pipefail
 
+# Pause lane-supervise while this script is replacing panes: the timer must not resume a lane
+# in the window between this script stopping it and starting it again, or two processes race
+# one session. The hold carries this pid, so a crash here cannot pause supervision forever.
+keepalive-hold start --reason migrate-unnamed-lane >/dev/null 2>&1 || true
+trap 'keepalive-hold end --if-owner $$ >/dev/null 2>&1 || true' EXIT INT TERM
+
 here=$(cd "$(dirname "$0")" && pwd)
 pane="${1:?usage: migrate-unnamed-lane.sh <pane-id> [--skip-continuation]}"
 skip_cont="${2:-}"

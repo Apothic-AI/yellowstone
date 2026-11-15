@@ -310,7 +310,54 @@ def resume(lane: str, st: dict, dry: bool) -> int:
     return 1
 
 
+def hold_state() -> tuple[bool, str]:
+    """True when a helper asked supervision to stand down (keepalive-hold).
+
+    A helper that stops a lane to replace it must not have this timer resume it mid-operation: that
+    is two processes racing one session, which is the failure the "never resume over a live lane"
+    rule exists to prevent. The hold carries its owner pid so a crashed helper cannot pause
+    supervision forever, and both pause and auto-release are logged rather than silent.
+    """
+    path = os.path.join(SUPERVISE, "_hold")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            raw = fh.read().strip()
+    except OSError:
+        return False, "no hold"
+    if raw in ("", "0", "null", "{}"):
+        return False, "no hold"
+    try:
+        rec = json.loads(raw)
+    except json.JSONDecodeError:
+        try:
+            rec = {"since": float(raw)}
+        except ValueError:
+            return False, f"malformed hold ({raw[:40]!r}) — treating as released"
+    if not isinstance(rec, dict):
+        rec = {"since": 0.0}
+    since = float(rec.get("since") or 0)
+    age = max(0.0, time.time() - since) if since else 0.0
+    owner = rec.get("pid")
+    ttl = float(os.environ.get("KEEPALIVE_HOLD_TTL", "1800"))
+    if owner:
+        try:
+            os.kill(int(owner), 0)
+            alive = True
+        except OSError:
+            alive = False
+        if alive:
+            return True, f"held by pid {owner} for {int(age)}s ({rec.get('reason') or 'no reason given'})"
+        return False, f"owner pid {owner} is gone — hold auto-released ({rec.get('reason') or 'no reason'})"
+    if since and age > ttl:
+        return False, f"ownerless hold expired after {int(age)}s (ttl {int(ttl)}s)"
+    return True, f"ownerless hold, {int(age)}s of {int(ttl)}s ({rec.get('reason') or 'no reason given'})"
+
+
 def one_pass(only: str | None, dry: bool) -> int:
+    held, why = hold_state()
+    if held:
+        out(f"skip: supervision paused — {why}")
+        return 0
     lanes, _ = discovery()
     if only:
         lanes = {only: "restricted by --only"}

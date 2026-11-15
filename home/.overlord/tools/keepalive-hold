@@ -1,0 +1,275 @@
+#!/usr/bin/env python3
+"""keepalive-hold — pause lane supervision while a helper is deliberately restarting panes.
+
+Why this exists
+---------------
+`lane-supervise.timer` runs every minute and resumes any leader lane whose process disappeared. That
+is correct when a lane died, and wrong when a *helper* is in the middle of replacing one: the helper
+stops a lane, the timer sees it down, resumes it, and now two processes are racing for one session —
+the exact failure the supervisor's own "never resume over a live lane" rule exists to prevent.
+
+So the helpers announce their window. While a hold is set, `lane-supervise` skips its pass entirely.
+
+The file
+--------
+`~/.local/state/pil/supervise/_hold`
+
+- absent, empty, or the literal `0`  -> supervision runs normally
+- anything else                      -> supervision is paused
+
+The content is JSON: `{"since": <unix ts>, "pid": <owner>, "reason": "<what>"}`. A bare unix
+timestamp is also accepted (the operator's original shape), and is treated as an ownerless hold.
+
+Why JSON and not just a timestamp: a helper that crashes must not disable supervision forever. The
+owner pid lets the reader tell "a helper is working right now" from "a helper died holding this". An
+ownerless hold falls back to a TTL (default 30 min). Both are logged loudly when they trigger, because
+a silent pause and a silent resume are the two ways this mechanism could hurt more than it helps.
+
+Usage
+-----
+  keepalive-hold start [--reason TEXT] [--owner PID]   pause supervision
+  keepalive-hold end   [--if-owner PID] [--force]      release it
+  keepalive-hold status [--json]                       is a hold active, and why
+  keepalive-hold clear                                 release and log it as an override
+  keepalive-hold run [--reason TEXT] -- <command...>   pause, run, release (always releases)
+  keepalive-hold sweep                                 auto-release a dead or expired hold
+
+Options
+-------
+  --owner PID   who owns the hold (default: the calling process's parent, i.e. the script)
+  --if-owner    only release when the recorded owner matches this pid (nesting safety)
+  --force       release even if the owner looks alive
+  --ttl SECS    ownerless-hold lifetime (default 1800; env KEEPALIVE_HOLD_TTL)
+  --json        machine-readable output
+
+Exit codes: 0 normal · 3 supervision is paused (status only) · 2 usage/refusal.
+
+For helpers, the two-line form is enough:
+
+    keepalive-hold start --reason "restart-fleet"
+    trap 'keepalive-hold end --if-owner $$ >/dev/null 2>&1 || true' EXIT
+
+or, for anything driven by a single command:
+
+    keepalive-hold run --reason "relaunch 5 lanes" -- /path/to/script.sh
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import signal
+import subprocess
+import sys
+import time
+
+STATE = os.path.join(os.environ.get("XDG_STATE_HOME", os.path.expanduser("~/.local/state")), "pil")
+HOLD = os.path.join(STATE, "supervise", "_hold")
+LOG = os.path.join(STATE, "supervise", "_hold.log")
+TTL_DEFAULT = float(os.environ.get("KEEPALIVE_HOLD_TTL", "1800"))
+
+
+def log(msg: str) -> None:
+    line = f"{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())} {msg}"
+    try:
+        os.makedirs(os.path.dirname(LOG), exist_ok=True)
+        with open(LOG, "a", encoding="utf-8") as fh:
+            fh.write(line + "\n")
+    except OSError:
+        pass
+    print(line, file=sys.stderr)
+
+
+def read_hold() -> dict | None:
+    """Return the hold record, or None when supervision should run."""
+    try:
+        with open(HOLD, encoding="utf-8") as fh:
+            raw = fh.read().strip()
+    except OSError:
+        return None
+    if raw in ("", "0", "null", "{}"):
+        return None
+    try:
+        data = json.loads(raw)
+        if isinstance(data, dict):
+            return data
+        if isinstance(data, (int, float)):
+            return {"since": float(data)}
+    except json.JSONDecodeError:
+        try:
+            return {"since": float(raw)}
+        except ValueError:
+            return {"since": 0.0, "malformed": raw[:80]}
+    return {"since": 0.0, "malformed": raw[:80]}
+
+
+def pid_alive(pid: int | None) -> bool:
+    if not pid:
+        return False
+    try:
+        os.kill(int(pid), 0)
+        return True
+    except (OSError, ProcessLookupError, ValueError):
+        return False
+
+
+def evaluate(record: dict | None, ttl: float) -> tuple[bool, str]:
+    """(paused, reason) — the single place the pause rule lives."""
+    if record is None:
+        return False, "no hold"
+    since = float(record.get("since") or 0)
+    age = max(0.0, time.time() - since) if since else 0.0
+    owner = record.get("pid")
+    if owner and pid_alive(owner):
+        return True, f"held by pid {owner} for {int(age)}s ({record.get('reason') or 'no reason given'})"
+    if owner and not pid_alive(owner):
+        return False, (f"owner pid {owner} is gone — hold auto-released after {int(age)}s "
+                       f"({record.get('reason') or 'no reason given'})")
+    if record.get("malformed"):
+        return False, f"malformed hold ({record['malformed']!r}) — treating as released"
+    if since and age > ttl:
+        return False, f"ownerless hold expired after {int(age)}s (ttl {int(ttl)}s)"
+    return True, f"ownerless hold, {int(age)}s of {int(ttl)}s ({record.get('reason') or 'no reason given'})"
+
+
+def write_hold(data: dict | None, zero: bool = False) -> None:
+    os.makedirs(os.path.dirname(HOLD), exist_ok=True)
+    tmp = HOLD + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        fh.write("0\n" if zero else json.dumps(data) + "\n")
+    os.replace(tmp, HOLD)
+
+
+def cmd_start(args) -> int:
+    owner = args.owner if args.owner is not None else os.getppid()
+    record = {"since": time.time(), "pid": int(owner), "reason": args.reason or ""}
+    write_hold(record)
+    log(f"hold started: pid {owner}, reason {args.reason or '(none)'}")
+    if args.json:
+        print(json.dumps(record))
+    else:
+        print(f"supervision paused (owner pid {owner})")
+    return 0
+
+
+def cmd_end(args) -> int:
+    record = read_hold()
+    if record is None:
+        if args.json:
+            print(json.dumps({"held": False, "changed": False}))
+        else:
+            print("no hold to release")
+        return 0
+    if args.if_owner is not None and record.get("pid") not in (None, args.if_owner) and not args.force:
+        log(f"hold NOT released: owner is {record.get('pid')}, caller is {args.if_owner}")
+        return 0
+    write_hold(None, zero=True)
+    log(f"hold released: pid {record.get('pid')}, reason {record.get('reason') or '(none)'}")
+    if args.json:
+        print(json.dumps({"held": False, "changed": True}))
+    else:
+        print("supervision resumed")
+    return 0
+
+
+def cmd_status(args) -> int:
+    record = read_hold()
+    paused, why = evaluate(record, args.ttl)
+    if args.json:
+        print(json.dumps({"paused": paused, "reason": why, "hold": record}, indent=1))
+    else:
+        print(f"{'PAUSED' if paused else 'running'}: {why}")
+    return 3 if paused else 0
+
+
+def cmd_clear(args) -> int:
+    record = read_hold()
+    if record is None:
+        print("no hold to clear")
+        return 0
+    write_hold(None, zero=True)
+    log(f"hold CLEARED BY OVERRIDE: pid {record.get('pid')}, reason {record.get('reason') or '(none)'}")
+    print("hold cleared (logged as an override)")
+    return 0
+
+
+def cmd_sweep(args) -> int:
+    record = read_hold()
+    paused, why = evaluate(record, args.ttl)
+    if record is not None and not paused:
+        write_hold(None, zero=True)
+        log(f"hold swept: {why}")
+        print(f"released: {why}")
+        return 0
+    print(f"nothing to sweep: {why}")
+    return 0
+
+
+def cmd_run(args) -> int:
+    if not args.command:
+        print("keepalive-hold: run needs a command after --", file=sys.stderr)
+        return 2
+    record = {"since": time.time(), "pid": os.getpid(), "reason": args.reason or " ".join(args.command[:3])}
+    write_hold(record)
+    log(f"hold started for command: {record['reason']}")
+
+    def release(*_):
+        write_hold(None, zero=True)
+        log(f"hold released after command: {record['reason']}")
+        raise SystemExit(130)
+
+    signal.signal(signal.SIGINT, release)
+    signal.signal(signal.SIGTERM, release)
+    try:
+        return subprocess.run(args.command).returncode
+    finally:
+        write_hold(None, zero=True)
+        log(f"hold released after command: {record['reason']}")
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(
+        prog="keepalive-hold",
+        description="Pause lane supervision while a helper is deliberately restarting panes.",
+        epilog="lane-supervise skips its pass while this hold is set. A crashed helper cannot pause "
+               "supervision forever: the owner pid is checked, and an ownerless hold expires after --ttl.",
+    )
+    ap.add_argument("--ttl", type=float, default=TTL_DEFAULT, help="ownerless-hold lifetime (default 1800)")
+    ap.add_argument("--json", action="store_true")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+
+    p = sub.add_parser("start", help="pause supervision")
+    p.add_argument("--reason")
+    p.add_argument("--owner", type=int)
+    p.set_defaults(func=cmd_start)
+
+    p = sub.add_parser("end", help="release the hold")
+    p.add_argument("--if-owner", type=int)
+    p.add_argument("--force", action="store_true")
+    p.set_defaults(func=cmd_end)
+
+    p = sub.add_parser("status", help="is supervision paused, and why")
+    p.set_defaults(func=cmd_status)
+
+    p = sub.add_parser("clear", help="release the hold as a logged override")
+    p.set_defaults(func=cmd_clear)
+
+    p = sub.add_parser("sweep", help="auto-release a dead or expired hold")
+    p.set_defaults(func=cmd_sweep)
+
+    p = sub.add_parser("run", help="pause, run a command, release")
+    p.add_argument("--reason")
+    p.add_argument("command", nargs=argparse.REMAINDER)
+    p.set_defaults(func=cmd_run)
+
+    args = ap.parse_args(argv)
+    if args.cmd == "run" and args.command and args.command[0] == "--":
+        args.command = args.command[1:]
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main(sys.argv[1:]))
+    except KeyboardInterrupt:
+        raise SystemExit(130)

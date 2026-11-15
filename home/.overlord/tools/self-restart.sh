@@ -11,6 +11,12 @@ case "${1:-}" in
     ;;
 esac
 set -uo pipefail
+
+# Pause lane-supervise while this script is replacing panes: the timer must not resume a lane
+# in the window between this script stopping it and starting it again, or two processes race
+# one session. The hold carries this pid, so a crash here cannot pause supervision forever.
+keepalive-hold start --reason self-restart >/dev/null 2>&1 || true
+trap 'keepalive-hold end --if-owner $$ >/dev/null 2>&1 || true' EXIT INT TERM
 lane="${1:-overlord}"
 pane="${2:-wE:p1}"
 cwd="${3:-/home/bitnom/.overlord}"

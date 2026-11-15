@@ -46,6 +46,12 @@
 # Read-only inspection of the same facts, without relaunching anything: `tools/lane check <lane>`.
 set -uo pipefail
 
+# Pause lane-supervise while this script is replacing panes: the timer must not resume a lane
+# in the window between this script stopping it and starting it again, or two processes race
+# one session. The hold carries this pid, so a crash here cannot pause supervision forever.
+keepalive-hold start --reason relaunch-lane >/dev/null 2>&1 || true
+trap 'keepalive-hold end --if-owner $$ >/dev/null 2>&1 || true' EXIT INT TERM
+
 usage() { sed -n '3,50p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 lane=""
