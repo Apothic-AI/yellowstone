@@ -36,6 +36,10 @@ class Paths:
     state_dir: str | None = None
     beads_file: str | None = None
     models_store: str | None = None
+    #: pi's provider registry (``models.json``): the file pi resolves a context window
+    #: against. Distinct from the cached ``models-store.json``, which is provider-keyed
+    #: at its top level and carries no ``subrouter-*`` providers.
+    models_registry: str | None = None
     bg_dir: str | None = None
     repos_dir: str | None = None
     global_mode_dir: str | None = None
@@ -56,6 +60,7 @@ class Paths:
         p.state_dir = os.path.join(root, "state")
         p.beads_file = os.path.join(root, "state", "beads", "issues.json")
         p.models_store = os.path.join(root, "models-store.json")
+        p.models_registry = os.path.join(root, "models.json")
         p.bg_dir = os.path.join(root, "state", "pi-bg")
         p.repos_dir = os.path.join(root, "repos")
         p.global_mode_dir = os.path.join(root, "modes")
@@ -75,7 +80,10 @@ class Paths:
         p.agent_dir = os.path.join(home, ".pi/agent")
         p.state_dir = os.path.join(home, ".pi/agent")
         p.beads_file = None  # bd would be a subprocess; live beads is a remaining gate
-        p.models_store = None  # resolved per instance
+        # Both catalogues are real files in the agent dir. The registry is the one pi
+        # resolves against; the store is a cache that carries no subrouter-* provider.
+        p.models_store = os.path.join(home, ".pi/agent/models-store.json")
+        p.models_registry = os.path.join(home, ".pi/agent/models.json")
         p.bg_dir = os.path.join(home, ".local/state/pi-bg")
         p.repos_dir = None
         p.global_mode_dir = os.path.join(home, ".pi/modes")
@@ -95,6 +103,7 @@ class Paths:
             "state_dir": self.state_dir,
             "beads_file": self.beads_file,
             "models_store": self.models_store,
+            "models_registry": self.models_registry,
             "bg_dir": self.bg_dir,
         }
 

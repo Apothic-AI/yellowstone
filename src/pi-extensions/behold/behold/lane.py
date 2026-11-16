@@ -524,12 +524,16 @@ def build_lane(agent: dict[str, Any], ctx: Context) -> BuiltLane:
     else:
         _add(fields, F.absent("T-1", "no assistant usage on the active branch",
                               source="session messages"))
-    ctx_window, window_source = pi_state.context_max(ctx.models, phys_provider, phys_model)
+    ctx_window, window_source, window_file = pi_state.context_max(
+        ctx.models, phys_provider, phys_model)
     if ctx_window:
-        _add(fields, F.present("T-2", ctx_window, source=f"models-store contextWindow ({window_source})",
-                               observed_at=ctx.as_of_iso, method=None))
+        _add(fields, F.present(
+            "T-2", ctx_window,
+            source=f"{window_file or 'model catalogue'} contextWindow ({window_source})",
+            observed_at=ctx.as_of_iso, method=None))
     else:
-        _add(fields, F.unknown("T-2", f"no contextWindow: {window_source}", source="models-store.json"))
+        _add(fields, F.unknown("T-2", f"no contextWindow: {window_source}",
+                               source="models.json + models-store.json"))
     if context_used is not None and ctx_window:
         _add(fields, F.derived("T-3", round(100.0 * context_used / ctx_window, 2),
                                "T-1 / T-2 * 100", unit="%", source="T-1 + T-2",

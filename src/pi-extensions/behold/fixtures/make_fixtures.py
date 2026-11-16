@@ -343,6 +343,20 @@ def generate(root: str, *, lanes: int = 61) -> dict[str, Any]:
     }
     _write_json(os.path.join(root, "models-store.json"), models)
 
+    # The provider registry pi resolves against. Deliberately **disjoint** from the store:
+    # `regp/reg-only-2` exists in no store, so a roster run that resolves it proves the
+    # registry is consulted; `acme-*` stays store-only, so the store path is proven too.
+    registry = {
+        "providers": {
+            "regp": {"models": [
+                {"id": "reg-only-2", "name": "Registry Only", "api": "synthetic",
+                 "provider": "regp", "reasoning": False, "contextWindow": 512000,
+                 "maxTokens": 40000},
+            ]},
+        }
+    }
+    _write_json(os.path.join(root, "models.json"), registry)
+
     # -- agent state ---------------------------------------------------------------
     _write_json(os.path.join(paths["agent"], "rooms", "names.json"), {
         "pins": {

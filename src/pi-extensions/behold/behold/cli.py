@@ -225,7 +225,8 @@ class Runner:
         # The fleet role records are a source of their own: a lane's role is never inferred
         # from its name, so it is either read here or reported absent/unknown.
         self.roles = pil_roles.RoleAccess(self.paths.roles_dir or None, policy)
-        self.models = pi_state.model_catalog(self.paths.models_store, policy)
+        self.models = pi_state.model_catalog(
+            [self.paths.models_registry, self.paths.models_store], policy)
         recent = str(self.paths.state_dir) + "/dagr/recent" if self.paths.state_dir else None
         self.dagr = fleet_state.load_dagr_runs(recent, policy)
         self.beads = fleet_state.load_beads(self.paths.beads_file, policy)
@@ -526,6 +527,8 @@ class Runner:
             paths.append(self.paths.beads_file)
         if self.paths.models_store:
             paths.append(self.paths.models_store)
+        if self.paths.models_registry:
+            paths.append(self.paths.models_registry)
         if self.paths.state_dir:
             paths.append(os.path.join(self.paths.state_dir, "cron", "tasks.json"))
             paths.append(os.path.join(self.paths.state_dir, "dagr", "recent"))

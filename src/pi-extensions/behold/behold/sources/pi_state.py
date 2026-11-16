@@ -25,7 +25,7 @@ import hashlib
 import json
 import os
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Sequence
 
 from .. import guard
 
@@ -216,47 +216,94 @@ def global_profile_active(
 
 # --- models -----------------------------------------------------------------------
 
-def model_catalog(path: str | None, policy: guard.Policy) -> dict[tuple[str, str | None], dict[str, Any]]:
-    """``models-store.json`` -> (provider, model id) with the context denominator."""
-    catalog: dict[tuple[str, str | None], dict[str, Any]] = {}
-    if not path or not os.path.exists(path):
-        return catalog
-    try:
-        raw = guard.read_json(path, policy, "models-store")
-    except (OSError, ValueError):
-        return catalog
-    providers = raw.get("providers") if isinstance(raw, dict) else None
+def _iter_models(raw: Any):
+    """Yield ``(provider, model)`` pairs from either catalogue shape pi writes.
+
+    * ``{"providers": {"<provider>": {"models": [...]}}}`` — the provider registry
+      (``models.json``): the file pi resolves a context window against.
+    * ``{"<provider>": {"models": [...]}}`` — the cached store (``models-store.json``):
+      provider-keyed at the top level, with no ``providers`` wrapper.
+    * a bare list of models — fixtures and older stores.
+    """
+    if isinstance(raw, list):
+        for model in raw:
+            if isinstance(model, dict):
+                yield None, model
+        return
+    if not isinstance(raw, dict):
+        return
+    providers = raw.get("providers")
     if isinstance(providers, dict):
-        iterable = []
         for provider_name, entry in providers.items():
             models = entry.get("models") if isinstance(entry, dict) else None
             if isinstance(models, list):
                 for model in models:
                     if isinstance(model, dict):
-                        iterable.append((provider_name, model))
-    elif isinstance(raw, list):
-        iterable = [(None, m) for m in raw if isinstance(m, dict)]
+                        yield provider_name, model
+        return
+    if isinstance(raw.get("models"), list):
+        for entry in raw["models"]:
+            if not isinstance(entry, dict):
+                continue
+            provider = entry.get("provider")
+            for model in entry.get("models") or []:
+                if isinstance(model, dict):
+                    yield provider, model
+        return
+    for provider_name, entry in raw.items():
+        models = entry.get("models") if isinstance(entry, dict) else None
+        if isinstance(models, list):
+            for model in models:
+                if isinstance(model, dict):
+                    yield provider_name, model
+
+
+def model_catalog(
+    paths: "str | Sequence[str] | None", policy: guard.Policy
+) -> dict[tuple[str, str | None], dict[str, Any]]:
+    """Model catalogues -> (provider, model id) with the context denominator.
+
+    Reads every path given, in order, and the **first** file to declare a
+    ``(provider, model)`` pair wins: the caller passes the provider registry before the
+    cached store, because the registry is what pi itself resolves a context window
+    against. A file that is missing or unreadable contributes nothing — it is never
+    replaced by a default window, so T-2 stays unknown rather than wrong.
+
+    The catalogue was one file (``models-store.json``) and one shape
+    (``{"providers": ...}``). The live store is provider-keyed at the top level, so
+    nothing parsed and T-2 was unknown on every lane.
+    """
+    catalog: dict[tuple[str, str | None], dict[str, Any]] = {}
+    if isinstance(paths, str) or paths is None:
+        candidates = [paths] if paths else []
     else:
-        iterable = [
-            (entry.get("provider"), model)
-            for entry in (raw.get("models") or [])
-            if isinstance(entry, dict)
-            for model in (entry.get("models") or [])
-            if isinstance(model, dict)
-        ] if isinstance(raw, dict) else []
-    for provider, model in iterable:
-        model_id = model.get("id") if isinstance(model.get("id"), str) else None
-        if not model_id:
+        candidates = [str(p) for p in paths if p]
+    for path in candidates:
+        if not os.path.exists(path):
             continue
-        entry_provider = provider or (model.get("provider") if isinstance(model.get("provider"), str) else None)
-        window = model.get("contextWindow")
-        catalog[(str(entry_provider), model_id)] = {
-            "contextWindow": window if isinstance(window, (int, float)) else None,
-            "maxTokens": model.get("maxTokens") if isinstance(model.get("maxTokens"), (int, float)) else None,
-            "name": model.get("name") if isinstance(model.get("name"), str) else None,
-            "reasoning": model.get("reasoning") if isinstance(model.get("reasoning"), bool) else None,
-            "api": model.get("api") if isinstance(model.get("api"), str) else None,
-        }
+        try:
+            raw = guard.read_json(path, policy, "models")
+        except (OSError, ValueError):
+            continue
+        source = os.path.basename(path)
+        for provider, model in _iter_models(raw):
+            model_id = model.get("id") if isinstance(model.get("id"), str) else None
+            if not model_id:
+                continue
+            entry_provider = provider or (
+                model.get("provider") if isinstance(model.get("provider"), str) else None)
+            key = (str(entry_provider), model_id)
+            if key in catalog:
+                continue
+            window = model.get("contextWindow")
+            catalog[key] = {
+                "contextWindow": window if isinstance(window, (int, float)) else None,
+                "maxTokens": model.get("maxTokens") if isinstance(model.get("maxTokens"), (int, float)) else None,
+                "name": model.get("name") if isinstance(model.get("name"), str) else None,
+                "reasoning": model.get("reasoning") if isinstance(model.get("reasoning"), bool) else None,
+                "api": model.get("api") if isinstance(model.get("api"), str) else None,
+                "source": source,
+            }
     return catalog
 
 
@@ -264,14 +311,21 @@ def context_max(
     catalog: dict[tuple[str, str | None], dict[str, Any]],
     provider: str | None,
     model: str | None,
-) -> tuple[float | None, str | None]:
+) -> tuple[float | None, str | None, str | None]:
+    """``(window, label, source_file)`` for the physical model.
+
+    An absent window is ``(None, reason, None)``: never a default, and never 200k by
+    assumption. ``source_file`` names the catalogue that answered, so a caller can say
+    which file the number came from instead of naming one file for all of them.
+    """
     if not model:
-        return None, "no model"
+        return None, "no model", None
     for key in ((provider, model), (None, model)):
         entry = catalog.get(key)
         if entry and entry.get("contextWindow"):
-            return float(entry["contextWindow"]), f"{key[0] or 'unknown-provider'}/{model}"
-    return None, f"model {model!r} not in the model catalog"
+            label = f"{key[0] or 'unknown-provider'}/{model}"
+            return float(entry["contextWindow"]), label, entry.get("source")
+    return None, f"model {model!r} not in the model catalog", None
 
 
 # --- mode digest (replicated exactly from pi-modes) --------------------------------

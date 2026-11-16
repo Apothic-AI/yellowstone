@@ -435,7 +435,7 @@ that lane.
 | # | Field | Output key | Priv | State here | Source / method | Gate |
 |---|---|---|---|---|---|---|
 | T-1 | context used | `T-1` | 0 | D | last assistant `usage.totalTokens`, else `input+output+cacheRead+cacheWrite` | exact footer equivalence (see note) |
-| T-2 | context max | `T-2` | 0 | A / U | `models-store.json` `contextWindow` for the **physical** model; unknown if absent (never assume 200k) | live catalogue check |
+| T-2 | context max | `T-2` | 0 | A / U | `models.json` provider registry **then** `models-store.json` `contextWindow` for the **physical** model, exact provider+model, first file wins; the field names the answering file; unknown if absent (never assume 200k) | FT-70: `model_catalog` reads both catalogues and both shapes (the live store is provider-keyed at its top level) |
 | T-3 | context % | `T-3` | 0 | D / U | `T-1 / T-2 * 100`; unknown if either side unknown | exact footer equivalence |
 | T-4 | session tokens | `T-4` | 0 | D | Σ assistant usage + `usage` entries + compaction/branch-summary usage **on the active branch**; `usage_kinds` shown; a branch-blind total is reported in `note` when it differs | compare with pi footer on a live lane |
 | T-5 | cache counts + rate | `T-5` | 0 | D / absent | `ΣcacheRead`, `ΣcacheWrite`, hit rate as ratio and % | compare with footer |
