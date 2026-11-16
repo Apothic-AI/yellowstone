@@ -112,7 +112,12 @@ def status_of(pane: str, timeout: float) -> str:
 
 
 def read_pane(pane: str, timeout: float) -> str:
-    rc, out = run([HERDR, "agent", "read", pane], timeout)
+    # --source visible, not the default. A bare "agent read" is ReadSource::Recent
+    # (src/cli/pane/bindings.rs:374) and a recent* read harvests scrollback by injecting
+    # SGR mouse-wheel events into the pane pty (src/server/alt_screen_read.rs), so the
+    # lane visibly scrolls and snaps back. Every consumer here -- the composer line, the
+    # before/after tails -- is on the visible screen, and reading it must not move it.
+    rc, out = run([HERDR, "agent", "read", pane, "--source", "visible"], timeout)
     return out if rc else ""
 
 
