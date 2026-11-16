@@ -198,10 +198,19 @@ def pane_footer(pane_id: str) -> tuple[str | None, str, int | None, float | None
     Goal and context are read in one pass on purpose. Both live in the footer, so
     a second `herdr agent read` per lane would double the cost of every board run
     to re-read bytes already in hand.
+
+    `--source visible` is required, not cosmetic. Reading a fullscreen pane's
+    history (`recent`/`recent-unwrapped`, and the default) makes herdr inject SGR
+    mouse-wheel events into the pane's pty to harvest scrollback
+    (src/server/alt_screen_read.rs: send_wheel, SettleInitial/Harvest/Restore).
+    The lane visibly scrolls up and snaps back — measured on an idle lane at
+    ~1s per read, which is the FT-27 "TUI scrolls up then jumps back" report.
+    The footer is on the visible screen, so this source answers the same question
+    without touching the pty.
     """
     try:
         out = subprocess.run(
-            ["herdr", "agent", "read", pane_id],
+            ["herdr", "agent", "read", pane_id, "--source", "visible"],
             capture_output=True,
             text=True,
             timeout=60,
