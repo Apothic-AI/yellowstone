@@ -107,6 +107,29 @@ def reconcile(pane: str) -> tuple[int, dict | None, str]:
     return out.returncode, row, raw
 
 
+RELAUNCH_REMEDY = (
+    "project re-approval is not available through reconcile-mode (it refuses by design); "
+    "the supported route is a relaunch of the lane carrying PI_MODE_CONFIRM_PROJECT=1"
+)
+
+
+def classify(code: int, row: dict | None, raw: str, verified: bool, already: bool) -> tuple[str, str]:
+    """Name the outcome instead of reporting every failure as the same 'unverified'.
+
+    Measured 2026-11-16: reconcile-mode.py returns exit 2 with a REFUSED message and no row,
+    because project re-approval is unavailable on that path at all. This tool recorded
+    phase 'unverified' with result null and the refusal nowhere in the artifact, which reads
+    as a transient race rather than a route that cannot work. A refusal is its own outcome
+    and must carry its own remedy.
+    """
+    if verified or already:
+        return ("verified" if verified else "already_current"), ""
+    if code == 2 and "REFUSED" in (raw or ""):
+        first = next((ln.strip() for ln in (raw or "").splitlines() if "REFUSED" in ln), "")
+        return "refused_project_reapproval", f"{first} — {RELAUNCH_REMEDY}"
+    return "unverified", (row or {}).get("note") or (raw or "").strip()[:400]
+
+
 def run(pane: str, timeout: float, result_path: Path) -> int:
     started = time.monotonic()
     write_result(result_path, {"pane": pane, "phase": WAITING_TEXT, "at": now(), "result": None})
@@ -144,12 +167,13 @@ def run(pane: str, timeout: float, result_path: Path) -> int:
     verified = bool(row and row.get("verified"))
     # A lane that already recorded the expected digest needs nothing; that is success too.
     already = bool(row and row.get("note") == "already recorded the expected digest")
+    phase, note = classify(code, row, raw, verified, already)
     payload = {
         "pane": pane,
-        "phase": "verified" if (verified or already) else "unverified",
+        "phase": phase,
         "at": now(),
         "waited_seconds": round(time.monotonic() - started, 1),
-        "result": (row or {}).get("note") or (row or {}).get("before"),
+        "result": note or (row or {}).get("note") or (row or {}).get("before"),
         "verified": verified,
         "already_current": already,
         "reconcile": row,
