@@ -247,8 +247,9 @@ def shquote(text: str) -> str:
 
 
 def notify(lane: str) -> None:
+    resumed_at = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
     msg = (f"[lane-supervise — automated resume, NOT from the operator] This lane was found down and "
-           f"resumed into its previous session at {time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}. "
+           f"resumed into its previous session at {resumed_at}. "
            f"Nothing was restarted; whatever was in flight is still in this session. Check the gap.")
     rec = agent(lane)
     if rec.get("agent_status") in ("working", "blocked"):
@@ -256,10 +257,65 @@ def notify(lane: str) -> None:
         return
     proc = subprocess.run(["herdr", "agent", "prompt", lane, msg, "--wait", "--timeout", "30000"],
                           capture_output=True, text=True)
-    if proc.returncode == 0:
-        out(f"{lane}: told the lane it was resumed")
-    else:
+    if proc.returncode != 0:
         out(f"{lane}: resume notice not delivered ({(proc.stderr or proc.stdout).strip()[:120]})")
+        return
+    # A prompt typed while pi is still attaching can leave the text sitting in the composer with
+    # the Enter swallowed: herdr submits, but a pty that is not reading yet drops the keystroke.
+    # That happened on 2026-11-16 — the operator found the notice unsubmitted hours later, and the
+    # lane never knew it had been resumed. Trusting the exit status is not evidence of submission;
+    # the composer is the artifact Enter acts on, so check THAT.
+    marker = resumed_at
+    if notice_recorded(lane, marker):
+        out(f"{lane}: told the lane it was resumed")
+        return
+    # Not in the session: the text may still be sitting in the composer with the Enter swallowed.
+    herdr("agent", "send-keys", lane, "enter")
+    if notice_recorded(lane, marker):
+        out(f"{lane}: told the lane it was resumed (submitted on retry)")
+        return
+    out(f"{lane}: resume notice typed but not recorded after a retry — needs a human look")
+
+
+def notice_recorded(lane: str, marker: str, wait: float = 8.0) -> bool:
+    """True when the lane's session records a *user message* containing `marker`.
+
+    Screen-reading cannot answer this: the notice text also appears in the transcript once sent,
+    and transcript rows use the same box border as the composer, so a border test both
+    false-positives and false-negatives. Grepping the raw tail does not work either — the lane's
+    own tool output echoes the marker (measured: a marker that never existed matched because this
+    very function's argument was in the file). So parse the tail as JSONL and accept only
+    `role: "user"` records. `marker` carries the resume timestamp, so it is unique per notice.
+    """
+    rec = agent(lane)
+    path = ((rec.get("agent_session") or {}).get("value")) or ""
+    if not path or not os.path.exists(path):
+        return False
+    deadline = time.time() + wait
+    while True:
+        try:
+            with open(path, "rb") as fh:
+                fh.seek(max(0, os.path.getsize(path) - 600_000))
+                tail = fh.read().decode("utf-8", "ignore")
+        except OSError:
+            return False
+        for line in tail.splitlines():
+            if marker not in line:
+                continue
+            try:
+                rec_json = json.loads(line)
+            except Exception:
+                continue
+            msg = rec_json.get("message") or {}
+            if msg.get("role") != "user":
+                continue
+            content = msg.get("content")
+            text = content if isinstance(content, str) else json.dumps(content)
+            if marker in text:
+                return True
+        if time.time() >= deadline:
+            return False
+        time.sleep(1.0)
 
 
 def behold_still_sees(lane: str) -> bool | None:

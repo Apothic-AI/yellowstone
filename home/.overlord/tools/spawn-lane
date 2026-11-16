@@ -153,12 +153,12 @@ def main(argv: list[str]) -> int:
         pil_args += ["--session", args.session]
     launch = " ".join(f"'{a}'" if " " in a else a for a in pil_args)
 
-    tab_cmd = ["herdr", "tab", "create", "--workspace", args.workspace, "--label", args.label]
+    tab_cmd = ["tab", "create", "--workspace", args.workspace, "--label", args.label]
     if args.cwd:
         tab_cmd += ["--cwd", args.cwd]
 
     summary = {"lane": lane, "label": args.label, "workspace": args.workspace, "role": args.role,
-               "session": args.session, "tab_create": tab_cmd, "launch": launch,
+               "session": args.session, "tab_create": ["herdr", *tab_cmd], "launch": launch,
                "pane": None, "tab": None, "status": None, "prompted": False, "ok": False}
 
     if args.dry_run:
@@ -166,7 +166,7 @@ def main(argv: list[str]) -> int:
             print(json.dumps(summary, indent=2))
         else:
             print("dry-run: would run")
-            print("  " + " ".join(tab_cmd))
+            print("  herdr " + " ".join(tab_cmd))
             print(f"  herdr pane run <pane> \"{launch}\"")
             if args.prompt_file or args.prompt_text:
                 src = args.prompt_file or "<inline text>"
