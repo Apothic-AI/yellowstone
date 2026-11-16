@@ -132,6 +132,35 @@ def evaluate(record: dict | None, ttl: float) -> tuple[bool, str]:
     return True, f"ownerless hold, {int(age)}s of {int(ttl)}s ({record.get('reason') or 'no reason given'})"
 
 
+def owner_cmdline(pid: int | None) -> str:
+    if not pid:
+        return ""
+    try:
+        with open(f"/proc/{int(pid)}/cmdline", "rb") as fh:
+            return fh.read().replace(b"\x00", b" ").decode("utf8", "ignore").strip()
+    except OSError:
+        return ""
+
+
+def transient_owner_warning(owner: int) -> str | None:
+    """Refuse to be quiet when the hold's owner is the wrapper that is about to exit.
+
+    Measured 2026-11-16: a hold taken from inside a tool call recorded the wrapper shell as owner.
+    The shell exited when the call returned, the hold auto-released 318s later, and a relaunch
+    believed to be in flight never ran -- the lane was never stopped. A hold whose owner dies was
+    never a hold.
+
+    The test here is exact, not heuristic: if the owner's own command line is the keepalive-hold
+    call we are executing, the owner IS the transient wrapper.
+    """
+    cmd = owner_cmdline(owner)
+    if "keepalive-hold" in cmd:
+        return (f"owner pid {owner} is the wrapper that ran this very command and exits when it "
+                f"returns ({cmd[:70]!r}). Take the hold from a process that outlives the work -- a "
+                f"script that owns the whole sequence, or 'keepalive-hold run -- <command>'.")
+    return None
+
+
 def write_hold(data: dict | None, zero: bool = False) -> None:
     os.makedirs(os.path.dirname(HOLD), exist_ok=True)
     tmp = HOLD + ".tmp"
@@ -145,11 +174,18 @@ def cmd_start(args) -> int:
     record = {"since": time.time(), "pid": int(owner), "reason": args.reason or "",
               "lane": args.lane or ""}
     write_hold(record)
-    log(f"hold started: pid {owner}, reason {args.reason or '(none)'}")
+    owner_cmd = owner_cmdline(int(owner))
+    warn = transient_owner_warning(int(owner))
+    if warn:
+        log(f"hold owner is transient: {warn}")
+        print(f"keepalive-hold: WARNING {warn}", file=sys.stderr)
+    log(f"hold started: pid {owner}, reason {args.reason or '(none)'}, cmd={owner_cmd[:60]!r}")
     if args.json:
-        print(json.dumps(record))
+        print(json.dumps({**record, "owner_cmd": owner_cmd, "warning": warn}))
     else:
-        print(f"supervision paused (owner pid {owner})")
+        print(f"supervision paused (owner pid {owner}); verify with: keepalive-hold status")
+        if owner_cmd:
+            print(f"  owner command: {owner_cmd[:90]}")
     return 0
 
 
@@ -184,8 +220,11 @@ def cmd_set_lane(args) -> int:
     if record is None:
         return cmd_start(argparse.Namespace(owner=None, reason=args.reason or "set-lane", lane=args.lane,
                                            json=args.json))
-    if record.get("pid") not in (None, args.if_owner) and not args.force:
-        log(f"set-lane refused: hold owner is {record.get('pid')}, caller is {args.if_owner}")
+    # args.if_owner is None by default, meaning "no ownership check": called from a tool call the
+    # caller's ppid is a transient wrapper, so a default check silently refused and the hold stayed
+    # blanket -- pausing supervision for every lane instead of the one being worked on.
+    if args.if_owner is not None and record.get("pid") not in (None, args.if_owner) and not args.force:
+        log(f"set-lane refused: hold owner is {record.get('pid')}, caller asked for {args.if_owner}")
         return 0
     record["lane"] = args.lane or ""
     record["lane_since"] = time.time()
@@ -201,7 +240,7 @@ def cmd_clear_lane(args) -> int:
     record = read_hold()
     if record is None:
         return 0
-    if record.get("pid") not in (None, args.if_owner) and not args.force:
+    if args.if_owner is not None and record.get("pid") not in (None, args.if_owner) and not args.force:
         return 0
     record["lane"] = ""
     record.pop("lane_since", None)
@@ -288,14 +327,17 @@ def main(argv: list[str]) -> int:
 
     p = sub.add_parser("set-lane", help="name the lane currently being worked on")
     p.add_argument("lane")
-    p.add_argument("--if-owner", type=int, default=os.getppid())
+    # No default ownership check: called from a tool call, os.getppid() is the transient wrapper,
+    # so the check silently failed and the hold stayed blanket -- which pauses supervision for
+    # EVERY lane instead of the one being worked on. Pass --if-owner explicitly for nesting safety.
+    p.add_argument("--if-owner", type=int, default=None)
     p.add_argument("--force", action="store_true")
     p.add_argument("--reason")
     p.add_argument("--quiet", action="store_true")
     p.set_defaults(func=cmd_set_lane)
 
     p = sub.add_parser("clear-lane", help="keep the hold but stop naming a lane (blanket pause)")
-    p.add_argument("--if-owner", type=int, default=os.getppid())
+    p.add_argument("--if-owner", type=int, default=None)
     p.add_argument("--force", action="store_true")
     p.add_argument("--quiet", action="store_true")
     p.set_defaults(func=cmd_clear_lane)
