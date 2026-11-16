@@ -166,7 +166,22 @@ def run(pane: str, timeout: float, result_path: Path) -> int:
     return 1
 
 
-def show_status(pane: str, result_path: Path) -> int:
+def show_status(pane: str | None, result_path: Path | None) -> int:
+    """Print the durable result. With no --pane, list every recorded deferral.
+
+    --pane used to be required=True, which made --status unusable on its own: "--status"
+    exited with "the following arguments are required: --pane", so there was no way to
+    read a deferral's outcome without already knowing which pane to ask about.
+    """
+    if result_path is None:
+        rows = sorted(RESULT_DIR.glob("*.json")) if RESULT_DIR.exists() else []
+        if not rows:
+            print(f"no deferrals recorded under {RESULT_DIR}")
+            return 1
+        for row in rows:
+            print(f"--- {row.stem.replace('-', ':', 1)}  ({row})")
+            print(row.read_text().strip())
+        return 0
     if not result_path.exists():
         print(f"no result recorded for {pane} at {result_path}")
         return 1
@@ -176,15 +191,18 @@ def show_status(pane: str, result_path: Path) -> int:
 
 def main() -> int:
     p = argparse.ArgumentParser()
-    p.add_argument("--pane", required=True)
+    p.add_argument("--pane", help="pane id; required unless --status is given")
     p.add_argument("--timeout", type=float, default=24 * 3600.0)
     p.add_argument("--result")
     p.add_argument("--status", action="store_true", help="print the durable result and exit")
     p.add_argument("--detach", action="store_true", help="internal: run detached")
     args = p.parse_args()
 
+    if not args.status and not args.pane:
+        p.error("--pane is required unless --status is given")
+
     result_path = (Path(args.result) if args.result
-                   else RESULT_DIR / f"{args.pane.replace(':', '-')}.json")
+                   else (RESULT_DIR / f"{args.pane.replace(':', '-')}.json" if args.pane else None))
 
     if args.status:
         return show_status(args.pane, result_path)
