@@ -6,7 +6,7 @@
 [subrepo]
 	remote = https://github.com/Apothic-AI/bizzy
 	branch = main
-	commit = 3e4c81ac9ef8805625a9c672db51f9111a82bc54
-	parent = 5ae62d9cab39a538328c671ee0b437f4d07702f1
+	commit = a63f2db5ff016abbb322f1bb53e7cfd698daa9fe
+	parent = 2fd118bfcf9103f6d00000151026e5bbe0e7f3ab
 	method = merge
 	cmdver = 0.4.9
