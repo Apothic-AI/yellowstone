@@ -39,7 +39,7 @@ PY
   alive=$(ps -eo args 2>/dev/null | grep -F 'drive-sealed.sh a1-b1' | grep -vE 'grep|ps -eo' | wc -l)
   if [ "$alive" -eq 0 ]; then
     echo "FAILED a1-b1: driver gone, no graded artifact at $(date '+%H:%M:%S')"
-    herdr pane read w25:p1 --source recent-unwrapped --lines 20 2>&1 | grep -E 'RESULT|rc=|Error|error|FAILED' | tail -6
+    /home/bitnom/.overlord/tools/pane-read w25:p1 --reason "the driver died; its last output lines are the only record of why" --history --lines 20 2>&1 | grep -E 'RESULT|rc=|Error|error|FAILED' | tail -6
     exit 1
   fi
 

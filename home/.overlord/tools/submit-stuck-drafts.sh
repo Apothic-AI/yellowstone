@@ -51,7 +51,9 @@ for target in "${targets[@]}"; do
   case "$st" in
     working|blocked) say "SKIP $target (status=$st — not ours to interrupt)"; left+=("$target($st)"); continue ;;
   esac
-  visible=$(herdr pane read "$target" --source visible --lines 60 2>/dev/null)
+  # Whether a draft still sits in the composer is only visible on screen (FT-71); --lines 36 is
+  # the viewport, so the composer at the bottom is included without harvesting.
+  visible=$(/home/bitnom/.overlord/tools/pane-read "$target" --reason "a draft in the composer is only visible on screen" --lines 36 2>/dev/null)
   case "$visible" in
     *"$MARKER"*) ;;
     *) say "SKIP $target (no reorientation draft in the composer)"; none+=("$target") ; continue ;;

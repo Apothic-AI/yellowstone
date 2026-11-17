@@ -149,8 +149,7 @@ def session_of(pane: str, allow_fallback: bool = False) -> str:
     return reported
 
 
-def read_pane(pane: str) -> str:
-    return herdr("pane", "read", pane, "--source", "recent-unwrapped", "--lines", "60")
+# read_pane() was removed here (FT-71): it harvested 60 lines of scrollback and nothing called it.
 
 
 def type_keys(text: str) -> list[str]:

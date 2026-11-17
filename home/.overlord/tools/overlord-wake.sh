@@ -57,7 +57,9 @@ case "$status" in
 esac
 
 # Composer guard: any non-blank line inside the input box is someone's draft.
-visible=$("$HERDR" pane read "$PANE" --source visible --lines 14 2>/dev/null || true)
+# Composer guard: a non-blank input box is screen-only (FT-71), so this is a deliberate screen
+# read through pane-read, which pins the non-harvesting source.
+visible=$(/home/bitnom/.overlord/tools/pane-read "$PANE" --reason "composer guard: a non-blank input box is screen-only" --lines 14 2>/dev/null || true)
 if printf '%s\n' "$visible" | sed -n '/╭/,/╰/p' | grep -qE '^│[^│]*[^ │][^│]*│$'; then
   skip "composer holds a draft"
 fi

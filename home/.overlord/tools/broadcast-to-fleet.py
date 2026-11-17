@@ -117,7 +117,8 @@ def read_pane(pane: str, timeout: float) -> str:
     # SGR mouse-wheel events into the pane pty (src/server/alt_screen_read.rs), so the
     # lane visibly scrolls and snaps back. Every consumer here -- the composer line, the
     # before/after tails -- is on the visible screen, and reading it must not move it.
-    rc, out = run([HERDR, "agent", "read", pane, "--source", "visible"], timeout)
+    rc, out = run(["/home/bitnom/.overlord/tools/pane-read", pane, "--reason",
+                    "the delivery confirmation is a line the TUI draws", "--lines", "20"], timeout)
     return out if rc else ""
 
 

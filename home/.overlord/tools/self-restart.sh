@@ -38,7 +38,12 @@ except Exception: print("")' 2>/dev/null)
   case "$s" in idle|done) say "OK $lane $s after relaunch"; break ;; esac
   sleep 1
 done
-if herdr pane read "$pane" --source recent-unwrapped --lines 30 2>/dev/null | grep -qiE "composition is invalid|not confirmed|overlay mode was unavailable"; then
-  say "FAIL composition rejected at launch — the lane has no role contract"
+# Positive check from the record: M-1 is present only if a mode activated (FT-71).
+mode_out=$(/home/bitnom/.overlord/tools/lane-fields "$lane" mode 2>/dev/null); mode_rc=$?
+if [ "$mode_rc" = 6 ]; then
+  say "note: fields withheld by policy (held lane) — not a composition failure"
+elif [ -z "$mode_out" ]; then
+  say "FAIL no active mode recorded — the lane has no role contract"
+  /home/bitnom/.overlord/tools/pane-read "$lane" --reason "a rejected composition prints one stderr line, and only the screen holds it" --history --lines 30 2>/dev/null | tail -5 | sed 's/^/    /'
 fi
 say "done"

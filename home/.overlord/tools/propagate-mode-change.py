@@ -126,8 +126,19 @@ def cwd_of(pane: str) -> str:
 
 
 def read_pane(pane: str) -> str:
-    ok, out = run(["pane", "read", pane, "--source", "recent-unwrapped", "--lines", "60"])
-    return out if ok else ""
+    """The mode token's `!` diagnostics suffix is drawn, not recorded: M-1 carries the active mode
+    but not its diagnostics flag (FT-71). So this stays a deliberate screen read, routed through
+    pane-read, which demands the reason and makes a history read explicit instead of accidental."""
+    try:
+        out = subprocess.run(
+            [str(Path.home() / ".overlord/tools/pane-read"), pane,
+             "--reason", "the mode diagnostics '!' suffix is only on screen",
+             "--history", "--lines", "40"],
+            capture_output=True, text=True, timeout=60,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    return out.stdout if out.returncode == 0 else ""
 
 
 # ---------------------------------------------------------------- fingerprint reading

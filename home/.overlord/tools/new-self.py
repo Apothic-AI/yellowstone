@@ -42,6 +42,7 @@ STATE = pathlib.Path(
 ) / "overlord"
 LOG = STATE / "new-self.log"
 CONFIRM = "New session started"  # pi's handleClearCommand success line
+PANEREAD = "/home/bitnom/.overlord/tools/pane-read"  # the only sanctioned screen read (FT-71)
 DEFAULT_IDLE_TIMEOUT = 3600.0
 POLL = 1.0
 # Confirming a reset cannot use the screen: `/new` CLEARS the chat container, so the
@@ -93,8 +94,12 @@ DRAFT_LINE = re.compile(r"^│[^│]*[^ │][^│]*│$")
 
 def composer_holds_draft(pane: str) -> bool:
     """True when someone is typing in the pane's composer (operator or agent)."""
+    # The composer's contents exist only on screen (FT-71), so this stays a screen read -- routed
+    # through pane-read, which pins the non-harvesting source and demands the reason.
     rc, out = btf.run(
-        [btf.HERDR, "pane", "read", pane, "--source", "visible", "--lines", "14"],
+        [PANEREAD, pane, "--reason",
+         "the composer's content is only on screen; this guard prevents wiping a draft",
+         "--lines", "14"],
         10.0,
     )
     if not rc:
@@ -116,8 +121,13 @@ def composer_holds_draft(pane: str) -> bool:
 
 def marker_count(pane: str) -> int:
     """How many confirmation lines the pane's scrollback holds; -1 if unreadable."""
+    # Counting /clear confirmations is a scrollback question: the session record keeps the current
+    # session, not a tally of past ones. Deliberate history read, stated (FT-71). A truer
+    # backchannel would be counting session files created under this lane's cwd since T0.
     rc, out = btf.run(
-        [btf.HERDR, "pane", "read", pane, "--source", "recent-unwrapped", "--lines", "200"],
+        [PANEREAD, pane, "--reason",
+         "counting this lane's /clear confirmations; only the scrollback holds them",
+         "--history", "--lines", "200"],
         10.0,
     )
     return out.count(CONFIRM) if rc else -1

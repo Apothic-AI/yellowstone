@@ -1,0 +1,106 @@
+#!/usr/bin/env python3
+"""pane-read — the only sanctioned way for a script to look at a lane's screen.
+
+A pane read is not a read-only operation. Requesting more lines than the pane's viewport forces
+the multiplexer to harvest scrollback, and it harvests by injecting SGR mouse-wheel events into
+the pane's pty (src/server/alt_screen_read.rs: send_wheel, SettleInitial -> Harvest -> Restore).
+The lane visibly scrolls up and snaps back. Seven scripts were safe only because someone happened
+to leave --lines at 20 or 30, and nothing stopped the next edit from raising it to 60.
+
+This wrapper makes that a deliberate act:
+
+    pane-read <lane-or-pane> --reason "why a screen read is the only way" [--lines N] [--history]
+
+  * The default source is `visible`, the one that does not harvest.
+  * --lines defaults to 20 and is refused above the viewport (36 rows) unless --history is given.
+  * --history is refused without --reason, and it selects `recent-unwrapped` explicitly.
+  * --reason is required on every call: the reason lives next to the call, not in a commit message.
+
+Exit codes: 0 read; 2 usage/refused; 3 the read itself failed.
+
+Use lane-fields instead whenever the question is "what state is this lane in" — mode, profile,
+rooms, status, context — because that is recorded, and reading it cannot perturb the lane.
+"""
+import re
+import subprocess
+import sys
+
+VIEWPORT = 36  # rows; the probe gate in the multiplexer is "more lines than the viewport"
+PANE = re.compile(r"^w[0-9A-Za-z]+:p[0-9A-Za-z]+$")
+
+
+def usage(msg):
+    print(f"pane-read: {msg}", file=sys.stderr)
+    print(
+        "usage: pane-read <lane-or-pane> --reason TEXT [--lines N] [--history]\n"
+        f"       --lines defaults to 20 and is capped at {VIEWPORT} unless --history is given",
+        file=sys.stderr,
+    )
+    return 2
+
+
+def main(argv):
+    if len(argv) < 2:
+        return usage("missing target")
+    target = argv[1]
+    reason = None
+    lines = 20
+    history = False
+    args = argv[2:]
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == "--reason":
+            i += 1
+            if i >= len(args):
+                return usage("--reason needs a value")
+            reason = args[i]
+        elif a.startswith("--reason="):
+            reason = a.split("=", 1)[1]
+        elif a == "--lines":
+            i += 1
+            if i >= len(args):
+                return usage("--lines needs a value")
+            try:
+                lines = int(args[i])
+            except ValueError:
+                return usage(f"--lines must be an integer, got {args[i]!r}")
+        elif a == "--history":
+            history = True
+        else:
+            return usage(f"unknown argument {a!r}")
+        i += 1
+
+    if not reason or not reason.strip():
+        return usage("--reason is required: say why a screen read is the only answer here")
+
+    if lines <= 0:
+        return usage("--lines must be positive")
+
+    if lines > VIEWPORT and not history:
+        print(
+            f"pane-read: refusing --lines {lines} without --history.\n"
+            f"  {lines} exceeds the {VIEWPORT}-row viewport, so this read would harvest scrollback and\n"
+            "  scroll the lane. Ask lane-fields for recorded state, or pass --history with a reason\n"
+            "  that says what only the scrollback can show.",
+            file=sys.stderr,
+        )
+        return 2
+
+    source = "recent-unwrapped" if history else "visible"
+    sub = "pane" if PANE.match(target) else "agent"
+    cmd = ["herdr", sub, "read", target, "--source", source, "--lines", str(lines)]
+    try:
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        print(f"pane-read: {exc}", file=sys.stderr)
+        return 3
+    sys.stdout.write(out.stdout)
+    if out.returncode != 0:
+        sys.stderr.write(out.stderr)
+        return 3
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

@@ -28,12 +28,14 @@ except Exception:
     sys.exit(1)' 2>/dev/null
 }
 
-pane_read() {
-  herdr agent read "$1" --source recent-unwrapped --lines 8 2>/dev/null
+ctx_now() {
+  # Context occupancy and the settled footer are recorded (T-3, M-1/M-3). Asking the screen
+  # meant harvesting 8 lines on every poll (FT-71).
+  /home/bitnom/.overlord/tools/lane-fields "$1" ctx 2>/dev/null
 }
 
-ctx_from() {
-  grep -oE '[0-9.]+%/1\.[0-9]+M' | tail -1 | cut -d/ -f1 | tr -d '%'
+footer_now() {
+  /home/bitnom/.overlord/tools/lane-fields "$1" footer 2>/dev/null
 }
 
 echo "watching $LANE for a stop boundary (threshold ${THRESH}%)"
@@ -46,17 +48,22 @@ while :; do
   pane=$(printf '%s' "$snapshot" | python3 -c 'import json,sys; print(json.load(sys.stdin)["pane"])')
   case "$s" in
     idle|done|blocked)
-      if [ -z "$pane" ] || ! output=$(pane_read "$pane"); then
+      if [ -z "$pane" ]; then
         echo "UNKNOWN $LANE status=$s at $(date '+%H:%M:%S') — pane evidence unavailable"
         exit 2
       fi
-      c=$(printf '%s\n' "$output" | ctx_from)
-      if printf '%s\n' "$output" | grep -Fq 'Compacting context'; then
+      c=$(ctx_now "$LANE")
+      foot=$(footer_now "$LANE")
+      # The compaction banner is a transient TUI line and is not in the record, so this one read
+      # stays a screen read; --source visible never harvests (FT-71).
+      screen=$(/home/bitnom/.overlord/tools/pane-read "$pane" \
+        --reason "the compaction banner is drawn, not recorded" --lines 12 2>/dev/null || true)
+      if printf '%s\n' "$screen" | grep -Fq 'Compacting context'; then
         echo "ACTIVE $LANE status=$s ctx=${c:-?}% at $(date '+%H:%M:%S') — compaction still running"
         exit 2
       fi
-      if ! printf '%s\n' "$output" | grep -Eq '[0-9.]+%/1\.[0-9]+M.*(profile:|mode:)'; then
-        echo "UNKNOWN $LANE status=$s ctx=${c:-?}% at $(date '+%H:%M:%S') — no recognizable settled footer"
+      if [ -z "$foot" ]; then
+        echo "UNKNOWN $LANE status=$s ctx=${c:-?}% at $(date '+%H:%M:%S') — no recorded settled footer"
         exit 2
       fi
       if [ "$s" = blocked ]; then

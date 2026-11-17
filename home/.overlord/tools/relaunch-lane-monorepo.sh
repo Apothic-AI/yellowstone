@@ -67,8 +67,9 @@ except Exception: print('')
 
 env_of() { tr '\0' '\n' < "/proc/$1/environ" 2>/dev/null; }
 
-footer_has_mode() {  # $1 pane, $2 mode
-  "$HERDR" pane read "$1" --lines 40 2>/dev/null | grep -qE "mode:${2}( |$)"
+footer_has_mode() {  # $1 lane-or-pane, $2 mode
+  # Recorded state (M-1), not a 40-line scrollback harvest (FT-71).
+  [ "$(/home/bitnom/.overlord/tools/lane-fields "$1" mode 2>/dev/null)" = "$2" ]
 }
 
 verify_instance() {
@@ -135,7 +136,7 @@ relaunch_one() {
 
   # 3. verify from the instance, not the footer
   inst="$(verify_instance "$pane")"
-  foot="$("$HERDR" pane read "$pane" --lines 3 2>/dev/null | tail -1 | sed 's/^· //' | cut -c1-100)"
+  foot="$(/home/bitnom/.overlord/tools/lane-fields "$pane" footer 2>/dev/null | cut -c1-100)"
   echo "$lane pane=$pane inst=$inst status=$(lane_status "$lane")"
   echo "    footer: $foot"
   case "$inst" in

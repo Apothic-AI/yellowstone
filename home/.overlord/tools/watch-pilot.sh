@@ -91,7 +91,7 @@ while :; do
       [ "$g" -ge "$s" ] && { report; exit 0; }
     fi
     echo "FAILED $PASS: driver gone, no CURRENT graded artifact at $(date '+%H:%M:%S')"
-    herdr pane read "$PANE" --source recent-unwrapped --lines 20 2>&1 | grep -E 'RESULT|rc=|Error|FAILED' | tail -6
+    /home/bitnom/.overlord/tools/pane-read "$PANE" --reason "the driver died; its last output lines are the only record of why" --history --lines 20 2>&1 | grep -E 'RESULT|rc=|Error|FAILED' | tail -6
     exit 1
   fi
   n=$(ls evidence/pass-"$PASS"/turn-*-ask.json 2>/dev/null | wc -l)

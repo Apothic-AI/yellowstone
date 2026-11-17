@@ -84,11 +84,10 @@ try: d=json.load(sys.stdin)["result"]["agent"]
 except Exception: sys.exit(1)
 print(d.get(sys.argv[1],"") or "")' "$1"; }
 
-# The last unwrapped line that carries a status segment. Full lines only: reading raw scrollback
-# with `tail -c 3000` matched a stale frame and made a healthy lane look drift-degraded.
+# The footer is a rendering of recorded state, so ask the record (FT-71). This used to harvest
+# 40 lines of scrollback to find one line — a probe of the lane it was inspecting.
 footer_line() {
-  herdr agent read "$1" --source recent-unwrapped --lines 40 2>/dev/null \
-    | awk '/mode:|profile:/{l=$0} END{print l}'
+  /home/bitnom/.overlord/tools/lane-fields "$1" footer 2>/dev/null
 }
 tok() { printf '%s' "$2" | sed -n "s/.*$1: *\([A-Za-z0-9_!-]*\).*/\1/p"; }
 
@@ -226,7 +225,7 @@ for _ in $(seq 1 90); do
 done
 if [ -z "${s:-}" ]; then
   echo "FAIL: $lane did not come back idle"
-  herdr pane read "$pane" --source recent-unwrapped --lines 20 2>&1 | tail -8
+  /home/bitnom/.overlord/tools/pane-read "$pane" --reason "the lane did not come back idle; its last screen lines say why" --history --lines 20 2>&1 | tail -8
   exit 1
 fi
 

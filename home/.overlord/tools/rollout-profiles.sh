@@ -49,9 +49,10 @@ except Exception: print("")' 2>/dev/null)
     idle|done) ;;
     *) say "SKIP $lane (status=${status:-absent})"; skipped+=("$lane"); continue ;;
   esac
-  # Idempotence: a lane already on a profile must not be restarted again.
-  footer=$(herdr agent read "$lane" --source recent-unwrapped --lines 40 2>&1 | grep -aoE 'profile: [a-z]+' | tail -1)
-  if [ "$footer" = "profile: leader" ]; then
+  # Idempotence: a lane already on a profile must not be restarted again. Recorded profile (M-3),
+  # not a scrollback harvest (FT-71).
+  footer=$(/home/bitnom/.overlord/tools/lane-fields "$lane" profile 2>/dev/null)
+  if [ "$footer" = "leader" ]; then
     say "SKIP $lane (already fleet)"; skipped+=("$lane"); continue
   fi
   if out=$("$here/migrate-lane.sh" "$lane" 2>&1); then

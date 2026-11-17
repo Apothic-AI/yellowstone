@@ -100,7 +100,7 @@ done
 
 footer=""
 for _ in $(seq 1 20); do
-  footer=$(herdr agent read "$lane" --source recent-unwrapped --lines 40 2>&1 | grep -aoE 'rooms: [a-z0-9_-]+( profile: [a-z]+)?' | tail -1)
+  footer=$(/home/bitnom/.overlord/tools/lane-fields "$lane" footer 2>/dev/null)  # recorded, not a 40-line harvest (FT-71)
   case "$footer" in *"profile: leader"*) break ;; esac
   sleep 1
 done

@@ -189,13 +189,8 @@ def bundle_info(bundle: Path) -> tuple[float, str] | None:
     return mtime, match.group(1) if match else "?"
 
 
-def read_footer(pane: str, lines: int = 40) -> str:
-    try:
-        out = subprocess.run([HERDR, "pane", "read", pane, "--source", "recent-unwrapped", "--lines", str(lines)],
-                             capture_output=True, text=True, timeout=30)
-    except (OSError, subprocess.TimeoutExpired):
-        return ""
-    return out.stdout
+# read_footer() was removed here (FT-71): a 40-line scrollback harvest with no caller.
+# Footer state is recorded; ask lane-fields for it.
 
 
 @contextmanager

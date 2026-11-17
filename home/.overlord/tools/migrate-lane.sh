@@ -115,17 +115,22 @@ done
 # 3. Verify from the footer — profile and rooms identity are what this was for.
 #    Retry: the footer line lands a beat after the agent reports idle, and one early
 #    read reported 'profile not leader' for dxdb-leader that was already on leader.
-# Composition check: a rejected overlay or missing confirmation leaves the lane role-less with
-# one stderr line. Catch it here rather than discovering it when a lane misbehaves.
+# Composition check: a rejected overlay or missing confirmation leaves the lane role-less.
+# Assert the positive outcome from the record — M-1 is present only if a mode activated — instead of
+# grepping the screen for three error strings (FT-71). The screen is read only to explain a failure.
 sleep 1
-if herdr pane read "$pane" --source recent-unwrapped --lines 30 2>/dev/null | grep -qiE "composition is invalid|not confirmed|overlay mode was unavailable"; then
-  say "FAIL $lane: mode composition rejected at launch — the lane has NO role contract"
-  exit 1
-fi
+mode_out=$(/home/bitnom/.overlord/tools/lane-fields "$lane" mode 2>/dev/null); mode_rc=$?
+case "$mode_rc" in
+  6) say "NOTE $lane: fields withheld by policy (held lane) — not a composition failure" ;;
+  0) : ;;
+  *) say "FAIL $lane: no active mode recorded — the lane has NO role contract"
+     /home/bitnom/.overlord/tools/pane-read "$lane" --reason "a rejected composition prints one stderr line, and only the screen holds it" --history --lines 30 2>/dev/null | tail -5 | sed 's/^/    /'
+     exit 1 ;;
+esac
 
 footer=""
 for _ in $(seq 1 20); do
-  footer=$(herdr agent read "$lane" --source recent-unwrapped --lines 40 2>&1 | grep -aoE 'rooms: [a-z0-9_-]+( profile: [a-z]+)?' | tail -1)
+  footer=$(/home/bitnom/.overlord/tools/lane-fields "$lane" footer 2>/dev/null)  # recorded, not a 40-line harvest (FT-71)
   case "$footer" in *"profile: leader"*) break ;; esac
   sleep 1
 done

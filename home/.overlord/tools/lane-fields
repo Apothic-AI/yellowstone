@@ -1,0 +1,157 @@
+#!/usr/bin/env python3
+"""lane-fields — ask a lane's recorded state instead of reading its screen.
+
+One `behold roster --json` for the whole fleet; no pane is touched, so this cannot scroll a
+lane, cannot race a repaint, and cannot mistake a stale frame for the current state.
+
+    lane-fields <lane-or-pane> mode        -> the active mode's base key        (M-1)
+    lane-fields <lane-or-pane> profile     -> the declared profile             (M-3)
+    lane-fields <lane-or-pane> rooms       -> the rooms lane name              (M-5)
+    lane-fields <lane-or-pane> status      -> idle|working|blocked|done|...    (H-5)
+    lane-fields <lane-or-pane> ctx         -> context percent, e.g. 10.7       (T-3)
+    lane-fields <lane-or-pane> ctx-used    -> context tokens used              (T-1)
+    lane-fields <lane-or-pane> ctx-max     -> context window                   (T-2)
+    lane-fields <lane-or-pane> session     -> session file path                (P-5)
+    lane-fields <lane-or-pane> identity    -> verified|divergent|unknown
+    lane-fields <lane-or-pane> footer      -> "rooms: X profile: Y mode: Z", the shape the
+                                              footer readers used to grep for
+
+Exit codes are part of the interface, because "absent" and "empty" are different answers:
+    0  the field is present; its value is on stdout
+    2  usage error
+    3  no such lane in the roster
+    4  the lane is known but this field is not present (state != present)
+    5  behold roster failed
+    6  the lane's fields are withheld by policy (a held workspace). "Held" is not "absent":
+       the record is not carrying the answer at all, and callers must not read that as "no mode",
+       "no profile", or "no role contract". Reason is named on stderr; only a screen read can
+       show the truth, and pane-read is the sanctioned way to take one.
+
+Why this exists: eleven scripts under ~/.overlord/tools read a pane to learn one of these
+values. A pane read is not read-only — a recent* source harvests scrollback by injecting
+SGR mouse-wheel events into the pty (src/server/alt_screen_read.rs: send_wheel,
+SettleInitial/Harvest/Restore), so the reader visibly scrolls the lane it is inspecting.
+Those scripts had to pick a small --lines and hope. This asks the record instead.
+"""
+import json
+import subprocess
+import sys
+
+FIELDS = {
+    "mode": ("M-1", lambda v: v.get("baseKey") if isinstance(v, dict) else v),
+    "profile": ("M-3", lambda v: (v.get("declared") or {}).get("profile") if isinstance(v, dict) else v),
+    "rooms": ("M-5", lambda v: v.get("name") if isinstance(v, dict) else v),
+    "status": ("H-5", lambda v: v.get("status") if isinstance(v, dict) else v),
+    "ctx": ("T-3", lambda v: v),
+    "ctx-used": ("T-1", lambda v: v),
+    "ctx-max": ("T-2", lambda v: v),
+    "session": ("P-5", lambda v: v.get("path") if isinstance(v, dict) else v),
+    "identity": (None, None),
+}
+
+
+def roster():
+    try:
+        out = subprocess.run(["behold", "roster", "--json"], capture_output=True, text=True, timeout=120)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        print(f"lane-fields: behold roster failed: {exc}", file=sys.stderr)
+        sys.exit(5)
+    if out.returncode != 0:
+        print(f"lane-fields: behold roster exited {out.returncode}", file=sys.stderr)
+        sys.exit(5)
+    try:
+        return json.loads(out.stdout)
+    except json.JSONDecodeError as exc:
+        print(f"lane-fields: behold roster emitted unparseable JSON: {exc}", file=sys.stderr)
+        sys.exit(5)
+
+
+def find(doc, target):
+    for lane in doc.get("lanes", []):
+        names = {
+            lane.get("key"),
+            (lane.get("handles") or {}).get("pane_id"),
+            (lane.get("handles") or {}).get("name"),
+        }
+        if target in names:
+            return lane
+    return None
+
+
+def main(argv):
+    if len(argv) < 3:
+        print(__doc__.strip().splitlines()[-1], file=sys.stderr)
+        print("usage: lane-fields <lane-or-pane> <field> [field ...]", file=sys.stderr)
+        return 2
+    target, wanted = argv[1], argv[2:]
+    doc = roster()
+    lane = find(doc, target)
+    if lane is None:
+        print(f"lane-fields: no lane {target!r} in the roster", file=sys.stderr)
+        return 3
+
+    admission = lane.get("admission") or {}
+    if admission.get("admitted") is False:
+        reason = admission.get("reason") or "no reason given"
+        print(
+            f"lane-fields: {target!r} is withheld by policy ({reason}).\n"
+            "  The roster deliberately does not carry this lane's fields, so this is not the same\n"
+            "  answer as 'the field is absent'. Take a screen read with pane-read --reason <why> if\n"
+            "  the value is genuinely needed.",
+            file=sys.stderr,
+        )
+        return 6
+
+    exit_code = 0
+    held = False
+    for name in wanted:
+        if name == "footer":
+            parts = []
+            for key, label in (("rooms", "rooms"), ("profile", "profile"), ("mode", "mode")):
+                fid, extract = FIELDS[key]
+                f = (lane.get("fields") or {}).get(fid) or {}
+                if f.get("state") == "present" and f.get("value") is not None:
+                    try:
+                        parts.append(f"{label}: {extract(f['value'])}")
+                    except (AttributeError, TypeError):
+                        pass
+            if not parts:
+                exit_code = 4
+                continue
+            print(" ".join(parts))
+            continue
+
+        if name == "identity":
+            ident = lane.get("identity") or {}
+            print(ident.get("state") or "unknown")
+            continue
+
+        if name not in FIELDS:
+            print(f"lane-fields: unknown field {name!r}", file=sys.stderr)
+            return 2
+        fid, extract = FIELDS[name]
+        f = (lane.get("fields") or {}).get(fid) or {}
+        if f.get("state") == "held":
+            held = True
+            continue
+        if f.get("state") != "present" or f.get("value") is None:
+            exit_code = 4
+            continue
+        try:
+            value = extract(f["value"])
+        except (AttributeError, TypeError):
+            exit_code = 4
+            continue
+        if value is None or value == "":
+            exit_code = 4
+            continue
+        print(value)
+
+    if held:
+        print(f"lane-fields: {target!r} is a held lane; its fields are withheld by policy", file=sys.stderr)
+        return 6
+    return exit_code
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
