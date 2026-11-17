@@ -150,6 +150,17 @@ if [ "${1:-}" = gates ]; then
   # first version passed the revert case for an hour, in production, green.
   gate ./test/verify-revert-detection.sh
   echo
+  # FT-82: the Fleet TODOs doc had no version control, and fifteen lanes edited it three
+  # at a time with only a 30s snapshot loop as a net — a read-modify-write race could eat a
+  # section with nothing anywhere saying so. `fleet-doc` captures every observed state as a
+  # commit, commits an ALARM subject when a captured section vanishes, and restores it from
+  # history. The gate runs that selftest and pins two defects the tool actually shipped while
+  # being written: it once hardcoded the operator's private doc path as its default while being
+  # mirrored into this PUBLIC repository, and it once committed the worktree instead of the blob
+  # it had hashed, so a racing write landed under a message describing older bytes. Hermetic:
+  # throwaway repositories, no real document read.
+  gate ./test/verify-fleet-doc.sh
+  echo
   # The accepted vendor payload's provenance. The container suite grants a lint
   # exemption to a payload member by membership AND matching bytes, which is only
   # meaningful if the manifest itself cannot be rewritten — so this gate binds the

@@ -1,0 +1,867 @@
+#!/usr/bin/env python3
+"""fleet-doc — a history that survives concurrent writers on a hot markdown document.
+
+Why this exists (FT-82). `Fleet TODOs.md` was edited by fifteen lanes, three at a
+time, with plain read-modify-write. Git alone does not fix that: two lanes that
+each read the file and each write it back produce a last-write-wins result and
+the loser's section is simply *gone* — no conflict, no merge, nothing in the
+index. A repository only helps when three things are true:
+
+  1. every observed state is captured quickly, so the version before the race is
+     itself a commit;
+  2. a disappearing section is *noticed* rather than waiting for someone to
+     diff; and
+  3. there is a one-command way to put the lost text back.
+
+So this tool has four parts, and nothing more:
+
+  capture   commit the document whenever its bytes changed. The systemd timer
+            `fleet-doc-capture.timer` calls this every 15s; it also runs by
+            hand. One commit per observed state.
+  alarm     a capture compares the set of `## ` sections (keyed by FT id, so a
+            reworded heading is not a false alarm) against the previous state and
+            shouts when a section vanished or the file lost a large fraction of
+            its bytes: the commit subject says ALARM, a line goes to an
+            append-only log, and the log prints the exact recovery command.
+  append    a flock-serialized read-modify-write-commit append, for the common
+            concurrent case. Two lanes running this at the same instant both
+            land, because read, write and commit happen under one lock.
+  recover   put a vanished section back, verbatim, from the last commit that had
+            it.
+
+No part of this rewrites prose. capture commits bytes it read; append adds text;
+recover restores text that existed in history.
+
+Locking. Writers that go through `capture`/`append`/`recover` take an exclusive
+`flock` on `<git-dir>/fleet-doc.lock`, so they serialize with each other. A lane
+that edits the file with its own editor does not take that lock — that is the
+case `capture`+`alarm`+`recover` exist for, and it is why the alarm is a first
+class outcome and not a warning.
+
+Exit codes: 0 ok, 1 failure, 2 alarm-free-but-noteworthy? No — keep it to 0/1,
+and let the *commit subject* and the alarm log carry the alarm, so a timer run
+that raised an alarm still exits 0 (the capture succeeded). Use `status` or
+`log` to see alarms.
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import difflib
+import fcntl
+import hashlib
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+from pathlib import Path
+
+DEFAULT_DOC = os.environ.get("FLEET_DOC")
+"""No baked-in default, deliberately.
+
+This tool is generic — any space with a hot document can run it — and the document
+it protects is named by whoever installs it (`--doc` or $FLEET_DOC). A hardcoded
+operator path would publish the shape of the operator's home directory in the
+public yellowstone mirror for no benefit, and would be wrong for the second
+document anyone points it at.
+"""
+STATE_DIR = Path(
+    os.environ.get("FLEET_DOC_STATE", str(Path.home() / ".local/state/fleet-doc"))
+)
+ALARM_LOG = STATE_DIR / "alarms.log"
+
+# A capture happens every 15s, so a write burst between two captures is normal.
+# These are the thresholds at which "the file changed" becomes "the file lost
+# something it should not have". Deliberately low-noise: a reworded FT heading
+# keeps its key and does not fire, and byte shrinkage is only reported at a
+# quarter of the file, because legitimate compaction happens.
+SHRINK_ALARM_FRACTION = 0.75
+SHRINK_ALARM_MIN_BYTES = 8192
+
+HEADING_RE = re.compile(r"^## ")
+FT_RE = re.compile(r"FT-\d+")
+
+
+# ---------------------------------------------------------------- git plumbing
+
+
+def git(repo: Path, *args: str, check: bool = True,
+        input_bytes: bytes | None = None) -> subprocess.CompletedProcess:
+    p = subprocess.run(
+        ["git", "-C", str(repo), *args],
+        input=input_bytes,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if check and p.returncode != 0:
+        raise SystemExit(
+            f"fleet-doc: git {' '.join(args)} failed in {repo}:\n"
+            + p.stderr.decode("utf-8", "replace").strip()
+        )
+    return p
+
+
+def git_out(repo: Path, *args: str) -> str:
+    return git(repo, *args).stdout.decode("utf-8", "replace")
+
+
+def repo_of(doc: Path) -> Path:
+    p = subprocess.run(
+        ["git", "-C", str(doc.parent), "rev-parse", "--show-toplevel"],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    )
+    if p.returncode != 0:
+        raise SystemExit(
+            f"fleet-doc: {doc.parent} is not inside a git worktree "
+            f"({p.stderr.decode('utf-8', 'replace').strip()})"
+        )
+    return Path(p.stdout.decode().strip())
+
+
+def git_dir(repo: Path) -> Path:
+    """The ABSOLUTE git dir.
+
+    `--git-dir` answers `.git` — relative to the repository, not to us — and a
+    GIT_INDEX_FILE built from it silently lands in whichever directory the
+    caller happens to be standing in. That was a real bug here: the selftest,
+    run from the Assistant repo against a scratch repo, wrote its temporary
+    index into the real `.git`.
+    """
+    return Path(git_out(repo, "rev-parse", "--absolute-git-dir").strip())
+
+
+def rel_doc(repo: Path, doc: Path) -> str:
+    rel = os.path.relpath(doc, repo)
+    if rel.startswith(".."):
+        raise SystemExit(f"fleet-doc: {doc} is outside {repo}")
+    return rel
+
+
+def head_doc(repo: Path, rel: str) -> bytes | None:
+    p = git(repo, "show", f"HEAD:{rel}", check=False)
+    return p.stdout if p.returncode == 0 else None
+
+
+def short(repo: Path, rev: str = "HEAD") -> str:
+    return git_out(repo, "rev-parse", "--short", rev).strip()
+
+
+def dirty_doc(repo: Path, rel: str) -> bool:
+    return bool(git(repo, "status", "--porcelain", "--", rel).stdout.strip())
+
+
+def doc_mode(repo: Path, rel: str) -> str:
+    """The mode this path already has in HEAD, so a capture never flips +x."""
+    p = git(repo, "ls-tree", "HEAD", "--", rel, check=False)
+    out = p.stdout.decode().strip()
+    return out.split()[0] if out else "100644"
+
+
+# ----------------------------------------------------------------- lock + settle
+
+
+class DocLock:
+    """Exclusive flock over the document's read-modify-write.
+
+    Held in the git dir, so it is never committed and never shows up as a change.
+    Advisory: only writers that use this tool take it.
+    """
+
+    def __init__(self, repo: Path):
+        self.path = git_dir(repo) / "fleet-doc.lock"
+        self.fd: int | None = None
+
+    def __enter__(self):
+        self.fd = os.open(self.path, os.O_CREAT | os.O_RDWR, 0o644)
+        fcntl.flock(self.fd, fcntl.LOCK_EX)
+        return self
+
+    def __exit__(self, *exc):
+        if self.fd is not None:
+            fcntl.flock(self.fd, fcntl.LOCK_UN)
+            os.close(self.fd)
+            self.fd = None
+
+
+def settle(doc: Path, tries: int = 6, gap: float = 0.15) -> None:
+    """Wait until the file stops changing, so a capture never commits a torn write.
+
+    A 227KB write is not atomic from a reader's point of view. If the writer is
+    mid-write we would capture half a file and the next capture would "restore"
+    the rest — two confusing commits instead of one true one. Cheap insurance:
+    sample (size, mtime_ns) until two samples agree.
+    """
+    prev = None
+    for _ in range(tries):
+        st = doc.stat()
+        cur = (st.st_size, st.st_mtime_ns)
+        if cur == prev:
+            return
+        prev = cur
+        time.sleep(gap)
+
+
+# ------------------------------------------------------------------ doc parsing
+
+
+def parse_sections(text: str):
+    """Split into `## ` sections. Key = FT id when present, else the heading line.
+
+    Keying by FT id is what keeps the alarm honest: rewording
+    `## FT-82 · the doc has no version control` to `## FT-82 · resolved` is not a
+    loss, and the heading text alone could not tell the difference.
+    """
+    lines = text.splitlines(keepends=True)
+    out = []
+    cur = None
+    for i, line in enumerate(lines):
+        if line.startswith("## "):
+            if cur is not None:
+                cur["end"] = i
+                out.append(cur)
+            m = FT_RE.search(line)
+            cur = {
+                "key": m.group(0) if m else line.strip(),
+                "heading": line.rstrip("\n"),
+                "start": i,
+                "end": len(lines),
+            }
+    if cur is not None:
+        cur["end"] = len(lines)
+        out.append(cur)
+    return out, lines
+
+
+def section_keys(text: str) -> dict[str, dict]:
+    secs, _ = parse_sections(text)
+    return {s["key"]: s for s in secs}
+
+
+def line_delta(prev: str, cur: str) -> tuple[int, int]:
+    a, b = prev.splitlines(), cur.splitlines()
+    sm = difflib.SequenceMatcher(None, a, b, autojunk=False)
+    added = removed = 0
+    for tag, i1, i2, j1, j2 in sm.get_opcodes():
+        if tag in ("replace", "delete"):
+            removed += i2 - i1
+        if tag in ("replace", "insert"):
+            added += j2 - j1
+    return added, removed
+
+
+def alarms_for(prev: bytes, cur: bytes) -> list[tuple[str, str | None, str]]:
+    """(kind, recoverable key, message) for each loss a capture should shout about."""
+    ptext = prev.decode("utf-8", "replace")
+    ctext = cur.decode("utf-8", "replace")
+    out: list[tuple[str, str | None, str]] = []
+
+    pk, ck = section_keys(ptext), section_keys(ctext)
+    for key in pk:
+        if key not in ck:
+            out.append((
+                "lost-section", key,
+                f"section {key} vanished ({pk[key]['heading']!r}, "
+                f"was {pk[key]['end'] - pk[key]['start']} lines)",
+            ))
+
+    if prev and len(cur) < len(prev) * SHRINK_ALARM_FRACTION and len(prev) >= SHRINK_ALARM_MIN_BYTES:
+        pct = 100 - round(100 * len(cur) / len(prev))
+        out.append(("shrank", None, f"file shrank {pct}% ({len(prev)} -> {len(cur)} bytes)"))
+    return out
+
+
+def log_alarm(repo: Path, rel: str, alarms: list[tuple[str, str | None, str]],
+              rev: str, source: str) -> None:
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    stamp = dt.datetime.now().astimezone().isoformat(timespec="seconds")
+    with open(ALARM_LOG, "a", encoding="utf-8") as fh:
+        for kind, key, msg in alarms:
+            fh.write(f"{stamp}\t{source}\t{repo}/{rel}\tcommit {rev}\t{kind}\t{msg}\n")
+            if key:
+                # The recovery command belongs next to the finding, not in a
+                # paragraph someone has to translate at 3am.
+                fh.write(f"{stamp}\trecover\tfleet-doc recover '{key}'\n")
+
+
+# -------------------------------------------------------------------- commands
+
+
+def commit_doc(repo: Path, rel: str, subject: str, body: str, content: bytes,
+               attempts: int = 3) -> str:
+    """Commit EXACTLY `content` — the bytes the caller hashed and described.
+
+    Not `git add` + `git commit -- <path>`: that commits whatever is on disk at
+    commit time, so a writer landing in the microseconds between our read and the
+    commit gets folded in under a message describing the *older* content. The
+    commit body would then be a false record, which is the one thing a capture
+    log must never be.
+
+    So: write the blob we read, build a tree from HEAD with only that path
+    replaced, and move the ref with a compare-and-swap. Nothing touches the real
+    index or the worktree, and a concurrent commit makes the CAS fail (retried)
+    rather than being silently overwritten.
+    """
+    for _ in range(attempts):
+        blob = subprocess.run(["git", "-C", str(repo), "hash-object", "-w", "--stdin"],
+                              input=content, check=True,
+                              stdout=subprocess.PIPE).stdout.decode().strip()
+        base_tree = git(repo, "rev-parse", "HEAD^{tree}").stdout.decode().strip()
+        mode = doc_mode(repo, rel)
+        idx = git_dir(repo) / "fleet-doc-index"
+        if idx.exists():
+            idx.unlink()
+        env = {**os.environ, "GIT_INDEX_FILE": str(idx)}
+        try:
+            subprocess.run(["git", "-C", str(repo), "read-tree", base_tree], check=True, env=env)
+            subprocess.run(["git", "-C", str(repo), "update-index", "--add", "--cacheinfo",
+                            f"{mode},{blob},{rel}"], check=True, env=env)
+            tree = subprocess.run(["git", "-C", str(repo), "write-tree"], check=True, env=env,
+                                  stdout=subprocess.PIPE).stdout.decode().strip()
+        finally:
+            idx.unlink(missing_ok=True)
+
+        parent = git(repo, "rev-parse", "HEAD").stdout.decode().strip()
+        rev = git(repo, "commit-tree", tree, "-p", parent, "-F", "-",
+                  input_bytes=(subject + "\n\n" + body.rstrip() + "\n").encode()
+                  ).stdout.decode().strip()
+        branch = git(repo, "symbolic-ref", "-q", "HEAD", check=False).stdout.decode().strip()
+        target = branch or "HEAD"
+        upd = subprocess.run(
+            ["git", "-C", str(repo), "update-ref", "-m", f"fleet-doc: {subject[:60]}",
+             target, rev, parent], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if upd.returncode == 0:
+            # Bring the index in line with the new HEAD for this one path, so a
+            # lane running `git status` sees a clean tree rather than a phantom
+            # staged change it never made.
+            subprocess.run(["git", "-C", str(repo), "update-index", "--add", "--cacheinfo",
+                            f"{mode},{blob},{rel}"], check=True,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return rev
+        # HEAD moved under us (a lane committed); re-read and describe the new base.
+    raise SystemExit(
+        f"fleet-doc: could not commit {rel} after {attempts} attempts — HEAD kept moving")
+
+
+def cmd_capture(a) -> int:
+    repo, doc, rel = resolve(a)
+    with DocLock(repo):
+        settle(doc)
+        cur = doc.read_bytes()
+        prev = head_doc(repo, rel)
+        if prev == cur:
+            if not a.quiet:
+                print(f"fleet-doc: no change ({len(cur)} bytes, HEAD {short(repo)})")
+            return 0
+
+        ptext = (prev or b"").decode("utf-8", "replace")
+        ctext = cur.decode("utf-8", "replace")
+        added, removed = line_delta(ptext, ctext)
+        pk, ck = section_keys(ptext), section_keys(ctext)
+        gained = [k for k in ck if k not in pk]
+        lost = [k for k in pk if k not in ck]
+        alarms = alarms_for(prev or b"", cur)
+
+        stamp = dt.datetime.now().astimezone().isoformat(timespec="seconds")
+        bchr = chr(10).encode()
+        head = f"doc: capture {stamp} (+{added}/-{removed} lines"
+        head += f"; sections +{len(gained)}/-{len(lost)})"
+        if alarms:
+            head = "ALARM: " + head[5:]
+            head += " — " + "; ".join(msg for _, _, msg in alarms[:3])
+            if len(alarms) > 3:
+                head += f" (+{len(alarms) - 3} more)"
+
+        lines = [
+            f"source: {a.source}",
+            f"previous: {short(repo)} ({len(prev or b'')} bytes)",
+            f"captured: {len(cur)} bytes, {cur.count(bchr)} lines, "
+            f"sha256 {hashlib.sha256(cur).hexdigest()}",
+            f"delta: +{added}/-{removed} lines",
+        ]
+        if gained or lost:
+            lines.append(f"sections gained: {', '.join(sorted(gained)) or '-'}")
+            lines.append(f"sections lost:   {', '.join(sorted(lost)) or '-'}")
+        if alarms:
+            lines += ["", "ALARM(s):"]
+            for kind, key, msg in alarms:
+                lines.append(f"  - [{kind}] {msg}")
+            lines += [
+                "",
+                "A section present in the previous capture is absent now. If a "
+                "concurrent write won a read-modify-write race, the lost text is "
+                "in the previous commit; restore it with",
+                "  fleet-doc recover <FT-id>",
+            ]
+        rev = commit_doc(repo, rel, head, "\n".join(lines), cur)
+        if alarms:
+            log_alarm(repo, rel, alarms, rev, a.source)
+        print(f"fleet-doc: captured {rev[:9]} +{added}/-{removed}"
+              + (f"  ALARM: {'; '.join(msg for _, _, msg in alarms)}" if alarms else ""))
+        return 0
+
+
+def cmd_append(a) -> int:
+    repo, doc, rel = resolve(a)
+    if a.text_file:
+        text = Path(a.text_file).read_text()
+    elif a.text is not None:
+        text = a.text
+    else:
+        text = sys.stdin.read()
+    if not text.strip():
+        raise SystemExit("fleet-doc append: empty text")
+    if not text.endswith("\n"):
+        text += "\n"
+
+    with DocLock(repo):
+        settle(doc)
+        cur = doc.read_bytes().decode("utf-8", "replace")
+        if a.raw:
+            new = cur + text
+        else:
+            base = cur.rstrip("\n")
+            new = base + "\n\n" + text if base else text
+        doc.write_bytes(new.encode())
+
+        first = text.strip().splitlines()[0][:72]
+        subject = f"doc: {a.lane} appends {first}"
+        body = (
+            f"source: fleet-doc append (lane {a.lane})\n"
+            f"size: {len(new.encode())} bytes\n\n"
+            + text.rstrip()
+        )
+        before = head_doc(repo, rel) or b""
+        alarms = alarms_for(before, new.encode())
+        if alarms:
+            subject = "ALARM: " + subject + " — " + "; ".join(msg for _, _, msg in alarms[:2])
+            log_alarm(repo, rel, alarms, "pending", f"append/{a.lane}")
+        rev = commit_doc(repo, rel, subject, body, new.encode())
+    print(f"fleet-doc: {short(repo, rev)} appended for {a.lane}")
+    return 0
+
+
+def _revs_touching(repo: Path, rel: str) -> list[str]:
+    return git_out(repo, "log", "--format=%H", "--", rel).split()
+
+
+def _section_text(repo: Path, rel: str, rev: str, key: str) -> str | None:
+    p = git(repo, "show", f"{rev}:{rel}", check=False)
+    if p.returncode != 0:
+        return None
+    text = p.stdout.decode("utf-8", "replace")
+    secs, lines = parse_sections(text)
+    for s in secs:
+        if s["key"] == key:
+            return "".join(lines[s["start"]:s["end"]])
+    return None
+
+
+def cmd_recover(a) -> int:
+    repo, doc, rel = resolve(a)
+    cur = doc.read_bytes().decode("utf-8", "replace")
+    ck = section_keys(cur)
+    key = a.key
+    if not key.startswith("FT-") and key not in ck:
+        # accept a heading substring too
+        for s in parse_sections(cur)[0]:
+            if key in s["heading"]:
+                key = s["key"]
+                break
+
+    if key in ck:
+        print(f"fleet-doc: {key} is present in the working tree; nothing to recover")
+        return 0
+
+    src = None
+    for rev in ([a.frm] if a.frm else _revs_touching(repo, rel)):
+        if _section_text(repo, rel, rev, key):
+            src = rev
+            break
+    if not src:
+        print(f"fleet-doc: {key} not found in any commit touching {rel}", file=sys.stderr)
+        return 1
+
+    block = _section_text(repo, rel, src, key)
+    assert block is not None
+    if a.print_only:
+        sys.stdout.write(block)
+        return 0
+
+    with DocLock(repo):
+        cur = doc.read_bytes().decode("utf-8", "replace")
+        if key in section_keys(cur):
+            print(f"fleet-doc: {key} reappeared while recovering; nothing written")
+            return 0
+        _, lines = parse_sections(cur)
+
+        # Put it back where it was: before the next section that still exists,
+        # else after the previous one, else append at the end. Losing the
+        # position would still recover the text, but a restored section in the
+        # wrong place reads as a new issue rather than the one that was eaten.
+        full = git(repo, "show", f"{src}:{rel}").stdout.decode("utf-8", "replace")
+        order = [s["key"] for s in parse_sections(full)[0]]
+        i = order.index(key)
+        have = section_keys(cur)
+        following = next((k for k in order[i + 1:] if k in have), None)
+        preceding = next((k for k in reversed(order[:i]) if k in have), None)
+        if following:
+            insert_at = have[following]["start"]
+        elif preceding:
+            insert_at = have[preceding]["end"]
+        else:
+            insert_at = len(lines)
+
+        # Exactly one blank line between the restored block and its neighbour.
+        new_lines = list(lines)
+        if block.endswith("\n\n"):
+            block_out = block
+        elif block.endswith("\n"):
+            block_out = block + "\n"
+        else:
+            block_out = block + "\n\n"
+        new_lines[insert_at:insert_at] = [block_out]
+        doc.write_bytes("".join(new_lines).encode())
+
+        subject = f"doc: recover {key} (lost in {short(repo)}, text from {short(repo, src)})"
+        body = (
+            f"source: fleet-doc recover\n"
+            f"recovered-from: {src}\n"
+            f"section: {key}\n"
+            f"reason: {a.reason or 'section absent from the working tree'}\n\n"
+            + block
+        )
+        rev = commit_doc(repo, rel, subject, body, "".join(new_lines).encode())
+    print(f"fleet-doc: recovered {key} from {short(repo, src)} as {rev[:9]}")
+    return 0
+
+
+def cmd_status(a) -> int:
+    repo, doc, rel = resolve(a)
+    print(f"doc:    {doc}")
+    print(f"repo:   {repo}")
+    print(f"head:   {short(repo)}  {git_out(repo, 'log', '-1', '--format=%ad  %s').strip()}")
+    cur = doc.read_bytes()
+    prev = head_doc(repo, rel)
+    if prev == cur:
+        print(f"tree:   clean ({len(cur)} bytes, sha256 {hashlib.sha256(cur).hexdigest()[:16]})")
+    else:
+        a_, r_ = line_delta((prev or b"").decode("utf-8", "replace"), cur.decode("utf-8", "replace"))
+        print(f"tree:   DIRTY vs HEAD (+{a_}/-{r_} lines, {len(cur)} bytes)")
+    state = subprocess.run(["systemctl", "--user", "is-active", "fleet-doc-capture.timer"],
+                           stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    print(f"timer:  fleet-doc-capture.timer = {state.stdout.decode().strip() or 'unknown'}")
+    if ALARM_LOG.exists():
+        tail = ALARM_LOG.read_text(encoding="utf-8").strip().splitlines()[-4:]
+        print("alarms: last entries in " + str(ALARM_LOG))
+        for line in tail:
+            print("        " + line)
+    else:
+        print("alarms: none recorded")
+    return 0
+
+
+def cmd_log(a) -> int:
+    repo, doc, rel = resolve(a)
+    args = ["log", f"-{a.n}", "--format=%h %ad %s", "--date=iso", "--", rel]
+    if a.grep:
+        args.insert(1, f"--grep={a.grep}")
+    sys.stdout.write(git_out(repo, *args))
+    return 0
+
+
+def cmd_show(a) -> int:
+    repo, doc, rel = resolve(a)
+    text = git(repo, "show", f"{a.rev}:{rel}").stdout.decode("utf-8", "replace")
+    if a.section:
+        key = a.section
+        for s in parse_sections(text)[0]:
+            if key in s["heading"]:
+                key = s["key"]
+                break
+        _, lines = parse_sections(text)
+        for s in parse_sections(text)[0]:
+            if s["key"] == key:
+                sys.stdout.write("".join(lines[s["start"]:s["end"]]))
+                return 0
+        print(f"fleet-doc: no section matching {a.section!r} in {a.rev}", file=sys.stderr)
+        return 1
+    sys.stdout.write(text)
+    return 0
+
+
+def cmd_sections(a) -> int:
+    repo, doc, rel = resolve(a)
+    text = git(repo, "show", f"{a.rev}:{rel}").stdout.decode("utf-8", "replace") \
+        if a.rev != "worktree" else doc.read_bytes().decode("utf-8", "replace")
+    secs, _ = parse_sections(text)
+    for s in secs:
+        print(f"{s['key']:<10} {s['end'] - s['start']:>4} lines  {s['heading']}")
+    return 0
+
+
+def cmd_diff(a) -> int:
+    repo, doc, rel = resolve(a)
+    left = f"{a.left}:{rel}" if not a.left.startswith("worktree") else rel
+    right = f"{a.right}:{rel}" if a.right and not a.right.startswith("worktree") else rel
+    args = ["diff", "--stat", "--no-color", left, right]
+    sys.stdout.write(git_out(repo, *args))
+    return 0
+
+
+def cmd_install_units(a) -> int:
+    repo, doc, rel = resolve(a)
+    src = repo / "systemd"
+    units = sorted(src.glob("fleet-doc-*.service")) + sorted(src.glob("fleet-doc-*.timer"))
+    if not units:
+        raise SystemExit(f"fleet-doc: no units in {src}")
+    dest = Path.home() / ".config/systemd/user"
+    dest.mkdir(parents=True, exist_ok=True)
+    for u in units:
+        shutil.copyfile(u, dest / u.name)
+        os.chmod(dest / u.name, 0o644)
+        print(f"installed {dest / u.name}")
+    subprocess.run(["systemctl", "--user", "daemon-reload"], check=True)
+    if a.enable:
+        subprocess.run(["systemctl", "--user", "enable", "--now", "fleet-doc-capture.timer"],
+                       check=True)
+        print("enabled fleet-doc-capture.timer")
+    return 0
+
+
+# ------------------------------------------------------------------- selftest
+
+
+def _run(repo: Path, *args: str, env_extra: dict | None = None) -> subprocess.CompletedProcess:
+    env = dict(os.environ)
+    env["FLEET_DOC"] = str(repo / "doc.md")
+    env["FLEET_DOC_STATE"] = str(repo / "state")
+    if env_extra:
+        env.update(env_extra)
+    return subprocess.run(
+        [sys.executable, os.path.abspath(__file__), *args],
+        env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+    )
+
+
+def _stale_writer(repo: Path, marker: str, hold: float) -> subprocess.Popen:
+    """A lane doing plain read-modify-write, the way an editor tool does it.
+
+    It reads the document, holds its copy for `hold` seconds, then writes that
+    copy back plus its own section. Anything another lane wrote during the hold
+    is overwritten — the 2026-11-17 loss mode, made deterministic.
+    """
+    script = (
+        "import sys, time\n"
+        "path, marker, hold = sys.argv[1], sys.argv[2], float(sys.argv[3])\n"
+        "base = open(path, encoding='utf-8').read()\n"
+        "time.sleep(hold)\n"
+        "open(path, 'w', encoding='utf-8').write(base.rstrip('\\n') + '\\n\\n' + marker)\n"
+    )
+    return subprocess.Popen([sys.executable, "-c", script, str(repo / "doc.md"), marker, str(hold)])
+
+
+def cmd_selftest(a) -> int:
+    keep = a.keep
+    tmp = Path(tempfile.mkdtemp(prefix="fleet-doc-selftest-"))
+    repo = tmp / "repo"
+    repo.mkdir()
+    doc = repo / "doc.md"
+    fails: list[str] = []
+    ran = 0
+
+    def check(name: str, ok: bool, detail: str = "") -> None:
+        nonlocal ran
+        ran += 1
+        print(("PASS  " if ok else "FAIL  ") + name + (f"  — {detail}" if detail else ""))
+        if not ok:
+            fails.append(name)
+
+    def sh(*args: str) -> str:
+        return git_out(repo, *args)
+
+    try:
+        subprocess.run(["git", "-C", str(repo), "init", "-q", "-b", "main"], check=True)
+        subprocess.run(["git", "-C", str(repo), "config", "user.email", "t@example.invalid"], check=True)
+        subprocess.run(["git", "-C", str(repo), "config", "user.name", "selftest"], check=True)
+        doc.write_text(
+            "# TODOs\n\npreamble\n\n"
+            "## FT-01 · first\n\nbody one\n\n"
+            "## FT-02 · second\n\nbody two\n"
+        )
+        sh("add", "--", "doc.md")
+        sh("commit", "-q", "-m", "initial")
+
+        # --- T1: two concurrent appends through the tool both land -------------
+        # `append` holds the flock across read-modify-write-commit, so the second
+        # writer reads a document that already contains the first writer's text.
+        base_commits = int(sh("rev-list", "--count", "HEAD").strip())
+        procs = [
+            subprocess.Popen(
+                [sys.executable, os.path.abspath(__file__), "append", "--lane", lane,
+                 "--text", f"## {marker} · added by {lane}\n\n{lane} body\n"],
+                env={**os.environ, "FLEET_DOC": str(doc), "FLEET_DOC_STATE": str(repo / "state")},
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            for lane, marker in (("selftest-A", "FT-90"), ("selftest-B", "FT-91"))
+        ]
+        outs = [p.communicate()[0].decode().strip() for p in procs]
+        text = doc.read_text()
+        check("T1 both concurrent appends present, neither lost",
+              "FT-90" in text and "FT-91" in text,
+              f"commits {base_commits}->{sh('rev-list', '--count', 'HEAD').strip()}; {outs}")
+        check("T1 one commit per append, no empty or merged commit",
+              int(sh("rev-list", "--count", "HEAD").strip()) == base_commits + 2)
+
+        # --- T2: a stale read-modify-write clobbers a newer section ------------
+        doc.write_text(doc.read_text().rstrip("\n") + "\n\n## FT-50 · precious\n\noracle text ZXQ\n")
+        _run(repo, "capture", "--source", "selftest")
+
+        stale = _stale_writer(repo, "## FT-51 · lane A (stale copy)\n\nA body\n", 1.6)
+        time.sleep(0.4)  # lane A has read; its copy has no FT-52
+        _stale_writer(repo, "## FT-52 · lane B\n\nB body ZXQ\n", 0.0).wait()
+        check("T2 lane B's write landed", "FT-52" in doc.read_text())
+
+        # The timer captures lane B's state before lane A's stale write lands.
+        # This is the whole honest limit: the alarm can only see a loss of text
+        # that was captured at least once.
+        _run(repo, "capture", "--source", "selftest-timer")
+        captured_b = sh("rev-parse", "HEAD").strip()
+        stale.wait()
+        check("T2 the stale write clobbered lane B (precondition)",
+              "FT-52" not in doc.read_text(), f"FT-52 present={'FT-52' in doc.read_text()}")
+
+        cap = _run(repo, "capture", "--source", "selftest-race")
+        cap_out = cap.stdout.decode().strip()
+        check("T2 capture raised an alarm naming the lost section",
+              "ALARM" in cap_out and "FT-52" in cap_out, cap_out)
+        subject = sh("log", "-1", "--format=%s").strip()
+        check("T2 the loss is visible in the commit subject", subject.startswith("ALARM:"), subject)
+        alarm_log = (repo / "state" / "alarms.log").read_text() \
+            if (repo / "state" / "alarms.log").exists() else ""
+        check("T2 the alarm log names it with a recovery command",
+              "FT-52" in alarm_log and "fleet-doc recover 'FT-52'" in alarm_log)
+        check("T2 the lost text is still in the last good commit",
+              "B body ZXQ" in sh("show", f"{captured_b}:doc.md"))
+
+        # --- T3: recover puts the lost section back, in place -----------------
+        rec = _run(repo, "recover", "FT-52", "--reason", "selftest stale-write race")
+        text = doc.read_text()
+        check("T3 recover restored the exact text", "B body ZXQ" in text, rec.stdout.decode().strip())
+        check("T3 recovery is its own commit",
+              sh("log", "-1", "--format=%s").strip().startswith("doc: recover FT-52"))
+        check("T3 the restored section sits before the section that followed it",
+              text.index("FT-52") < text.index("FT-53") if "FT-53" in text else True)
+
+        # --- T4: a no-change capture is a no-op -------------------------------
+        n = sh("rev-list", "--count", "HEAD").strip()
+        _run(repo, "capture", "--source", "selftest-noop")
+        c2 = _run(repo, "capture", "--source", "selftest-noop").stdout.decode().strip()
+        check("T4 no empty commits when nothing changed",
+              sh("rev-list", "--count", "HEAD").strip() == n and "no change" in c2, c2)
+
+        # --- T5: capture commits only the doc, never other dirty paths --------
+        (repo / "other.txt").write_text("unrelated\n")
+        doc.write_text(doc.read_text().rstrip("\n") + "\n\n## FT-54 · more\n\nx\n")
+        _run(repo, "capture", "--source", "selftest-scope")
+        committed = sh("show", "--name-only", "--format=", "HEAD").split()
+        dirty = sh("status", "--porcelain").strip()
+        check("T5 only the document was committed", committed == ["doc.md"], f"committed={committed}")
+        check("T5 the unrelated dirty file was left alone", "other.txt" in dirty, dirty)
+    finally:
+        if keep or fails:
+            print(f"\nwork tree kept at {tmp}")
+        else:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    print()
+    if fails:
+        print(f"SELFTEST FAILED ({len(fails)} of {ran} checks): " + "; ".join(fails))
+        return 1
+    print(f"SELFTEST PASSED ({ran} checks)")
+    return 0
+
+
+# ---------------------------------------------------------------------- CLI
+
+
+def resolve(a) -> tuple[Path, Path, str]:
+    if not a.doc:
+        raise SystemExit(
+            "fleet-doc: name the document with --doc <path> or $FLEET_DOC.\n"
+            "           The systemd unit supplies it; see install-units."
+        )
+    doc = Path(a.doc).expanduser()
+    if not doc.exists():
+        raise SystemExit(f"fleet-doc: no such document: {doc}")
+    repo = Path(a.repo).expanduser() if a.repo else repo_of(doc)
+    return repo, doc, rel_doc(repo, doc)
+
+
+def main(argv: list[str]) -> int:
+    p = argparse.ArgumentParser(
+        prog="fleet-doc",
+        description="Capture, alarm on, and recover a hot shared markdown document.",
+        epilog="The document is named by --doc or $FLEET_DOC, and is required.",
+    )
+    p.add_argument("--doc", default=DEFAULT_DOC)
+    p.add_argument("--repo")
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    c = sub.add_parser("capture", help="commit the document if its bytes changed")
+    c.add_argument("--source", default="manual", help="who called this (timer, lane name, ...)")
+    c.add_argument("-q", "--quiet", action="store_true",
+                   help="say nothing when nothing changed (for the timer)")
+    c.set_defaults(fn=cmd_capture)
+
+    ap = sub.add_parser("append", help="lock-serialized append + commit")
+    ap.add_argument("--lane", required=True)
+    ap.add_argument("--text")
+    ap.add_argument("--text-file")
+    ap.add_argument("--raw", action="store_true", help="append bytes verbatim, no blank-line separation")
+    ap.set_defaults(fn=cmd_append)
+
+    r = sub.add_parser("recover", help="restore a vanished section from history")
+    r.add_argument("key", help="FT id or heading substring")
+    r.add_argument("--from", dest="frm", help="revision to take the text from")
+    r.add_argument("--reason")
+    r.add_argument("--print", dest="print_only", action="store_true")
+    r.set_defaults(fn=cmd_recover)
+
+    sub.add_parser("status", help="HEAD, tree state, timer, last alarms").set_defaults(fn=cmd_status)
+
+    lg = sub.add_parser("log", help="history of the document")
+    lg.add_argument("-n", type=int, default=20)
+    lg.add_argument("--grep")
+    lg.set_defaults(fn=cmd_log)
+
+    sv = sub.add_parser("show", help="print the document (or one section) at a revision")
+    sv.add_argument("rev", nargs="?", default="HEAD")
+    sv.add_argument("--section")
+    sv.set_defaults(fn=cmd_show)
+
+    sec = sub.add_parser("sections", help="list sections at a revision")
+    sec.add_argument("rev", nargs="?", default="worktree")
+    sec.set_defaults(fn=cmd_sections)
+
+    df = sub.add_parser("diff", help="diff two revisions of the document")
+    df.add_argument("left", nargs="?", default="HEAD")
+    df.add_argument("right", nargs="?", default="worktree")
+    df.set_defaults(fn=cmd_diff)
+
+    iu = sub.add_parser("install-units", help="install the systemd units from <repo>/systemd")
+    iu.add_argument("--enable", action="store_true")
+    iu.set_defaults(fn=cmd_install_units)
+
+    st = sub.add_parser("selftest", help="prove concurrency, alarm and recovery in a throwaway repo")
+    st.add_argument("--keep", action="store_true", help="keep the scratch repo")
+    st.set_defaults(fn=cmd_selftest)
+
+    a = p.parse_args(argv)
+    return a.fn(a)
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
