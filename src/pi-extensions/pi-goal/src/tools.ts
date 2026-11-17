@@ -6,16 +6,23 @@ import {
   truncateHead,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { currentTokenTotal, rebaseGoalUsage } from "./accounting.js";
+import { validateObjective } from "./command.js";
 import { notifyTerminal, safeTerminalText } from "./errors.js";
 import {
+  blocksStaleGoalToolCalls,
+  editedGoalStatus,
   formatStatus,
   GOAL_BLOCKED_TOOL,
   GOAL_COMPLETE_TOOL,
+  GOAL_EDIT_TOOL,
   GOAL_WAIT_TOOL,
   type GoalRuntime,
   goalIdRejectionReason,
   isContradictoryCompletionSummary,
   MAX_GOAL_ID_LENGTH,
+  nextGoalInstance,
+  queueGoalSafetyReset,
   STATUS_KEY,
   transitionGoal,
   truncateNotification,
@@ -50,6 +57,23 @@ interface GoalBlockedDetails {
   reason: string;
   evidence: string;
   repeated_turns: number;
+}
+
+interface GoalEditQueueEntry {
+  position: number;
+  goal_id: string;
+  status: string;
+  objective: string;
+}
+
+interface GoalEditDetails {
+  target: "active" | "queued";
+  goal: string;
+  goal_id: string;
+  previous_goal_id?: string;
+  objective: string;
+  queue_position?: number;
+  queue: GoalEditQueueEntry[];
 }
 
 const MAX_GOAL_TEXT_LENGTH = 4_000;
@@ -321,11 +345,11 @@ export function registerGoalTools(pi: ExtensionAPI, runtime: GoalRuntime) {
     name: GOAL_WAIT_TOOL,
     exposure: "model-only",
     label: "Goal Wait",
-    description: `Keep the active /goal alive but quiet while something outside this session is expected — CI finishing, a review landing, a reply arriving. The goal pauses, stays resumable, and records why. Call it alone, after arranging whatever will wake it, and pass resume_after_ms from your estimate how long the remaining goal work or the awaited event will take — not an arbitrary round number. Requests below ${MIN_GOAL_WAIT_DELAY_MS}ms are clamped to ${MIN_GOAL_WAIT_DELAY_MS}ms. Do not use it for ordinary unfinished work: if there is anything left you can do yourself, do it instead.`,
+    description: `Keep the active /goal alive but quiet while something outside this session is expected — CI finishing, a review landing, a reply arriving. The goal pauses, stays resumable, and records why. Call it alone, after arranging whatever will wake it, and pass resume_after_ms from your estimate of when the remaining goal work or the awaited event will finish — not an arbitrary round number. Requests below ${MIN_GOAL_WAIT_DELAY_MS}ms are clamped to ${MIN_GOAL_WAIT_DELAY_MS}ms. Do not use it for ordinary unfinished work: if there is anything left you can do yourself, do it instead.`,
     promptSnippet: "Pause the active /goal while waiting on something outside this session",
     promptGuidelines: [
       "Use goal_wait only when progress genuinely depends on a later external event — not when work remains that you could do now.",
-      `Set resume_after_ms from your estimate how long the remaining goal work or the awaited event will take, and state the basis in reason; anything under ${MIN_GOAL_WAIT_DELAY_MS}ms is a polling loop and is clamped.`,
+      `Set resume_after_ms from your estimate of how long the remaining goal work or the awaited event will take, and state the basis in reason; anything under ${MIN_GOAL_WAIT_DELAY_MS}ms is a polling loop and is clamped.`,
       "Omit resume_after_ms only when arriving input will wake the goal sooner; a stated estimate beats a guessed round number.",
       "Call goal_wait alone: a sibling tool call in the same turn can prevent the turn from ending.",
     ],
@@ -424,9 +448,177 @@ export function registerGoalTools(pi: ExtensionAPI, runtime: GoalRuntime) {
     },
   });
 
+  const goalEditTool = defineTool({
+    name: GOAL_EDIT_TOOL,
+    // Editing rewrites the objective the current turn is pursuing; it must be a
+    // direct model call for the same reason terminal transitions are.
+    exposure: "model-only",
+    label: "Goal Edit",
+    description:
+      "Rewrite the objective of an existing /goal in this session — the active goal, or a queued goal by 1-based position — keeping the rest of the queue, the usage counters and the goal's status. Use it only to apply an objective change the user or the owning leader actually asked for, never to narrow your own scope. The active goal gets a new goal_id; use it from now on.",
+    promptSnippet: "Rewrite an existing /goal objective in place when the user or leader asked for it, without replacing the queue",
+    promptGuidelines: [
+      "Use goal_edit only for an objective change the user or the owning leader stated; never edit your own goal to narrow, soften, or redefine what was asked.",
+      "Pass the exact goal_id from the current /goal prompt. Editing the active goal mints a new goal_id, so re-read the tool result and use that id for goal_complete and goal_blocked afterwards.",
+      "Omit queued_index to edit the active goal; pass a 1-based queued_index to edit a queued goal without touching the active goal or the rest of the queue.",
+      "Never recreate a goal to change its wording: a new /goal or goal replacement drops the queue and the usage history, while goal_edit preserves both.",
+    ],
+    parameters: Type.Object({
+      goal_id: Type.String({
+        minLength: 1,
+        maxLength: MAX_GOAL_ID_LENGTH,
+        description:
+          "The exact goal_id from the current /goal prompt. When queued_index is set, either that id or the id of the queued goal at that position is accepted.",
+      }),
+      objective: Type.String({
+        minLength: 1,
+        maxLength: MAX_GOAL_TEXT_LENGTH,
+        description:
+          "The complete replacement objective. It fully supersedes the previous objective; keep every requirement that still applies.",
+      }),
+      queued_index: Type.Optional(
+        Type.Integer({
+          minimum: 1,
+          description:
+            "1-based position in the queued goals list. Omit to edit the active goal; the active goal and the rest of the queue are then left alone.",
+        }),
+      ),
+    }),
+    execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
+      const active = runtime.activeGoal;
+      const requestedGoalId = typeof params.goal_id === "string" ? params.goal_id.trim() : "";
+      const objective = typeof params.objective === "string" ? params.objective.trim() : "";
+      const queuedIndex = params.queued_index;
+
+      const queueDetails = (): GoalEditQueueEntry[] =>
+        runtime.queuedGoals.map((queuedGoal, index) => ({
+          position: index + 1,
+          goal_id: queuedGoal.id,
+          status: queuedGoal.status,
+          objective: queuedGoal.text.slice(0, MAX_GOAL_TEXT_LENGTH),
+        }));
+
+      const details = (target: "active" | "queued", goalId: string, previousGoalId?: string): GoalEditDetails => ({
+        target,
+        goal: objective.slice(0, MAX_GOAL_TEXT_LENGTH),
+        goal_id: goalId,
+        ...(previousGoalId === undefined ? {} : { previous_goal_id: previousGoalId }),
+        objective: objective.slice(0, MAX_GOAL_TEXT_LENGTH),
+        ...(target === "queued" && queuedIndex !== undefined ? { queue_position: queuedIndex } : {}),
+        queue: queueDetails(),
+      });
+
+      const reject = (why: string, terminate = false) => {
+        const rejection = `goal_edit rejected: ${why}${why.endsWith(".") ? "" : "."}`;
+        notifyTerminal(ctx.ui, rejection, "warning");
+        return {
+          content: toolContent(rejection),
+          details: details(queuedIndex === undefined ? "active" : "queued", active?.id ?? ""),
+          ...(terminate ? { terminate: true as const } : {}),
+        };
+      };
+
+      if (!active) return reject("no active goal");
+      if (!objective) return reject("objective is empty");
+      if (objective.length > MAX_GOAL_TEXT_LENGTH) {
+        return reject(`objective is too long (${objective.length}/${MAX_GOAL_TEXT_LENGTH} characters)`);
+      }
+      const objectiveError = validateObjective(objective);
+      // validateObjective reports an empty objective with slash-command usage text;
+      // that is already handled above, so anything left is a real rejection.
+      if (objectiveError) return reject(objectiveError.replace(/^Usage: \/goal .*$/u, "objective is invalid"));
+
+      if (queuedIndex === undefined) {
+        // Active goal: same transition `/goal edit` performs, minus the follow-up
+        // prompt — the tool result is the authoritative objective for this turn.
+        const safetyPause = formatGoalSafetyPause(active, runtime.settings.continuationLimits);
+        if (safetyPause) return reject(safetyPause);
+        if (!runtime.canRecordGoalUsage()) return reject("current run does not own the active goal");
+        if (hasPendingSkipForGoal(runtime, active.id)) {
+          runtime.recordGoalUsage(active, ctx);
+          runtime.persistGoal(active);
+          runtime.updateStatus(ctx, active);
+          runtime.clearBudgetWrapUp();
+          return reject("goal is queued to be skipped", true);
+        }
+        const staleGoalRejection = goalIdRejectionReason(active, requestedGoalId);
+        if (staleGoalRejection) return reject(staleGoalRejection);
+
+        const previousGoalId = active.id;
+        const previousStatus = active.status;
+        if (previousStatus === "active") runtime.recordGoalUsage(active, ctx);
+        runtime.cancelContinuationWork();
+        runtime.clearGoalRecovery();
+        runtime.clearBudgetWrapUp();
+        const transitioned = transitionGoal(
+          { ...nextGoalInstance(active), text: objective },
+          editedGoalStatus(previousStatus),
+        );
+        const nextGoal =
+          transitioned.status === "active"
+            ? queueGoalSafetyReset(
+                previousStatus === "active" ? transitioned : rebaseGoalUsage(transitioned, currentTokenTotal(ctx)),
+              )
+            : transitioned;
+        runtime.activeGoal = nextGoal;
+        // The run's own instructions still name the previous id; re-bind it on the
+        // next request so a correct model does not chase a stale guard.
+        runtime.editedGoalBindingId = nextGoal.id;
+        if (blocksStaleGoalToolCalls(nextGoal.status)) runtime.blockStaleGoalToolCalls();
+        else runtime.clearStaleGoalToolCallBlock();
+        runtime.persistGoal(nextGoal);
+        runtime.updateStatus(ctx, nextGoal);
+        notifyTerminal(ctx.ui, `Goal updated: ${truncateNotification(objective)}`, "info");
+
+        const queuedCount = runtime.queuedGoals.length;
+        return {
+          content: toolContent(
+            `Goal updated: ${objective}\n` +
+              `Status: ${nextGoal.status}. This goal_id is now ${nextGoal.id}; the previous id ${previousGoalId} is stale, so pass the new one to goal_complete and goal_blocked. ` +
+              `Queue unchanged${queuedCount === 0 ? " (no queued goals)" : ` (${queuedCount} queued)`}.`,
+          ),
+          details: details("active", nextGoal.id, previousGoalId),
+        };
+      }
+
+      // Queued goal: text only. Its id, position and status stay as they are, so
+      // nothing that refers to the queue by id is invalidated.
+      if (!Number.isInteger(queuedIndex) || queuedIndex < 1) {
+        return reject("queued_index must be a whole number of at least 1");
+      }
+      if (!runtime.canRecordGoalUsage()) return reject("current run does not own this session's goals");
+      if (runtime.queueFrozen) return reject("the goal queue is frozen; no queued goal can be edited");
+      if (runtime.pendingQueueAction) {
+        return reject("the goal queue is mid-transition; retry once Pi has settled");
+      }
+      const queuedGoal = runtime.queuedGoals[queuedIndex - 1];
+      if (!queuedGoal) {
+        return reject(`no goal is queued at position ${queuedIndex} (${runtime.queuedGoals.length} queued)`);
+      }
+      if (requestedGoalId !== active.id && requestedGoalId !== queuedGoal.id) {
+        return reject("goal_id does not match the active goal or the queued goal at that position");
+      }
+
+      runtime.queuedGoals = runtime.queuedGoals.map((entry, index) =>
+        index === queuedIndex - 1 ? { ...entry, text: objective, updatedAt: Date.now() } : entry,
+      );
+      runtime.persistGoal(active);
+      notifyTerminal(ctx.ui, `Goal updated at position ${queuedIndex}: ${truncateNotification(objective)}`, "info");
+
+      return {
+        content: toolContent(
+          `Queued goal at position ${queuedIndex} updated: ${objective}\n` +
+            `The active goal and its goal_id are unchanged; this queued goal keeps its id ${queuedGoal.id} and activates with this objective.`,
+        ),
+        details: details("queued", queuedGoal.id),
+      };
+    },
+  });
+
   pi.registerTool(goalCompleteTool);
   pi.registerTool(goalBlockedTool);
   pi.registerTool(goalWaitTool);
+  pi.registerTool(goalEditTool);
 }
 
 function toolContent(text: string) {

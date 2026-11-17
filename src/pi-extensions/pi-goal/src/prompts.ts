@@ -62,6 +62,13 @@ export function buildGoalBindingUpdate(goal: GoalPromptContext) {
   return `${GOAL_BINDING_UPDATE_HEADER}\n\n${goalCompletionGuardBlock(goal)}`;
 }
 
+export const GOAL_EDIT_BINDING_UPDATE_HEADER =
+  "Goal runtime binding update: the active goal objective was edited by goal_edit. This current goal_id and objective supersede the binding in the earlier instructions.";
+
+export function buildGoalEditBindingUpdate(goal: GoalPromptContext) {
+  return `${GOAL_EDIT_BINDING_UPDATE_HEADER}\n\n${goalContextBlock(goal)}`;
+}
+
 export function buildContinuePrompt(goal: GoalPromptContext, marker: string) {
   return `Continue the active /goal until it is complete:\n\n${goalContextBlock(goal)}\n\nThis is automatic continuation #${goal.iteration}. The full objective persists across turns; continue from the authoritative current state.\n\n${goalModeRules("this goal")}\n\n${continuationMarkerComment(marker)}`;
 }

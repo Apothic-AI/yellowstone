@@ -359,6 +359,7 @@ test("after-first-goal resume can restore tools after a restrictive mode exits",
     "goal_complete",
     "goal_blocked",
     "goal_wait",
+    "goal_edit",
   ]);
 });
 

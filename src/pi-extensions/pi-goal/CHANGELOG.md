@@ -1,5 +1,10 @@
 # @signalridge/pi-goal
 
+## 1.5.0
+### Minor Changes
+
+- Add `goal_edit({ goal_id, objective, queued_index? })`, the agent-callable counterpart of `/goal edit`. It rewrites the active objective in place, or one queued goal by 1-based position, preserving the queue, usage counters, iteration, budget and status. The active goal is re-minted so a stale turn cannot complete the edited objective, and the remainder of that run receives a request-local binding update naming the new id and objective. Stopped goals stay stopped; queued edits are rejected while the queue is frozen, mid-transition, out of range, or empty. Activation still requires only the three lifecycle tools, so an allowlist that predates `goal_edit` keeps working while the edit tool stays absent until it is allowed.
+
 ## 1.4.8
 ### Patch Changes
 

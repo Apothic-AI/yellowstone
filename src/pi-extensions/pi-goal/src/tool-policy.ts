@@ -4,7 +4,13 @@ import type { GoalToolVisibility } from "./settings.js";
 export const GOAL_COMPLETE_TOOL = "goal_complete";
 export const GOAL_BLOCKED_TOOL = "goal_blocked";
 export const GOAL_WAIT_TOOL = "goal_wait";
-export const GOAL_TOOL_NAMES = [GOAL_COMPLETE_TOOL, GOAL_BLOCKED_TOOL, GOAL_WAIT_TOOL] as const;
+export const GOAL_EDIT_TOOL = "goal_edit";
+// The lifecycle tools are what activation needs present; `goal_edit` is additive.
+// An allowlist written before `goal_edit` existed still activates goals, and the
+// edit tool simply stays absent until that allowlist is widened — a stricter
+// requirement here would break every existing restricted session on upgrade.
+export const GOAL_LIFECYCLE_TOOL_NAMES = [GOAL_COMPLETE_TOOL, GOAL_BLOCKED_TOOL, GOAL_WAIT_TOOL] as const;
+export const GOAL_TOOL_NAMES = [...GOAL_LIFECYCLE_TOOL_NAMES, GOAL_EDIT_TOOL] as const;
 
 export interface GoalToolVisibilitySnapshot {
   activeTools: string[];
@@ -39,7 +45,7 @@ export class GoalToolPolicy {
 
   toolsAvailable() {
     const active = new Set(this.pi.getActiveTools());
-    return GOAL_TOOL_NAMES.every((name) => active.has(name));
+    return GOAL_LIFECYCLE_TOOL_NAMES.every((name) => active.has(name));
   }
 
   lock() {
@@ -173,7 +179,7 @@ export class GoalToolPolicy {
   private assertAvailable() {
     if (this.toolsAvailable()) return;
     throw new Error(
-      "goal_complete and goal_blocked are unavailable; include them in the active tool allowlist or leave the restrictive tool mode first.",
+      "the goal lifecycle tools are unavailable; include goal_complete, goal_blocked and goal_wait in the active tool allowlist or leave the restrictive tool mode first.",
     );
   }
 }

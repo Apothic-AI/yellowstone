@@ -29,7 +29,12 @@ const goal = {
   baselineTokens: 0,
 };
 
-const ESTIMATE_RULE = /estimate how long the remaining goal work or the awaited event will take/i;
+// The rule is pinned by shape, not by one sentence: upstream's published tool text says
+// "estimate of when … will finish" / "estimate of how long … will take" while FT-61's own
+// prompt text says "estimate how long … will take". Both carry the rule; a regex tied to one
+// wording would fail on the other for no behavioural reason.
+const ESTIMATE_RULE =
+  /estimate (?:of )?(?:how long the remaining goal work or the awaited event will take|when the remaining goal work or the awaited event will finish)/i;
 
 test("the continuation nudge tells the lane to derive resume_after_ms from an estimate", () => {
   const nudge = buildContinuePrompt(goal, "ft61-marker");
