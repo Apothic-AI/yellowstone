@@ -75,6 +75,11 @@ EXCLUDE_FILE = os.path.join(SUPERVISE, "_exclude.json")
 EXTRA_FILE = os.path.join(SUPERVISE, "_extra.json")
 BACKOFF_BASE = 60.0
 BACKOFF_CAP = 1800.0
+# A lane that dies again inside this window is flapping, not recovering: its backoff must keep
+# growing instead of restarting at 60s. Each restart reloads the whole session file (111 MB here,
+# ~1.4-2 GB resident), which is the last thing an already-swapping box needs.
+FLAP_WINDOW = 600.0
+FLAP_HUMAN_AT = 5
 
 
 def out(msg: str) -> None:
@@ -223,6 +228,41 @@ def pi_pid(pane: str) -> str | None:
         if (proc.get("name") or "") == "pi" or (proc.get("argv") or [None])[0] == "pi":
             return str(proc.get("pid") or "")
     return None
+
+
+def down_evidence(pane: str, lane: str) -> str:
+    """What the pane actually looked like when supervision called the lane down.
+
+    Several times this lane was declared DOWN and the cause was reconstructed afterwards by hand --
+    once wrongly, from a startup race that turned out to last 1.5s. The journal should carry the
+    observation, not a hypothesis about it: the foreground processes (names and pids), the agent
+    status herdr reports, and the memory the box had left at that moment.
+    """
+    parts = []
+    try:
+        info = ((herdr("pane", "process-info", "--pane", pane).get("result") or {})
+                .get("process_info") or {})
+        procs = info.get("foreground_processes") or []
+        parts.append("foreground=[" + (", ".join(
+            f"{(p.get('name') or '?')}:{p.get('pid')}" for p in procs) or "EMPTY") + "]")
+    except Exception as exc:  # noqa: BLE001 - evidence must never break supervision
+        parts.append(f"process-info-failed={exc}")
+    try:
+        parts.append(f"agent_status={agent(lane).get('agent_status')}")
+    except Exception:  # noqa: BLE001
+        parts.append("agent_status=?")
+    try:
+        with open("/proc/meminfo") as fh:
+            mem = {}
+            for line in fh:
+                key = line.split(":", 1)[0]
+                if key in ("MemAvailable", "SwapFree", "SwapTotal"):
+                    mem[key] = line.split()[1]
+        if mem:
+            parts.append("meminfo=" + ",".join(f"{k}={v}kB" for k, v in mem.items()))
+    except OSError:
+        pass
+    return " ".join(parts)
 
 
 def refresh(lane: str, st: dict, rec: dict) -> dict:
@@ -398,7 +438,7 @@ def resume(lane: str, st: dict, dry: bool) -> int:
     if dry:
         out(f"{lane}: would run in {pane}: {cmd}")
         return 0
-    out(f"{lane}: DOWN — resuming session {sid} in {pane}")
+    out(f"{lane}: DOWN — resuming session {sid} in {pane}  [{down_evidence(pane, lane)}]")
     herdr("pane", "run", pane, cmd)
     pid = None
     for _ in range(20):
@@ -408,10 +448,17 @@ def resume(lane: str, st: dict, dry: bool) -> int:
             break
     st["last_attempt_epoch"] = now
     if pid:
-        st["attempts"] = 0
-        st.pop("needs_human", None)
+        # A started process is not a recovered lane. Clearing the counter here is what let a crash
+        # loop resume every 60s forever, each resume reloading the whole session. It clears only
+        # after the lane has STAYED up (FLAP_WINDOW, in the alive path of the pass).
+        st["attempts"] = int(st.get("attempts") or 0) + 1
+        st["last_resume_epoch"] = now
+        if st["attempts"] >= FLAP_HUMAN_AT:
+            st["needs_human"] = True
+            out(f"{lane}: resumed, pid={pid} — FLAP {st['attempts']}: dying repeatedly, flagged for a human")
+        else:
+            out(f"{lane}: resumed, pid={pid}")
         write_json(state_path(lane), refresh(lane, st, agent(lane)))
-        out(f"{lane}: resumed, pid={pid}")
         if not notify(lane):
             # The lane is up but may not know it. Exit non-zero so the unit shows it rather than
             # leaving the discovery to the operator, who is the one who noticed both times.
@@ -512,6 +559,13 @@ def one_pass(only: str | None, dry: bool) -> int:
             pane = st.get("pane") or ""
             pid = pi_pid(pane)
             if pid:
+                # The lane has stayed up, so forgive earlier flaps -- but only after FLAP_WINDOW,
+                # so a lane that dies again in a minute keeps its growing backoff.
+                resumed_epoch = float(st.get("last_resume_epoch") or 0)
+                if st.get("attempts") and time.time() - resumed_epoch >= FLAP_WINDOW:
+                    st = dict(st, attempts=0)
+                    st.pop("needs_human", None)
+                    st["recovered_epoch"] = time.time()
                 rec = agent(lane)
                 new = refresh(lane, st, rec)
                 if new != st and not dry:
