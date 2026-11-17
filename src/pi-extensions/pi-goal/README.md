@@ -2,7 +2,7 @@
 
 [![Pi extension](https://img.shields.io/badge/Pi-extension-blue)](https://pi.dev) [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 
-`@signalridge/pi-goal` is a native [Pi coding agent](https://pi.dev) extension that adds session-scoped `/goal` commands, a `goal_complete({ goal_id, summary })` completion tool, and a strict `goal_blocked({ goal_id, reason, evidence, repeated_turns })` impasse tool for autonomous, verifiable task completion. An opt-in experimental mode adds an ordered queue without introducing a second command or tool namespace.
+`@signalridge/pi-goal` is a native [Pi coding agent](https://pi.dev) extension that adds session-scoped `/goal` commands, a `goal_complete({ goal_id, summary })` completion tool, and a strict `goal_blocked({ goal_id, reason, evidence, repeated_turns })` impasse tool for autonomous, verifiable task completion. An opt-in experimental mode adds an ordered queue without introducing a second command or tool namespace. `goal_wait` parks a goal on an outside dependency, and `goal_edit` rewrites an existing objective in place.
 
 Goal mode uses Codex-like persistence instructions and sends guarded continuation messages from Pi's fully settled idle boundary until the agent completes the goal, the user pauses or clears it, a safety circuit breaker trips, a true blocker or provider usage limit stops it, or an optional token budget is reached. With ordered goals enabled, the same lifecycle advances through queued objectives one at a time.
 
@@ -23,7 +23,8 @@ Goal mode uses Codex-like persistence instructions and sends guarded continuatio
 - Registers a `goal_complete({ goal_id, summary })` tool for explicit completion, requiring the current goal id and rejecting missing/stale ids plus plainly contradictory summaries such as “not complete” or “tests still fail”.
 - Registers `goal_blocked({ goal_id, reason, evidence, repeated_turns })` for true impasses only; it requires the current goal id, concrete evidence, and the same blocker recurring for at least three consecutive goal turns.
 - Registers `goal_wait({ goal_id, reason, resume_after_ms? })` for a goal that is waiting on something outside the session rather than unfinished or blocked. The goal pauses with the reason recorded and either waits for the next real message or wakes on the deadline; requests under 10s are clamped, since a shorter "wait" is a polling loop. Resuming a deadline uses the same path as `/goal resume`.
-- Hides all three goal tools by default until the first goal exists (`"after-first-goal"`), keeping their definitions and prompt guidelines out of a session that never runs `/goal`; optional `"always"` visibility keeps them resident for a stable tool schema. Hidden means hidden until the first accepted `/goal` activation or an unfinished goal is restored, then keeps them desired for the rest of that extension runtime without overriding a restrictive restore policy.
+- Registers `goal_edit({ goal_id, objective, queued_index? })`, the agent-callable counterpart of `/goal edit`. It rewrites the active goal's objective — or one queued goal by 1-based position — in place: the queue, usage counters, iteration, budget and status are preserved, the active goal is re-minted so the turn that called the tool cannot complete the edited goal with its stale id, and the rest of that run is re-bound to the new id by a request-local binding update. It is for objective changes the user or the owning leader actually asked for; it is not a way for a goal to narrow its own scope. Editing a stopped goal rewrites its wording without resuming it. Queued edits refuse while a queue transition is pending, since positions are about to shift.
+- Hides all four goal tools by default until the first goal exists (`"after-first-goal"`), keeping their definitions and prompt guidelines out of a session that never runs `/goal`; optional `"always"` visibility keeps them resident for a stable tool schema. Hidden means hidden until the first accepted `/goal` activation or an unfinished goal is restored, then keeps them desired for the rest of that extension runtime without overriding a restrictive restore policy. Activation requires the three lifecycle tools; `goal_edit` is additive, so an allowlist written before it existed still activates goals.
 - Records continuation and queue-transition intent, then triggers exactly one next turn only after Pi reports the agent fully settled, idle, and free of pending messages; if terminal tools disappear during a tool loop or before the next queued goal starts, pauses before another model turn.
 - Lets retry, compaction, steering, follow-up, and other queued work settle before automatic goal continuation.
 - Separates user interruption (`paused`), true impasse or terminal non-usage error (`blocked`), provider/account quota exhaustion (`usage_limited`), and user token budget exhaustion (`budget_limited`).
@@ -129,7 +130,6 @@ Tool visibility is a baseline, not ownership of Pi's global active-tool list. Pl
 /goal drop-last
 /goal skip
 ```
-
 - In the TUI, `/goal` opens a standard state-aware manager. Its first action follows the current
   state: start when empty, pause when active, review a reached automatic-work limit, resume for other
   stopped states, or increase an exhausted token budget. Active and paused views show **Automatic
@@ -232,6 +232,20 @@ Manual compaction does not emit `agent_settled`, so its completion hook uses the
 `goal_blocked` is intentionally narrower than completion or ordinary clarification. Every goal-mode prompt repeats the blocked audit: the model must provide the exact current `goal_id`, a specific reason describing the user or external action required (up to 1,000 characters), concrete evidence from the failed resolution attempts (up to 4,000 characters), and `repeated_turns` showing the same blocker recurred for at least three consecutive goal turns. A resumed goal starts a fresh blocker audit. Empty or oversized reasons/evidence, stale ids, non-whole turn counts, stopped goals, and fewer than three turns are rejected. Accepted blocker reports set `blocked`, stop automatic continuation, and terminate the tool batch when Pi can do so safely.
 
 Do not use `goal_blocked` merely because work is difficult, incomplete, uncertain, awaiting normal clarification, or affected by a recoverable tool/provider failure. The user can resolve the external condition and run `/goal resume` to rotate the goal id and continue.
+
+## Editing the objective from a tool
+
+`goal_edit({ goal_id, objective, queued_index? })` is the agent-callable form of `/goal edit`. It exists because a lane that discovers its objective was mis-stated had only `/goal <objective>` available — which replaces the active goal **and drops the queue** behind a confirm modal an agent cannot answer.
+
+What it does not do is as important as what it does:
+
+- **Authorization is local.** The tool acts on the three-plus tool allowance of the session it runs in; it cannot reach another lane's goals. A leader re-points a worker's goal by messaging that worker (`/goal edit <objective>`, or an instruction that makes the worker call `goal_edit`), never by editing another session from outside. Whether an objective should change is the operator's or the owning leader's call: the tool's own guidance forbids using it to narrow, soften, or redefine the agent's own task.
+- **The queue is preserved.** Nothing else in the queue is touched, and the edit cannot clear it. Editing the active goal keeps every queued goal's id, text, budget, and usage.
+- **The active goal is re-minted.** Editing mints a new `goal_id`, exactly like `/goal edit`, so a tool call holding the old id — including one in the same turn — cannot complete an objective the model never saw. Because the running turn's own instructions still name the old id, the extension appends one request-local binding update naming the new id and objective for the rest of that run; the tool result also reports the new id.
+- **Status is preserved.** `paused`, `blocked`, and `usage_limited` goals stay stopped and keep their safety state; an edit never resumes work. A `budget_limited` goal stays limited unless a future command raises its budget, which the tool cannot do — it deliberately exposes no `--tokens` route, so it cannot be used to raise a ceiling.
+- **Queued edits are positional.** `queued_index` is 1-based over the queued goals, and either the current goal id or the queued goal's own id is accepted as the guard. The queued entry keeps its id and status, so a pending reference to it stays valid. The edit is rejected when the queue is frozen, when a queue transition is pending (positions are about to shift), when the index is out of range, or when the queue is empty.
+
+Rejections are returned to the model as text rather than thrown, so a wrong id or a stale position is a re-read, not a lost goal.
 
 ## Interruption and queued-input behavior
 

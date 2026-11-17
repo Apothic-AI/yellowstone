@@ -19,7 +19,7 @@ import { DEFAULT_GOAL_SETTINGS, type GoalSettings, type GoalSettingsLoadIssue } 
 import { GoalToolPolicy, type GoalToolVisibilitySnapshot } from "./tool-policy.js";
 import { type GoalWait, GoalWaitTimer } from "./wait.js";
 
-export { GOAL_BLOCKED_TOOL, GOAL_COMPLETE_TOOL, GOAL_TOOL_NAMES, GOAL_WAIT_TOOL } from "./tool-policy.js";
+export { GOAL_BLOCKED_TOOL, GOAL_COMPLETE_TOOL, GOAL_EDIT_TOOL, GOAL_TOOL_NAMES, GOAL_WAIT_TOOL } from "./tool-policy.js";
 
 export interface ContinuationTicket {
   goalId: string;
@@ -230,6 +230,8 @@ export class GoalRuntime {
   /** Input wakes inside an existing run cannot refresh its system prompt. */
   inputWakeGoalId?: string;
   inputWakeNeedsPrompt = false;
+  /** An active edit rotated the id mid-run; every later request must re-bind it. */
+  editedGoalBindingId?: string;
   /** Accepted idle inputs, not their early input hooks, own wait wakes. */
   pendingDirectInputs: PendingDirectInput[] = [];
   /** A mixed-source delivery cannot prove which waiting input remains pending. */
@@ -1136,6 +1138,7 @@ export class GoalRuntime {
 
   clearActiveGoal(ctx: StatusContext, reason = "goal cleared") {
     const clearedGoal = this.activeGoal;
+    this.editedGoalBindingId = undefined;
     this.ambiguousWaitInputGoalId = undefined;
     this.pendingStoppedUsageGoalId = undefined;
     this.pendingReplacementUsage = undefined;
