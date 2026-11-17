@@ -353,3 +353,26 @@ test("a real queued message is handed over as pi_rooms_message and draws collaps
     fs.rmSync(base, { recursive: true, force: true });
   }
 });
+
+test("a failed preference write leaves the stored file intact and no temp file behind", async () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "rooms-view-write-"));
+  const target = messageViewConfigPath(base);
+  try {
+    await writeRoomsMessageViewConfig(base, { collapse: false });
+    const before = fs.readFileSync(target, "utf8");
+    // Block the temp path a write must go through: a directory cannot be
+    // overwritten as a file, so the atomic write fails before the rename.
+    fs.mkdirSync(`${target}.${process.pid}.tmp`);
+    await assert.rejects(
+      () => writeRoomsMessageViewConfig(base, { collapse: true }),
+      "a write that cannot complete must surface, not be swallowed"
+    );
+    assert.equal(
+      fs.readFileSync(target, "utf8"),
+      before,
+      "the stored preference survives a failed write — the point of writing beside it and renaming"
+    );
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
