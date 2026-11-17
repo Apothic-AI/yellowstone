@@ -64,10 +64,52 @@ your first turn and ask for a relaunch carrying `PI_MODE_CONFIRM_PROJECT=1`.
 ## Conventions that apply in this directory
 
 - **A lane's identity is its herdr tab label.** `pil` derives it at spawn, so name the tab before starting. This space's lanes are `self-improvement-leader` and the workers it spawns.
+- **Read the fleet's state; do not reconstruct it.** `behold roster` joins herdr topology, pi session state and extension data per lane in one read-only pass — the skill is **`behold-roster`** and it explains the `unknown` / `divergent` / stale vocabulary, so a missing measurement is never reported as a zero. `--markdown` for the whole fleet, `--lane`, `--filter`, `--sort`, `--full` to narrow. Hand-joining `herdr agent list` against session files is the failure mode this replaces.
+- **`/reload` re-imports extension code; a mode file is the exception.** `ResourceLoader.reload()`
+  clears the extension factory cache (bumping its generation), so each extension module is re-imported
+  from disk — verified in the installed package 2026-11-13 (`dist/core/resource-loader.js:370-374`,
+  `dist/core/extensions/loader.js:93-97,460-489`). So a changed extension reaches a running lane on
+  reload; a relaunch is needed only for identity, environment, the package set, `PI_MODE`/`PI_PROFILE`,
+  or a changed mode file. Do not measure extension currency by process start time alone.
 - **Roles are artifacts, not prose.** `PI_MODE=leader|worker` carries a role's contract; `PI_PROFILE` scopes its resources. A lane started with bare `pil` gets resources but no role duties, because `~/AGENTS.md` is deliberately role-neutral.
+- **Pause supervision before you restart panes by hand.** A helper that stops a lane and starts it again creates a window where `lane-supervise.timer` sees the lane down and resumes it — two processes on one session, which is the failure its own rules exist to prevent. Wrap the work: `keepalive-hold start --reason "<what>"` … `keepalive-hold end`, or one-shot `keepalive-hold run --reason "<what>" -- <command>`. **Name the lane you are replacing** (`--lane <lane>`, or `keepalive-hold set-lane <lane>` as you move through targets): a hold that names a lane pauses supervision for *that lane only*, and the timer keeps watching everything else; a hold with no lane is a blanket pause. The hold file is `~/.local/state/pil/supervise/_hold`; content `0` (or absent) means supervision runs, and `keepalive-hold status` reports `PAUSED [lane <name>]` or `PAUSED [all lanes]`. Every pane-restarting tool in `~/.overlord/tools` already does this (`restart-fleet`, `relaunch-lane.sh`, `migrate-lane.sh`, `migrate-unnamed-lane.sh`, `relaunch-lane-monorepo.sh`, `self-restart.sh`). A hold carries the owner pid, so a helper that crashes cannot pause supervision forever — the timer releases it and says so in the journal. Check with `keepalive-hold status`.
+- **Leader lanes stay up on their own — do not restart a dead one by hand.** `lane-supervise.timer` runs every minute, finds leader lanes whose process disappeared, and relaunches each into its previous session with `pil --role leader --session <uuid>`; the resumed lane is told it was resumed by a machine, with the timestamp, so it can reason about the gap. Discovery is by role record (`~/.local/state/pil/roles/<lane>.env`, `PI_MODE=leader`), so a new space is covered without editing any unit — but a lane is only supervised once it has been *observed* alive, which keeps retired spaces from being resurrected. It refuses to start a lane with no recorded session (that is an outage with a healthy pid), never resumes over a live lane, and backs off 60s→30min. Read it with `lane-supervise --list`; keep a lane **down** with `lane-supervise --exclude <lane>` (current holds: `gemini-accts-leader`, `yellowstone-leader`). Worker lanes are not supervised unless added with `--add`.
+- **Compose before you author.** `pi-modes` separates three layers: a **mode** (`<cwd>/.pi/modes/<key>.json`) carries prompt text and is drift-gated; a **preset** (`<cwd>/.pi/mode-presets/<key>.json`) is a saved *selection* — one base plus up to 64 ordered overlays, carrying no text at all; and `AGENTS.md` carries what every lane in a directory needs. `/mode presets` lists them, `/mode use <key>` applies one, `/mode save <key>` captures the current selection. Reach for a preset before writing a new mode, and `AGENTS.md` before either. Full write-up: `pi-fleet-model/MODE-PRESETS.md`.
+- **Cross-space work is delegated leader-to-leader as intent and requirements** — never a method, and never a worker of this space seated in another space's panes. Verify a handoff by the receiver's receipt and its own disposition, never by reading its screen. The fleet-progress lane may reach into any space to repair fleet machinery, not to take a leadership or worker role in that space's work. Protocol, routing cases, bead rule and the receipt ladder: `pi-fleet-model/DELEGATION-PROTOCOL.md`.
 - **Keep these docs current.** They are the record the next lane inherits; a stale claim here costs someone a session.
 - **A change is not finished until it is reloaded.** After editing an `AGENTS.md`, a harness config, a hook, a profile, a mode or a skill, reload every lane the change touches — `~/.overlord/tools/reload-fleet --only <pane>`, `--include-self` for the lane that made it — in the same turn. Do not hand the reload back to the operator as a note. Reload is silent (no turn, unchanged `state_change_seq`), so judge it by the tool's accepted/failed counts. A change to the **package set, identity, the environment, or `PI_MODE`/`PI_PROFILE`** needs a restart rather than a reload; a changed **mode file** needs re-approval or a relaunch carrying `PI_MODE_CONFIRM_PROJECT=1`.
 - **Never signal a process by command-line pattern.** `pkill -f 'pi$'` matches every pi lane on the machine, because `pi` *is* their command line — enough to take out the whole fleet, and `pkill -f '<target>'` matches the shell running the command too, so it kills the caller as well as the target. A `proc-find` helper already exists for this (`~/.overlord/tools/proc-find.py`): match an explicit *field* (`--argv0`, `--exe`, `--env KEY=VALUE`) with the caller's process and ancestors excluded, and require `--expect N` for signals. For a lane/pane target, use `~/.overlord/tools/pane-signal.sh <pane> --signal <SIG>`, which reads the pane's foreground pid and refuses if it is this shell or an ancestor. Measured: `pgrep -f proc-find` returned 3 processes; `proc-find --argv-contains proc-find` returned none. So: signal a pid you read from `ps`/`proc-find`/`pane-signal`, never a string you just composed; bound test children with `timeout` instead of hunting them by name.
+
+## Reading fleet state: backchannels before TUI scraping
+
+**Prefer a backchannel over scraping a pane.** Fleet state should be read from what already exists
+on disk or in an API, in this order:
+
+1. **A durable artifact** — a JSON/JSONL record a tool already writes.
+2. **The pi session file** — every turn, tool call, model, thinking level and goal transition is
+   already recorded there; parse the record instead of the screen.
+3. **`behold`** — `behold roster` derives the fleet view from herdr topology, pi session state and
+   extension data, and is the fleet's read-only join of those sources (skill: `behold-roster`).
+4. **A new behold feature** — extend behold's pi or herdr integration rather than teaching another
+   script to scrape. Behold exists to make this unnecessary.
+5. **Inter-extension / inter-plugin messaging** — room or socket messages that push state, rather
+   than polling a screen for it.
+
+**Why this is a rule and not a taste.** A TUI read is not a read-only operation. `herdr agent read
+`and` herdr pane read` default to `recent`, and a `recent*` read harvests scrollback by injecting SGR
+mouse-wheel events into the pane's pty (`src/server/alt_screen_read.rs`: `send_wheel`,
+SettleInitial -> Harvest -> Restore). The lane visibly scrolls up and snaps back. That was FT-27:
+`watch-leaders.py` ran `leader-board.py` every 90 s, the board read every lane with a bare
+`agent read`, and **every lane on the machine** jumped roughly every 100 s. The probe gate requires
+more `--lines` than the pane's viewport rows, so `--lines 3/8/20/30` cannot probe while
+`--lines 40+` can — a safe-by-size accident, never a design.
+
+If a read is genuinely unavoidable: use `--source visible`, keep `--lines` at or below the viewport,
+never put such a read in a loop or a per-lane fan-out, and state in the tool why the history is
+needed. A reader that changes the thing it reads is a defect.
+
+Open work: **FT-70** (extend behold to cover what the FT-27 offenders need) and **FT-71** (sweep
+all SI and overlord scripts for other TUI scraping worth replacing).
 
 ## Updating `pi`, `herdr`, or any extension: read the code first
 
