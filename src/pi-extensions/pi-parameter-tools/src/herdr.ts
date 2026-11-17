@@ -130,7 +130,7 @@ export async function resolveLaneSession(
 		};
 	}
 	if (result.code !== 0) {
-		const parsed = parseJson(result.stdout) ?? parseJson(result.stderr);
+		const parsed = unwrapEnvelope(parseJson(result.stdout)) ?? unwrapEnvelope(parseJson(result.stderr));
 		const code = typeof parsed?.code === "string" ? parsed.code : null;
 		if (code && TARGET_MISSING_CODES.has(code)) {
 			return {
@@ -166,7 +166,7 @@ export async function resolveLaneSession(
 		};
 	}
 
-	const payload = parseJson(result.stdout);
+	const payload = unwrapEnvelope(parseJson(result.stdout));
 	const agent = payload?.agent;
 	if (!payload || typeof agent !== "object" || agent === null) {
 		return {
@@ -200,6 +200,22 @@ export async function resolveLaneSession(
 	const rawPaneId = (agent as HerdrAgentPayload).pane_id;
 	const paneId = typeof rawPaneId === "string" ? rawPaneId : null;
 	return { ok: true, lane: { sessionPath: value, kind: agentKind, paneId } };
+}
+
+/**
+ * The herdr CLI answers with an envelope: { id, result: { ... } }. Parsing the top level for a
+ * field that lives under `result` finds nothing and reports it as a missing record, so a healthy
+ * lane looks unresolvable -- measured 2026-11-17: `herdr agent get <lane>` returned a complete
+ * agent record while this module answered 'herdr agent get returned no agent record'.
+ * Both shapes are accepted rather than betting on whichever one is current.
+ */
+function unwrapEnvelope(payload: Record<string, unknown> | null): Record<string, unknown> | null {
+	if (!payload) return null;
+	const result = payload.result;
+	if (result && typeof result === "object" && !Array.isArray(result)) {
+		return result as Record<string, unknown>;
+	}
+	return payload;
 }
 
 function parseJson(text: string): Record<string, unknown> | null {

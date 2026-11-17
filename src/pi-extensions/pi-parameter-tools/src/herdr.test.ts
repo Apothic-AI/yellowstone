@@ -42,6 +42,35 @@ describe("the lane classifier", () => {
 		if (result.ok) expect(result.lane.sessionPath).toBe("/tmp/a/s.jsonl");
 	});
 
+test("the CLI envelope is unwrapped, not read as an empty record", async () => {
+		// Measured 2026-11-17: `herdr agent get` answers with { id, result }, and reading the top
+		// level for `agent` reported "returned no agent record" for a perfectly healthy lane.
+		const result = await resolveLaneSession(
+			"lane-a",
+			execReturning({
+				stdout: JSON.stringify({
+					id: "cli:agent:get",
+					result: {
+						agent: { agent: "pi", pane_id: "w1A:p1", agent_session: { kind: "path", value: "/tmp/a/s.jsonl" } },
+					},
+				}),
+			}),
+			MANAGED,
+		);
+		expect(result.ok).toBe(true);
+		if (result.ok) expect(result.lane.sessionPath).toBe("/tmp/a/s.jsonl");
+	});
+
+	test("an error code inside the envelope still classifies", async () => {
+		const result = await resolveLaneSession(
+			"lane-a",
+			execReturning({ code: 1, stdout: JSON.stringify({ id: "cli:agent:get", result: { code: "lane_not_found" } }) }),
+			MANAGED,
+		);
+		expect(result.ok).toBe(false);
+		if (!result.ok) expect(result.failure.code).toBe("target_lane_unknown");
+	});
+
 	test("a lane that does not run pi is refused with the observed kind", async () => {
 		const result = await resolveLaneSession(
 			"lane-a",
