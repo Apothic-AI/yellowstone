@@ -33,13 +33,24 @@ information.
   * `--exclude <lane>`                                 -> never touched, for holds
   * `~/.local/state/pil/supervise/<lane>.json`         -> last known pane/cwd/session, refreshed live
 
+A **worker** lane is not supervised unless it is added. That is a decision, not an oversight: worker
+lanes are per-item and are retired when their item is done, so resuming every one of them would
+resurrect finished work (measured 2026-11-17: 39 leader role records, 189 worker role records, 168
+of them already inactive). What was an oversight is that `--list` printed only the lanes it covered,
+so the operator saw 20 lanes and concluded the fleet was covered while 20 more were live and outside
+it (FT-78: a worker named `experiment` was Ctrl-C'd and never came back, and nothing said why). The
+boundary is now printed, and `--add` seeds pane/session/role from the lane's own record so it also
+works after the lane is already down.
+
 Usage
 -----
   lane-supervise                      one pass (this is what the timer runs)
   lane-supervise --dry-run            report what would happen; never launch, never write
   lane-supervise --list [--json]      discovered lanes, their state, and why each is included
-  lane-supervise --add <lane>         also supervise a non-leader lane
-  lane-supervise --remove <lane>      drop an --add
+  lane-supervise --list --uncovered   also list every role record this pass will NOT resume
+  lane-supervise --add <lane>         also supervise a non-leader lane (seeds its pane/session/role
+                                      from ~/.local/state/pil/sessions/<lane>.json when it is down)
+  lane-supervise --remove <lane>      drop an --add, and the state that kept it discovered
   lane-supervise --exclude <lane>     never supervise this lane (holds, deliberately-down lanes)
   lane-supervise --unexclude <lane>
   lane-supervise --only <lane>        restrict a pass to one lane
@@ -70,6 +81,7 @@ import time
 STATE = os.path.join(os.environ.get("XDG_STATE_HOME", os.path.expanduser("~/.local/state")), "pil")
 SUPERVISE = os.path.join(STATE, "supervise")
 ROLES = os.path.join(STATE, "roles")
+SESSIONS = os.path.join(STATE, "sessions")
 LOCK = os.path.join(os.path.dirname(STATE), "overlord", "watchdog.lock")
 EXCLUDE_FILE = os.path.join(SUPERVISE, "_exclude.json")
 EXTRA_FILE = os.path.join(SUPERVISE, "_extra.json")
@@ -159,14 +171,155 @@ def role_records() -> dict[str, str]:
     return found
 
 
-def live_agents() -> set[str]:
+def role_of(lane: str) -> str:
+    """This lane's role from its own record, "" when there is none.
+
+    The resume command is `pil --role <role>`, so the role has to come from the record rather than
+    from a default: defaulting to leader is how a worker lane gets promoted by a repair (measured
+    2026-11-13 on `ft55-parameter-plan`).
+    """
+    return role_records().get(lane, "")
+
+
+def lane_record(lane: str) -> dict:
+    """The lane's own record from pi's state-change extension: pane, tab, session, cwd, pid.
+
+    `~/.local/state/pil/sessions/<lane>.json` is written by every live lane, workers included, and
+    it is the only record that still says where a lane lived after its process is gone. A resume
+    needs three facts from it (pane, session id, cwd) plus the role, so an `--add` issued after the
+    lane has already died can still produce a correct `pil --role worker --session <id>`.
+    """
+    rec = read_json(os.path.join(SESSIONS, f"{lane}.json"), {})
+    return rec if isinstance(rec, dict) else {}
+
+
+def seed_state(lane: str) -> dict:
+    """Write the state a down lane needs to be resume-able, from records that outlive it.
+
+    Returns the state written, {} when there is nothing new to write. A state file that already
+    names pane and session is left alone: it was refreshed from the lane itself, so it is better
+    evidence than a record of where the lane used to be.
+    """
+    st = read_json(state_path(lane), {}) or {}
+    if not isinstance(st, dict):
+        st = {}
+    if st.get("session_id") and st.get("pane"):
+        return {}
+    rec = lane_record(lane)
+    new = dict(st)
+    sess = rec.get("session") or ""
+    sid = session_id(sess) if sess else ""
+    if sid and not new.get("session_id"):
+        new["session_id"] = sid
+        new["session_path"] = sess
+    if rec.get("paneId") and not new.get("pane"):
+        new["pane"] = rec.get("paneId")
+    if not new.get("cwd"):
+        # The lane record often has no cwd (the extension records pane and session, not the working
+        # directory), and resuming in $HOME is its own defect: a space lane resumed outside its
+        # space loads a different AGENTS.md and a different mode. herdr still knows the pane's cwd,
+        # so ask it while the pane is still there.
+        cwd = rec.get("cwd") or pane_cwd(new.get("pane") or "")
+        if cwd:
+            new["cwd"] = cwd
+    roles = role_of(lane)
+    if roles and not new.get("role"):
+        new["role"] = roles
+    if not new.get("lane"):
+        new["lane"] = lane
+    if new == st:
+        return {}
+    new["seeded_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    new["seeded_from"] = os.path.join(SESSIONS, f"{lane}.json")
+    write_json(state_path(lane), new)
+    return new
+
+
+def uncovered(supervised: dict[str, str], excluded: set[str]) -> list[dict]:
+    """Role-record lanes this pass will NOT resume, with the reason and what is known about them.
+
+    An absence has to be printed as an absence: the pass has no record to write for a lane it never
+    considers, so this is the only place the operator can learn that a live lane is unwatched.
+    """
+    roles = role_records()
+    alive = live_agents()
+    rows = []
+    # A live lane with no role record is invisible to every pass by construction: discovery reads
+    # role records. It is also the one case where "not supervised" was pure silence.
+    for lane, pane in sorted(alive.items()):
+        if lane in supervised or lane in roles:
+            continue
+        rows.append({
+            "lane": lane,
+            "mode": None,
+            "alive": True,
+            "pane": pane or None,
+            "session_id": session_id((lane_record(lane).get("session") or "")) or None,
+            "reason": "no role record — discovery reads role records, so no pass sees it",
+        })
+    for lane, mode in sorted(roles.items()):
+        if lane in supervised:
+            continue
+        rec = lane_record(lane)
+        if lane in excluded:
+            reason = "excluded (never touched)"
+        elif mode != "leader":
+            reason = f"{mode or 'no mode'} role record — not supervised unless --add"
+        elif lane in alive:
+            reason = "leader, alive, not yet observed by a pass"
+        else:
+            reason = "leader never observed alive — a retired space, not resumed"
+        rows.append({
+            "lane": lane,
+            "mode": mode or None,
+            "alive": lane in alive,
+            "pane": rec.get("paneId") or None,
+            "session_id": session_id(rec.get("session") or "") or None,
+            "reason": reason,
+        })
+    return rows
+
+
+def live_agents() -> dict[str, str]:
+    """lane -> pane id for every agent herdr knows about right now.
+
+    A dict rather than a set because the only lanes an operator cannot otherwise see are the ones
+    with no role record, and naming those means naming their pane too.
+    """
     data = herdr("agent", "list").get("result", {}) or {}
-    names = set()
+    found: dict[str, str] = {}
     for rec in data.get("agents") or []:
         name = rec.get("name") or ""
         if name:
-            names.add(name)
-    return names
+            found[name] = rec.get("pane_id") or ""
+    return found
+
+
+def pane_cwd(pane: str) -> str:
+    """A pane's working directory, as herdr reports it — including for a lane that is down."""
+    if not pane:
+        return ""
+    panes = (herdr("pane", "list").get("result") or {}).get("panes") or []
+    for rec in panes:
+        if rec.get("pane_id") == pane:
+            return rec.get("cwd") or ""
+    return ""
+
+
+def occupant(pane: str) -> str:
+    """The lane herdr says is in this pane, "" when it says nothing.
+
+    A pane is a shared surface, so "there is a pi in the recorded pane" is not "this lane is up":
+    the tab may have been closed and reopened for another lane, or the lane replaced in place. The
+    pass used the pi alone, which made a foreign lane look like this one — it would refresh the
+    down lane's state to point at someone else's pane, and never resume it, silently.
+    """
+    if not pane:
+        return ""
+    for lane, where in live_agents().items():
+        if where == pane:
+            return lane
+    return ""
 
 
 def lanes_with_state() -> set[str]:
@@ -193,10 +346,12 @@ def discovery() -> tuple[dict[str, str], set[str]]:
     for lane, mode in roles.items():
         if mode == "leader" and lane in alive:
             lanes[lane] = "leader, alive"
-    for lane in lanes_with_state():
-        lanes.setdefault(lane, "observed earlier")
+    # Extras before observations: a lane somebody added on purpose should be reported as added, not
+    # as "observed earlier", or the one line that explains why it is covered is the one that lies.
     for lane in extras():
         lanes.setdefault(lane, "added explicitly")
+    for lane in lanes_with_state():
+        lanes.setdefault(lane, "observed earlier")
     for lane in excluded:
         lanes.pop(lane, None)
     return lanes, excluded
@@ -276,6 +431,10 @@ def refresh(lane: str, st: dict, rec: dict) -> dict:
         "status": rec.get("agent_status") or st.get("status"),
         "refreshed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     })
+    # Carry the role, so a state file cannot outlive its lane's role and get resumed as a leader.
+    role = role_of(lane)
+    if role:
+        st["role"] = role
     if sess:
         st["session_id"] = session_id(sess)
         st["session_path"] = sess
@@ -399,11 +558,19 @@ def behold_still_sees(lane: str) -> bool | None:
     return None
 
 
+def pane_exists(pane: str) -> bool:
+    panes = (herdr("pane", "list").get("result") or {}).get("panes") or []
+    return any(p.get("pane_id") == pane for p in panes)
+
+
 def resume(lane: str, st: dict, dry: bool) -> int:
     pane = st.get("pane") or ""
     sid = st.get("session_id") or ""
     cwd = st.get("cwd") or os.path.expanduser("~")
-    role = st.get("role") or "leader"
+    # Role from the state, else from the lane's own record: never a bare default. `pil --role` is
+    # what decides whether a resumed lane is a worker or a leader, and a wrong word here silently
+    # promotes it (the 2026-11-13 `ft55-parameter-plan` defect, in a different shape).
+    role = st.get("role") or role_of(lane) or "leader"
     if not sid:
         out(f"{lane}: DOWN with no recorded session id — needs a human to start it once")
         st["needs_human"] = True
@@ -420,6 +587,19 @@ def resume(lane: str, st: dict, dry: bool) -> int:
         return 1
     if not pane:
         out(f"{lane}: DOWN with no known pane — needs a human (start it once while supervision runs)")
+        return 1
+    # The pane is a shared surface: a tab that was closed and reopened for another lane, or a lane
+    # that was replaced in place, would receive this command in ITS composer. Both checks are about
+    # the irreversible action only, so a normal pass pays nothing for them.
+    if pi_pid(pane):
+        out(f"{lane}: NOT resuming — pane {pane} already holds a live pi; typing there would land in "
+            f"another lane's composer")
+        return 1
+    if not pane_exists(pane):
+        out(f"{lane}: pane {pane} no longer exists — start it once with spawn-lane or relaunch-lane.sh")
+        st["needs_human"] = True
+        if not dry:
+            write_json(state_path(lane), st)
         return 1
 
     # Second, independent confirmation before creating a second writer. herdr can report a lane
@@ -558,6 +738,18 @@ def one_pass(only: str | None, dry: bool) -> int:
             st = read_json(state_path(lane), {}) or {}
             pane = st.get("pane") or ""
             pid = pi_pid(pane)
+            held_by = occupant(pane) if pid else ""
+            if pid and held_by and held_by != lane:
+                # Someone else's lane is in the pane this lane used to own. Resuming here would
+                # type a `pil` command into a live agent's composer, and refreshing state from it
+                # would record a wrong pane for a later resume. Say it and touch nothing.
+                out(f"{lane}: pane {pane} is now {held_by}'s — not resuming there, and not "
+                    f"touching it (point the lane at another pane or start it once by hand)")
+                if not dry:
+                    st = dict(st, needs_human=True)
+                    write_json(state_path(lane), st)
+                rc = max(rc, 1)
+                continue
             if pid:
                 # The lane has stayed up, so forgive earlier flaps -- but only after FLAP_WINDOW,
                 # so a lane that dies again in a minute keeps its growing backoff.
@@ -596,7 +788,7 @@ def one_pass(only: str | None, dry: bool) -> int:
         return rc
 
 
-def cmd_list(as_json: bool) -> int:
+def cmd_list(as_json: bool, show_uncovered: bool = False) -> int:
     lanes, excluded = discovery()
     rows = []
     for lane, reason in sorted(lanes.items()):
@@ -609,8 +801,19 @@ def cmd_list(as_json: bool) -> int:
             "attempts": st.get("attempts", 0), "needs_human": bool(st.get("needs_human")),
             "cwd": st.get("cwd") or None,
         })
+    outside = uncovered(lanes, excluded)
+    live_outside = [r for r in outside if r["alive"]]
+    inactive_outside = [r for r in outside if not r["alive"]]
     if as_json:
-        print(json.dumps({"supervised": rows, "excluded": sorted(excluded)}, indent=1))
+        payload = {
+            "supervised": rows,
+            "excluded": sorted(excluded),
+            "uncovered_live": live_outside,
+            "uncovered_inactive": len(inactive_outside),
+        }
+        if show_uncovered:
+            payload["uncovered"] = outside
+        print(json.dumps(payload, indent=1))
         return 0
     if not rows:
         print("no lanes supervised")
@@ -620,6 +823,21 @@ def cmd_list(as_json: bool) -> int:
               + (" NEEDS-HUMAN" if r["needs_human"] else ""))
     if excluded:
         print(f"excluded (never touched): {', '.join(sorted(excluded))}")
+    # The lanes this pass will NOT bring back. Printed because an unprinted absence reads as
+    # coverage: the operator's question in FT-78 was "does the supervisor restart anything?",
+    # asked after a worker named `experiment` was Ctrl-C'd and silently never came back.
+    if live_outside:
+        print(f"not supervised, live now ({len(live_outside)}):")
+        for r in live_outside:
+            print(f"  {r['lane']:26} {str(r['mode'] or '-'):7} {str(r['pane'] or '-'):9} {r['reason']}")
+    if inactive_outside:
+        print(f"not supervised, not live: {len(inactive_outside)} role record(s)"
+              + ("" if show_uncovered else
+                 " — a retired lane is not an outage; --list --uncovered to list them"))
+    if show_uncovered:
+        for r in inactive_outside:
+            print(f"  {r['lane']:26} {str(r['mode'] or '-'):7} {str(r['pane'] or '-'):9} "
+                  f"session={r['session_id'] or '<none>'}  {r['reason']}")
     return 0
 
 
@@ -634,34 +852,72 @@ def edit_set(path: str, lane: str, add: bool) -> int:
     return 0
 
 
+def cmd_add(lane: str) -> int:
+    """Add a lane, and make the add survive the lane already being down.
+
+    `--add` alone is not enough to bring a lane back: a resume needs pane, session id and role, and
+    the supervisor writes those only while it is already watching the lane. Adding one that died
+    minutes ago (the FT-78 case: Ctrl-C on a worker, then "why did it never come back") left
+    discovery with nothing to act on. The lane's own record knows all three, so seed from it.
+    """
+    rc = edit_set(EXTRA_FILE, lane, True)
+    seeded = seed_state(lane)
+    if seeded:
+        out(f"{lane}: added; seeded pane={seeded.get('pane')} session={seeded.get('session_id')} "
+            f"role={seeded.get('role')} from {seeded.get('seeded_from')}")
+    else:
+        out(f"{lane}: added; no newer record than the state it already had — a pass will resume it "
+            f"if it is down and has a pane, or report what it needs")
+    return rc
+
+
+def cmd_remove(lane: str) -> int:
+    """Drop an add AND the persisted observation.
+
+    Discovery includes any lane that has a state file, so forgetting the observation matters: an
+    `--add` followed by `--remove` used to leave the lane discovered forever as "observed earlier".
+    """
+    rc = edit_set(EXTRA_FILE, lane, False)
+    try:
+        os.unlink(state_path(lane))
+        out(f"{lane}: removed (with its persisted pane/session state)")
+    except OSError:
+        out(f"{lane}: removed (it had no persisted state)")
+    return rc
+
+
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(
         prog="lane-supervise",
         description="Keep leader lanes up: resume any leader whose process disappeared.",
         epilog="Discovery is by role record (~/.local/state/pil/roles/<lane>.env, PI_MODE=leader), so a "
                "new space's leader is covered without editing any unit, and a lane is discoverable "
-               "while it is down. Holds go in --exclude.",
+               "while it is down. WORKER LANES ARE NOT SUPERVISED unless added with --add: they are "
+               "retired when their item is done, so resuming all of them would resurrect finished "
+               "work. --list names the lanes it does not cover. Holds go in --exclude.",
     )
     ap.add_argument("--add", metavar="LANE", help="also supervise this non-leader lane")
     ap.add_argument("--remove", metavar="LANE", help="drop an --add")
     ap.add_argument("--exclude", metavar="LANE", help="never supervise this lane")
     ap.add_argument("--unexclude", metavar="LANE")
     ap.add_argument("--list", action="store_true", help="show discovered lanes and their state")
+    ap.add_argument("--uncovered", action="store_true",
+                    help="with --list: also list every role record this pass will not resume")
     ap.add_argument("--only", metavar="LANE", help="restrict a pass to one lane")
     ap.add_argument("--dry-run", action="store_true", help="report, never launch or write")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args(argv)
 
     if args.add:
-        return edit_set(EXTRA_FILE, args.add, True)
+        return cmd_add(args.add)
     if args.remove:
-        return edit_set(EXTRA_FILE, args.remove, False)
+        return cmd_remove(args.remove)
     if args.exclude:
         return edit_set(EXCLUDE_FILE, args.exclude, True)
     if args.unexclude:
         return edit_set(EXCLUDE_FILE, args.unexclude, False)
     if args.list:
-        return cmd_list(args.json)
+        return cmd_list(args.json, args.uncovered)
     return one_pass(args.only, args.dry_run)
 
 

@@ -69,6 +69,14 @@ if [ "${1:-}" = gates ]; then
   # there is no live overlord space to compare against.
   gate ./test/verify-mirror-live.sh
   echo
+  # What the supervisor does NOT cover, as a test. FT-78: a worker lane was Ctrl-C'd and never
+  # came back; the tool printed the lanes it covered and said nothing about the rest, so the
+  # silence read as coverage. This pins the boundary, the retroactive `--add` seeding (pane,
+  # session and ROLE from the lane's own record), the refusal to type into a pane another lane
+  # now occupies, and `--remove` dropping the state that would otherwise keep the lane discovered.
+  # Hermetic: herdr/behold/pil are stubbed, so it runs on a live machine and in a container.
+  gate ./test/verify-lane-supervise-scope.sh
+  echo
   # The same idea for the spaces themselves. verify-mirror-live covers home/.overlord/tools
   # only — its count does not move when a space's AGENTS.md or .pi/modes appears under home/,
   # which is how a 510-line file and a 108-line file of the same name sat in the tree and on
