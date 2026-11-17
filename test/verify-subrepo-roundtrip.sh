@@ -61,7 +61,13 @@ for gitrepo in $(find src -name .gitrepo | sort); do
     got_commit="$(printf '%s\n' "$status" | sed -n 's/^ *Pulled Commit: *//p' | head -1)"
     got_branch="$(printf '%s\n' "$status" | sed -n 's/^ *Tracking Branch: *//p' | head -1)"
     # `subrepo status` prints an abbreviated commit; .gitrepo records the full one.
-    [ "${got_commit:0:8}" = "${want_commit:0:8}" ] || reasons="$reasons pulled(${got_commit:0:8})!=recorded(${want_commit:0:8})"
+    # `subrepo status` prints git's shortest unique abbreviation, and a fresh
+    # clone has a small object database, so that abbreviation can be seven
+    # characters (measured: fleet-graph 6659b19 and herdr 501275a here). Both
+    # sides are prefixes of the same object and the recorded full commit is
+    # checked below, so compare the shortest length git can print.
+    [ "${got_commit:0:7}" = "${want_commit:0:7}" ] || reasons="$reasons pulled(${got_commit:0:7})!=recorded(${want_commit:0:7})"
+    git cat-file -t "$want_commit" >/dev/null 2>&1 || reasons="$reasons recorded-commit(${want_commit:0:8})-missing"
     [ "$got_branch" = "$want_branch" ] || reasons="$reasons branch($got_branch)!=recorded($want_branch)"
   fi
 
