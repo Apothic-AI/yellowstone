@@ -6,7 +6,7 @@
 [subrepo]
 	remote = https://github.com/Apothic-AI/pi-rooms
 	branch = master
-	commit = d39531d6fc160967c83f8d16f3767486e75cbcb9
-	parent = f10d3c51515281b509b3cacbe8be88d53842151b
+	commit = d2f79a0b246a7779dd75b111da578ac7e9ea10ea
+	parent = 1ca7e0af4a44548200c423ba07d8818f29f9c3d5
 	method = merge
 	cmdver = 0.4.9
