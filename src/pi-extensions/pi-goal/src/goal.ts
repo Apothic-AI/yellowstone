@@ -4,6 +4,7 @@ import { GoalCommandController } from "./commands.js";
 import { registerGoalLifecycle } from "./lifecycle.js";
 import { GoalRunController } from "./run-protocol.js";
 import { GoalRuntime } from "./runtime.js";
+import { registerGoalReceiverActions } from "./receiver-actions.js";
 import { registerGoalTools } from "./tools.js";
 
 interface GoalOptions {
@@ -30,6 +31,12 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
   registerGoalTools(pi, runtime);
   registerGoalCommand(pi, runtime, commands, options);
   registerGoalLifecycle(pi, runtime, commands, runController, options);
+
+  // FT-89: serve this session's own goal queue to its leader through the
+  // pi-parameter-tools receiver. Registration is a disposition, not a throw: a
+  // process without the receiver is a documented state a caller can report as
+  // `unknown`, never as "no goals".
+  registerGoalReceiverActions(() => runtime);
 }
 
 export default function goal(pi: ExtensionAPI, options: GoalOptions = {}) {
