@@ -102,6 +102,12 @@ if [ "${1:-}" = gates ]; then
   # have created duplicate spaces rather than failing.
   gate ./test/verify-fleet-manifest.sh
   gate node ./test/verify-ft28-vendor.mjs
+  # A fold is invisible in herdr's status (FT-57): the lane reads `idle` for the whole life
+  # of a `/compact`, so an observer cannot tell a running fold from a finished one, and the
+  # reload helper can fire /reload into a live compaction. This pins the reporter's contract:
+  # every terminal event (success, failure, abort, cancel, session start) clears the claim,
+  # the tokens are in herdr's accepted grammar, and reporting can never break a turn.
+  gate node --experimental-strip-types ./test/verify-compaction-state.mjs
   echo
   # Objective 2 has two halves and only the local one was checked. A development machine
   # installs from src/; a fresh machine installs `git:Apothic-AI/<repo>@<sha>` from each

@@ -28,6 +28,15 @@ Prompting or typing into a `working` agent disturbs its in-flight turn. So by
 default those lanes are skipped and reported; pass --end-agent-turns to accept
 that, which sends `esc` to every target first.
 
+A COMPACTING lane is not `working` and must not be handled like one. herdr's
+agent_status reads `idle` through a fold (FT-57), so `/reload` used to be fired
+into live compactions; and `esc` would abort the fold rather than interrupt a
+turn. The pi extension `compaction-state.ts` publishes `tokens.compacting` for
+the life of the fold, and this tool now WAITS for that token to clear before
+delivering — automatically, without the caller polling a pane. The wait is
+bounded by --compaction-timeout and fails closed: a lane still folding at the
+deadline is skipped and reported, never sent to.
+
 Usage:
   broadcast-to-fleet --message '/reload'
   broadcast-to-fleet --message '/reload' --dry-run
@@ -53,6 +62,14 @@ import time
 HERDR = "herdr"
 DEFAULT_TIMEOUT = 10.0
 DEFAULT_SELF_RELOAD_TIMEOUT = 24 * 60 * 60
+# The display-only token a pi lane carries while a compaction executes. Published by
+# ~/.pi/agent/extensions/compaction-state.ts; absent on every non-pi harness and on any
+# pi that has not loaded that extension, which reads as "not compacting".
+COMPACTING_TOKEN = "compacting"
+# A fold has been measured at ~7 minutes routinely and ~36 minutes once. This bound is
+# deliberately generous and still finite: at the deadline the lane is SKIPPED, because a
+# /reload delivered into a live compaction is worse than a reload delivered late.
+DEFAULT_COMPACTION_TIMEOUT = 30 * 60.0
 SETTLE_AFTER_ESC = 0.6  # let the agent redraw before the message lands
 # How many trailing pane lines count as "fresh output" when confirming a
 # command. Small on purpose: see the baseline comment in send_slash.
@@ -109,6 +126,26 @@ def status_of(pane: str, timeout: float) -> str:
         return (json.loads(out)["result"]["agent"]["agent_status"] or "").lower()
     except (json.JSONDecodeError, KeyError, TypeError):
         return "unknown"
+
+
+def compaction_of(pane: str, timeout: float) -> str:
+    """Return the lane's in-flight compaction reason, "" when it is not folding.
+
+    Read from the same `agent get` record an observer reads. An unreadable record is
+    returned as "unknown", NOT as "clear": the caller fails closed, so a herdr hiccup can
+    delay a reload but can never fire one into a fold.
+    """
+    rc, out = run([HERDR, "agent", "get", pane], timeout)
+    if not rc:
+        return "unknown"
+    try:
+        tokens = json.loads(out)["result"]["agent"].get("tokens") or {}
+    except (json.JSONDecodeError, KeyError, TypeError):
+        return "unknown"
+    if not isinstance(tokens, dict):
+        return "unknown"
+    reason = tokens.get(COMPACTING_TOKEN)
+    return str(reason) if reason else ""
 
 
 def read_pane(pane: str, timeout: float) -> str:
@@ -242,16 +279,22 @@ def send_slash(pane: str, message: str, timeout: float,
 
 def plan(agents: list[dict], self_pane: str | None, include_self: bool,
          include_working: bool, only: list[str], working_only: bool = False,
-         slash: bool = False, defer_working_self: bool = False) -> tuple[list[dict], list[dict], list[dict]]:
-    """Return (targets, skipped_working, skipped_harness).
+         slash: bool = False, defer_working_self: bool = False) -> tuple[list[dict], list[dict], list[dict], list[dict]]:
+    """Return (targets, skipped_working, skipped_harness, waiting_compaction).
 
     `/reload` is a pi command; a droid or opencode lane has no such palette entry,
     so slash commands are confined to pi targets instead of failing per lane.
+
+    A compacting lane is separated out BEFORE the working checks, and deliberately so:
+    it is neither a target to send to now nor a lane to `esc`. Escape aborts the fold,
+    and the fold's own status reads `idle`, so classifying it as either would damage it.
+    The caller waits for these lanes and re-checks them against the same delivery gate.
     """
     wanted = set(only)
     targets: list[dict] = []
     skipped: list[dict] = []
     other: list[dict] = []
+    waiting: list[dict] = []
     for agent in agents:
         pane = agent.get("pane_id") or ""
         if not pane:
@@ -263,9 +306,14 @@ def plan(agents: list[dict], self_pane: str | None, include_self: bool,
             continue
         status = (agent.get("agent_status") or "").lower()
         harness = (agent.get("agent") or "").lower()
-        entry = {"pane": pane, "name": agent.get("name") or "-", "status": status}
+        tokens = agent.get("tokens") if isinstance(agent.get("tokens"), dict) else {}
+        compacting = str(tokens.get(COMPACTING_TOKEN) or "")
+        entry = {"pane": pane, "name": agent.get("name") or "-", "status": status,
+                 "compacting": compacting}
         if slash and harness != "pi":
             other.append({**entry, "harness": harness or "unknown"})
+        elif compacting:
+            waiting.append(entry)
         elif working_only and status != "working":
             continue
         elif status not in {"idle", "done", "working"} and not (defer_working_self and pane == self_pane):
@@ -277,7 +325,8 @@ def plan(agents: list[dict], self_pane: str | None, include_self: bool,
     targets.sort(key=lambda a: a["pane"])
     skipped.sort(key=lambda a: a["pane"])
     other.sort(key=lambda a: a["pane"])
-    return targets, skipped, other
+    waiting.sort(key=lambda a: a["pane"])
+    return targets, skipped, other, waiting
 
 
 def reload_result_dir() -> pathlib.Path:
@@ -308,7 +357,11 @@ def reload_when_idle(
     deadline = time.time() + timeout
     while time.time() < deadline:
         status = status_of(pane, DEFAULT_TIMEOUT)
-        if status == "idle":
+        # `idle` is not enough: a compaction reads idle for its whole life (FT-57), so a
+        # self-reload gated on status alone can land inside a fold. Wait for the fold to
+        # finish — this is the automatic wait, not a pane poll handed to the caller.
+        folding = compaction_of(pane, DEFAULT_TIMEOUT)
+        if status == "idle" and not folding:
             if result_path is not None:
                 write_reload_result(result_path, "reloading", pane)
             sent, err, confirmed = send_slash(
@@ -390,6 +443,10 @@ def main() -> int:
                         help="target only lanes observed working; implies --interrupt-working")
     parser.add_argument("--idle-timeout", type=float, default=30.0,
                         help="seconds to wait for each interrupted lane to become idle (default 30)")
+    parser.add_argument("--compaction-timeout", type=float, default=DEFAULT_COMPACTION_TIMEOUT,
+                        help="seconds to wait for a lane's in-flight compaction to finish "
+                             "(default 1800); a lane still folding at the deadline is "
+                             "skipped, never sent to")
     parser.add_argument("--dry-run", "--list", dest="dry_run", action="store_true",
                         help="show targets and send nothing")
     parser.add_argument("--include-self", dest="include_self", action="store_true",
@@ -441,7 +498,7 @@ def main() -> int:
         and message.split()[0] == "/reload"
         and (args.include_self or self_pane in (args.only or []))
     )
-    targets, skipped, other = plan(
+    targets, skipped, other, waiting = plan(
         agents, self_pane, args.include_self, interrupt_working,
         args.only or [], working_only=args.working_only, slash=is_slash,
         defer_working_self=self_reload,
@@ -449,11 +506,17 @@ def main() -> int:
     deferred_self = next((t for t in targets if t["pane"] == self_pane), None)
     if deferred_self and message.split()[0] == "/reload":
         targets = [t for t in targets if t["pane"] != self_pane]
+    deferred_fold = next((t for t in waiting if t["pane"] == self_pane), None)
+    # The self lane is deferred anyway (it reloads after this turn returns), so its fold
+    # must not hold the whole broadcast: drop it here and let the deferred helper wait.
+    if deferred_fold and message.split()[0] == "/reload":
+        waiting = [t for t in waiting if t["pane"] != self_pane]
 
     kind = "slash command" if is_slash else "prompt"
     preview = message if len(message) <= 60 else message[:57] + "..."
 
-    if not targets and not skipped and not other and not deferred_self:
+    if not targets and not skipped and not other and not deferred_self \
+            and not waiting and not deferred_fold:
         print(f"broadcast-to-fleet: no targets (agents seen: {len(agents)}, "
               f"self: {self_pane or 'unset'})")
         return 0
@@ -464,6 +527,12 @@ def main() -> int:
             print(f"  DEFER {deferred_self['pane']:<10} {deferred_self['name']:<24} until this turn returns")
         for t in targets:
             print(f"  SEND  {t['pane']:<10} {t['name']:<24} {t['status']}")
+        for w in waiting:
+            print(f"  WAIT  {w['pane']:<10} {w['name']:<24} compacting={w['compacting']}"
+                  f" (up to {args.compaction_timeout:g}s, then skipped)")
+        if deferred_fold:
+            print(f"  DEFER {deferred_fold['pane']:<10} {deferred_fold['name']:<24} "
+                  f"compacting={deferred_fold['compacting']} until this turn returns")
         if skipped:
             print(f"skipping {len(skipped)} working or unknown-status lane(s) — pass --interrupt-working for working lanes:")
             for s in skipped:
@@ -476,6 +545,48 @@ def main() -> int:
 
     interrupted = [t for t in targets if t.get("was_working") and t is not deferred_self]
     ready: list[dict] = [t for t in targets if not t.get("was_working")]
+
+    # THE COMPACTION BARRIER.
+    #
+    # A fold reads `idle` in herdr, so without this a /reload is delivered straight into
+    # a live compaction, and `esc` (the --interrupt-working path) would ABORT the fold
+    # rather than interrupt a turn. Neither is recoverable work-loss the operator asked
+    # us to avoid; what they asked for is an automatic wait. So: never classify a folding
+    # lane as working or ready, wait for its `compacting` token to clear, and then put it
+    # through the same pre-delivery gate as everything else. Bounded, and fail-closed —
+    # a fold still running at the deadline is reported and NOT sent to.
+    fold_timed_out: list[str] = []
+    if waiting:
+        print(f"broadcast-to-fleet: waiting for {len(waiting)} in-flight compaction(s) "
+              f"to finish (timeout {args.compaction_timeout:g}s)")
+        pending_fold = {t["pane"]: t for t in waiting}
+        fold_deadline = time.time() + max(0.0, args.compaction_timeout)
+        while pending_fold and time.time() < fold_deadline:
+            for pane in list(pending_fold):
+                reason = compaction_of(pane, args.timeout)
+                if reason:
+                    continue
+                entry = pending_fold.pop(pane)
+                # The fold is over, but the lane may have resumed a turn behind it. Only
+                # an idle lane becomes ready; anything else is reported, never esc'd —
+                # this barrier exists to leave folds alone, not to start new interruptions.
+                status = status_of(pane, args.timeout)
+                if status in {"idle", "done"}:
+                    ready.append({**entry, "was_working": False})
+                else:
+                    print(f"  not ready {pane}: compaction finished, status is "
+                          f"{status or 'unknown'}", file=sys.stderr)
+                    fold_timed_out.append(pane)
+            if pending_fold:
+                time.sleep(0.5)
+        for pane in sorted(pending_fold):
+            reason = compaction_of(pane, args.timeout) or "unknown"
+            print(f"  not ready {pane}: compaction ({reason}) still running after "
+                  f"{args.compaction_timeout:g}s — not reloaded", file=sys.stderr)
+            fold_timed_out.append(pane)
+        if fold_timed_out:
+            print(f"broadcast-to-fleet: {len(fold_timed_out)} lane(s) not ready after their "
+                  f"compaction barrier", file=sys.stderr)
     if interrupt_working and interrupted:
         esc_ok = 0
         esc_sent: set[str] = set()
@@ -522,7 +633,12 @@ def main() -> int:
         ready.extend(interrupted)
 
     ready.sort(key=lambda a: a["pane"])
-    timed_out = len(targets) - len(ready) if interrupt_working else 0
+    # Counted against everything this run PLANNED to deliver to — targets plus the lanes
+    # held in the compaction barrier — because a fold that completes moves its lane into
+    # `ready` and would otherwise make a targets-only subtraction go negative. A lane the
+    # barrier dropped (fold still running, or fold finished but the lane resumed a turn)
+    # is planned-but-not-ready, which is exactly what this counts.
+    timed_out = len(targets) + len(waiting) - len(ready)
     ok = 0
     failed: list[tuple[str, str]] = []
     confirmed: list[str] = []
@@ -531,6 +647,16 @@ def main() -> int:
     confirm_line = CONFIRMATIONS.get(message.split()[0]) if is_slash else None
     for t in ready:
         current_status = status_of(t["pane"], args.timeout)
+        # Re-check the fold as well as the status, because this is the last instant before
+        # the send: a compaction that STARTED after plan() would otherwise be invisible,
+        # since its status reads idle for its whole life. Fail closed on an unreadable
+        # record rather than assume clear.
+        folding_now = compaction_of(t["pane"], args.timeout)
+        if folding_now:
+            failed.append((t["pane"],
+                           f"compaction ({folding_now}) started before delivery; skipped"))
+            timed_out += 1
+            continue
         if current_status not in ({"idle"} if interrupt_working else {"idle", "done"}):
             failed.append((t["pane"], f"pre-delivery status is {current_status or 'unknown'}; skipped"))
             timed_out += 1
