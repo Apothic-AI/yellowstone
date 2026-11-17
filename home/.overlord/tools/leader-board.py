@@ -1,6 +1,29 @@
 #!/usr/bin/env python3
 """Render the leader board: one row per leader lane, with goal state and staleness.
 
+SOURCE: `behold roster --json` — not pane reads. This board used to read every leader
+pane's footer (`herdr agent read --source visible`), one call per lane per run, to get the
+goal state and the context number. Those fields now come from behold's derived fields:
+
+    goal, goal elapsed   G-1  (the live goal-state entry: status, iteration, elapsed)
+    context              T-3  (= T-1/T-2 from the session's terminal usage) — occupancy
+    status               H-5
+    session path         P-5  (validated, so the size column stats a proven file)
+    mode / rooms / profile / model / thinking
+                         M-1 / M-5 / M-3 / P-1,P-2 / P-3
+
+Every lane carries the FIELD REASONS for whatever it could not answer: a lane whose goal
+or context is unknown says why in the `why` column, because "unknown" without a reason is
+the failure this board exists to avoid. A `held` lane (reserved workspace) stays `held`;
+it is never rendered as unknown and never as blank.
+
+CONTEXT IS OCCUPANCY. The column reads `occ%` and comes from T-1/T-2 — the tokens pi
+reported on the branch's last assistant message over the physical model's window. It is
+measured the same way on every lane and it needs no pane. Measured against the footer on
+this lane in the same minute (2026-11-17T02:52Z): footer `34.8%/1.0M`, T-3 `34.54` — the
+same reading, so the column is comparable with what the operator has been reading.
+
+
 Why this exists
 ---------------
 `herdr agent list` gives lifecycle status but no goal state, and nothing anywhere
@@ -20,25 +43,18 @@ Design notes
   inventing an elapsed time.
 * A lane whose pane exists but whose agent is gone is reported as `no-agent`, not
   as some flavour of idle. Those need a different response.
-* Context usage comes from the same footer read that supplies goal state. herdr
-  does not expose it -- `agent get`/`agent list` return 15 fields and none is a
-  token count -- so the footer's `21.5%/1.0M (auto)` is the only cheap source.
-  The footer's *other* percentage, `CH99.8%`, is the cache-hit rate; reading it
-  as context supports an entirely wrong diagnosis.
-* **That percentage is a forward projection, not occupancy, and it is NOT a
-  compaction signal.** `estimateProjectedContextTokens(projection, branchEntries)`
-  (pi's `dist/core/compaction/compaction.js`) re-estimates the tokens of the
-  projected message list on the current branch, reusing a cached usage figure only
-  when no `context_edit`/`compaction` entry invalidates it. It is therefore
-  recomputed as the branch changes, and an ordinary turn moves it: measured on
-  `sibyl-leader` 2026-11-15, 61.2% -> 39.0% across a single turn that only wrote a
-  continuation file, with the session JSONL byte-for-byte unchanged and zero
-  compaction events. A high projection means the *next* turns are near the window
-  (cost and latency), not that a compaction is due.
-  Use the `size` column (session JSONL bytes) plus turn count and the lane's own
-  report to decide that; the projection is displayed with a `~` to keep the two
-  apart. The `CTX-RESET` note keeps its name for watchers that match on it, but it
-  flags a projection crossing a line, not a lane that needs compacting.
+* **Context is occupancy, from the session, not a pane reading.** `occ%` is `T-3` =
+  `T-1` (the branch's last assistant `usage.totalTokens`) over `T-2` (the physical model's
+  `contextWindow`, read from pi's own provider registry). One earlier version of this board
+  argued the footer percentage was a *forward projection* and labelled it `ctx~`; that was
+  inherited from a different extension's renderer and it is not what the replacement
+  measures. Measured against the footer on this lane in the same minute
+  (2026-11-17T02:52:18Z): footer `34.8%/1.0M`, `T-3` `34.54` — the same reading, so the
+  column stays comparable with what the operator has been watching.
+  The footer's *other* percentage, `CH99.8%`, is the cache-hit rate; it is not context.
+* **A context number is never invented.** If `T-1` or `T-2` is unknown, `occ%` is `-` and
+  the reason appears in the `why` block. It is not 0, and a lane with no agent is not
+  "using nothing": it has no session to measure.
 * A lane with no agent has no footer, so its context is `None`, not 0. The
   difference decides whether a lane is one tranche from losing its history or
   simply not running.
@@ -66,6 +82,7 @@ import sys
 import time
 from pathlib import Path
 
+BEHOLD = os.environ.get("BEHOLD", "behold")
 STATE_DIR = Path.home() / ".local" / "state" / "overlord"
 SNAPSHOT = STATE_DIR / "leader-board.json"
 
@@ -123,7 +140,7 @@ CTX_WARN = 40.0
 CTX_THRESHOLD_OVERRIDES: dict[str, float] = {}
 
 # Statuses that mean the lane is not going to make progress on its own.
-NEEDS_ATTENTION = {"blocked", "no-agent"}
+NEEDS_ATTENTION = {"blocked", "no-agent", "held"}
 
 
 def herdr(*args: str) -> dict:
@@ -274,56 +291,159 @@ def save_snapshot(rows: list[dict], ctx_reset: float = CTX_RESET) -> None:
     tmp.replace(SNAPSHOT)
 
 
-def collect() -> list[dict]:
-    tabs = herdr("tab", "list").get("tabs", [])
-    agents = herdr("agent", "list").get("agents", [])
+def behold_roster() -> dict:
+    """One `behold roster --json` for the whole board. Never a pane read.
 
-    # A leader tab can exist with no agent in it (`agent_not_found`). Those are
-    # real findings -- an empty leader tab is a space nobody is driving -- so
-    # they belong in the board rather than being filtered out.
-    by_tab: dict[str, dict] = {}
-    for agent in agents:
-        by_tab.setdefault(agent.get("tab_id", ""), agent)
+    A failure is fatal and loud: falling back to a pane read would reintroduce exactly the
+    probing this conversion removed, and a silent fallback is how a fleet relearns to scroll.
+    """
+    proc = subprocess.run(
+        [BEHOLD, "roster", "--cache", "off", "--json"],
+        capture_output=True, text=True, timeout=180, check=False,
+    )
+    if proc.returncode != 0:
+        raise SystemExit(f"behold roster failed rc={proc.returncode}: {proc.stderr.strip()[:400]}")
+    return json.loads(proc.stdout)
 
-    panes_by_tab: dict[str, str] = {}
-    for pane in herdr("pane", "list").get("panes", []):
-        panes_by_tab.setdefault(pane.get("tab_id", ""), pane.get("pane_id", ""))
 
+def field_of(lane: dict, code: str) -> dict:
+    return (lane.get("fields") or {}).get(code) or {}
+
+
+def field_value(lane: dict, code: str) -> object:
+    value = field_of(lane, code)
+    return value.get("value") if value.get("state") in ("present", "derived", "last_observed") else None
+
+
+def field_why(lane: dict, code: str) -> str | None:
+    """`code=state:reason` for any field the board consumes that is not present.
+
+    A bare `unknown` is not actionable: it does not say whether the session is missing, the
+    pin is stale, or the workspace is held. The reason travels to the row.
+    """
+    value = field_of(lane, code)
+    state = value.get("state")
+    if state in ("present", "derived"):
+        return None
+    reason = value.get("reason") or value.get("note") or "no reason recorded"
+    return f"{code}={state}:{reason}"
+
+
+GOAL_LABELS = {
+    "active": "pursuing",
+    "queued": "queued",
+    "paused": "paused",
+    "blocked": "blocked",
+    "usage_limited": "usage-limited",
+    "budget_limited": "budget-limited",
+    "complete": "achieved",
+}
+
+
+def held_rows(doc: dict) -> list[dict]:
+    """Rows for panes the policy withheld — present as `held`, never dropped.
+
+    A held lane has no name in the roster (`handles.name` is null, every field is `held`), so
+    filtering on the `*-leader` label dropped it silently. Policy is a state, not a gap: the
+    row is rendered by pane id with the admission reason, occupancy and size `-`, and a note
+    that the name is withheld. The name is NOT guessed from the role records: 18 leader role
+    records exist for retired lanes, so any 1:1 mapping would be a guess, and a guessed name on
+    a held lane is worse than an honest `w2:p1A`.
+    """
     rows: list[dict] = []
-    for tab in tabs:
-        label = tab.get("label") or ""
+    for lane in doc.get("lanes", []):
+        admission = lane.get("admission") or {}
+        if admission.get("admitted") is not False:
+            continue
+        pane = str((lane.get("handles") or {}).get("pane_id") or lane.get("key") or "")
+        workspace = str((lane.get("handles") or {}).get("workspace_id") or "")
+        reason = str(admission.get("reason") or "held_by_policy")
+        rows.append({
+            "workspace": workspace,
+            "workspace_label": "",
+            "tab_id": "",
+            "label": f"{pane} (name withheld)",
+            "pane_id": pane,
+            "cwd": "",
+            "status": "held",
+            "goal": None,
+            "goal_elapsed": None,
+            "ctx": None,            # never 0.0%: nothing was read
+            "session_bytes": None,  # never 0: no session was opened
+            "mode": None, "profile": None, "rooms": None, "model": None, "thinking": None,
+            "why": [f"{reason} — identity and content withheld by policy; the row "
+                    f"is listed so a held lane cannot vanish from the board"],
+            "field_states": {code: "held" for code in
+                             ("H-5", "G-1", "T-1", "T-2", "T-3", "M-1", "M-3", "M-5", "P-5")},
+        })
+    return rows
+
+
+def collect() -> list[dict]:
+    doc = behold_roster()
+    rows: list[dict] = []
+    for lane in doc.get("lanes", []):
+        if (lane.get("admission") or {}).get("admitted") is False:
+            continue  # handled by held_rows(), which does not filter on a name it cannot see
+        label = str(field_value(lane, "H-4") or "")
         if not LEADER_LABEL.search(label.strip()):
             continue
-        tab_id = tab["tab_id"]
-        agent = by_tab.get(tab_id)
-        pane_id = (agent or {}).get("pane_id") or panes_by_tab.get(tab_id, "")
-        status = (agent or {}).get("agent_status") or "no-agent"
-        goal, footer, goal_elapsed, ctx = (
-            pane_footer(pane_id) if agent else (None, "", None, None)
-        )
-        # Session size is the durable signal that the projection is not: it only
-        # grows with real content, and it is a stat, not a parse.
-        sess = (agent or {}).get("agent_session") or {}
-        sess_path = sess.get("value") if isinstance(sess, dict) else None
+        h5 = field_of(lane, "H-5")
+        status = (field_value(lane, "H-5") or {}).get("status") if h5.get("state") == "present" else None
+        if status is None:
+            status = h5.get("state") or "unknown"
+        goal_state = field_value(lane, "G-1") or {}
+        goal = None
+        if isinstance(goal_state, dict) and goal_state.get("status"):
+            goal = GOAL_LABELS.get(goal_state["status"], goal_state["status"])
+        # G-1 absent means "no goal recorded", which the column shows as `-`; the
+        # summary line below counts those rather than repeating the word on every row.
+        profile = field_value(lane, "M-3") or {}
+        session_path = (field_value(lane, "P-5") or {}).get("path") if field_of(lane, "P-5").get("state") == "present" else None
         try:
-            session_bytes = os.path.getsize(sess_path) if sess_path else None
+            session_bytes = os.path.getsize(session_path) if session_path else None
         except OSError:
             session_bytes = None
-        rows.append(
-            {
-                "workspace": tab["workspace_id"],
-                "tab_id": tab_id,
-                "label": label,
-                "pane_id": pane_id,
-                "cwd": (agent or {}).get("cwd", ""),
-                "status": status,
-                "goal": goal,
-                "goal_elapsed": goal_elapsed,
-                "footer": footer,
-                "ctx": ctx,
-                "session_bytes": session_bytes,
-            }
-        )
+        def nested(value, *keys):
+            for key in keys:
+                if isinstance(value, dict):
+                    value = value.get(key)
+                else:
+                    return None
+            return value
+
+        m1 = field_value(lane, "M-1")
+        m3 = field_value(lane, "M-3")
+        m5 = field_value(lane, "M-5")
+        p2 = field_value(lane, "P-2")
+        rig = {
+            "mode": nested(m1, "baseKey"),
+            "profile": nested(m3, "selected", "value") or nested(m3, "declared", "profile"),
+            "rooms": nested(m5, "name"),
+            "model": nested(p2, "selected") or (p2 if isinstance(p2, str) else None),
+            "thinking": field_value(lane, "P-3") if isinstance(field_value(lane, "P-3"), str) else None,
+        }
+        rows.append({
+            # The id, not the display label: the column is parsed by the watcher, and a
+            # renamed workspace must not silently change a column's width or its meaning.
+            "workspace": str(field_value(lane, "H-2") or ""),
+            "workspace_label": str(field_value(lane, "H-1") or ""),
+            "tab_id": str(field_value(lane, "H-3") or ""),
+            "label": label,
+            "pane_id": str(field_value(lane, "H-3") or lane.get("key") or ""),
+            "cwd": str((field_value(lane, "H-6") or {}).get("cwd") or "") if isinstance(field_value(lane, "H-6"), dict) else "",
+            "status": status,
+            "goal": goal,
+            "goal_elapsed": int(goal_state["elapsed_s"]) if isinstance(goal_state, dict) and isinstance(goal_state.get("elapsed_s"), (int, float)) else None,
+            "ctx": field_value(lane, "T-3"),
+            "session_bytes": session_bytes,
+            **rig,
+            "why": [w for w in (field_why(lane, code) for code in
+                                ("H-5", "G-1", "T-1", "T-2", "T-3", "M-1", "M-3", "M-5", "P-5")) if w],
+            "field_states": {code: field_of(lane, code).get("state") for code in
+                             ("H-5", "G-1", "T-1", "T-2", "T-3", "M-1", "M-3", "M-5", "P-5", "P-2", "P-3")},
+        })
+    rows.extend(held_rows(doc))
     rows.sort(key=lambda r: (r["workspace"], r["label"]))
     return rows
 
@@ -480,9 +600,9 @@ def render(rows: list[dict], freshness_secs: int, ctx_reset: float = CTX_RESET) 
         print()
     print(
         f"{'workspace':9} {'leader':{width}} {'pane':8} {'status':9} {'goal':13} "
-        f"{'ctx~':7} {'size':7} {'held':6} note"
+        f"{'occ%':7} {'size':7} {'held':6} {'rig':22} note"
     )
-    print("-" * (9 + width + 8 + 9 + 13 + 7 + 7 + 6 + 40))
+    print("-" * (9 + width + 8 + 9 + 13 + 7 + 7 + 6 + 22 + 40))
     for row in rows:
         notes = []
         if row["status"] in NEEDS_ATTENTION:
@@ -492,28 +612,61 @@ def render(rows: list[dict], freshness_secs: int, ctx_reset: float = CTX_RESET) 
             notes.append(note)
         # The wedge signal: held in `working` past the threshold. Any other
         # status sitting still is correct behaviour and must not be flagged.
-        if row["status"] == "working" and (row["secs"] or 0) >= freshness_secs:
+        if row["status"] == "working" and (row.get("secs") or 0) >= freshness_secs:
             notes.append(f"STALE>{human(freshness_secs)}")
         if row.get("resumed"):
             notes.append("resumed")
         if row.get("changed") and not row.get("resumed"):
             notes.append("changed")
+        rig = "/".join(str(part) for part in (row.get("mode"), row.get("profile"), row.get("rooms"), row.get("model"), row.get("thinking")) if part) or "-"
         print(
             f"{row['workspace']:9} {row['label'][:width]:{width}} "
             f"{row['pane_id']:8} {row['status']:9} {(row['goal'] or '-'):13} "
             f"{ctx_label(row.get('ctx')):7} "
             f"{size_label(row.get('session_bytes')):7} "
             f"{human(row['secs']) + ('' if row.get('secs_source') != 'goal' else '*'):6} "
+            f"{rig[:22]:22} "
             f"{' '.join(notes)}"
         )
+    # State AND reason, without repeating a benign absence twelve times: a lane whose field is
+    # `unknown`/`held` prints each distinct reason once; `absent` is summarised as a count.
+    absent_counts: dict[str, int] = {}
+    why_rows = []
+    for row in rows:
+        grouped: dict[str, list[str]] = {}
+        for entry in row.get("why") or []:
+            if "=" not in entry:
+                # A policy note, not a field code: print it as written.
+                grouped.setdefault(entry, []).append("")
+                continue
+            code, _, rest = entry.partition("=")
+            state, _, reason = rest.partition(":")
+            if state == "absent":
+                absent_counts[f"{code} {reason}"] = absent_counts.get(f"{code} {reason}", 0) + 1
+                continue
+            grouped.setdefault(f"{state}: {reason}", []).append(code)
+        if grouped:
+            why_rows.append((row["label"], grouped))
+    if why_rows:
+        print("\nwhy (state and reason, per lane — never a bare unknown):")
+        for label, grouped in why_rows:
+            parts = []
+            for reason, codes in grouped.items():
+                text = " ".join(reason.split())
+                parts.append(f"{','.join(codes)} = {text}" if any(codes) else text)
+            print(f"  {label}: " + "; ".join(parts))
+    if absent_counts:
+        print("\nabsent (a real answer, not a gap):")
+        for text, count in sorted(absent_counts.items()):
+            print(f"  {count} lane(s): {text}")
     no_agent = [r for r in rows if r["status"] == "no-agent"]
     if any(r.get("secs_source") == "goal" for r in rows):
         print("\n* duration is the goal's own reported active time (a lower bound on how long the lane has run),")
         print("  not elapsed-since-first-observation.")
-    hot = [r for r in rows if (r.get("ctx") or 0) >= ctx_threshold(r["label"], ctx_reset)]
+    hot = [r for r in rows if isinstance(r.get("ctx"), (int, float)) and r["ctx"] >= ctx_threshold(r["label"], ctx_reset)]
     if hot:
         print(
-            f"\n{len(hot)} lane(s) whose projected context is at or above the line: "
+            f"\n{len(hot)} lane(s) whose OCCUPANCY is at or above the line: "
             + ", ".join(
                 f"{r['workspace']} ({r['label']}, {ctx_label(r.get('ctx'))}, {r['status']}"
                 + (
@@ -526,10 +679,11 @@ def render(rows: list[dict], freshness_secs: int, ctx_reset: float = CTX_RESET) 
             )
         )
         print(
-            "  ctx~ is a forward projection over the current branch, not occupancy and not a compaction\n"
-            "  signal: an ordinary turn moves it by 20+ points with the session unchanged. Compare the\n"
-            "  size column and the turn count before deciding to compact; the lane's own report is the\n"
-            "  third input. Crossing the line is a prompt to check, not an instruction to /compact."
+            "  occ% is occupancy: T-1 (the branch's last assistant usage) over T-2 (the physical\n"
+            "  model's context window), from the session file, with no pane read. It is a measured\n"
+            "  position, not a projection, so it does not move by 20 points on an idle turn. Compare\n"
+            "  the size column and the turn count before deciding to compact; crossing the line is a\n"
+            "  prompt to check, not an instruction to /compact."
         )
     if no_agent:
         print(
@@ -568,7 +722,7 @@ def main() -> int:
 
     if args.arm:
         for row in rows:
-            if row["status"] != "no-agent" and row["pane_id"]:
+            if row["status"] not in ("no-agent", "held") and row["pane_id"]:
                 print(row["pane_id"])
         return 0
 
