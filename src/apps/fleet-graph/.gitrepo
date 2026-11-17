@@ -1,0 +1,12 @@
+; DO NOT EDIT (unless you know what you are doing)
+;
+; This subdirectory is a git "subrepo", and this file is maintained by the
+; git-subrepo command. See https://github.com/ingydotnet/git-subrepo#readme
+;
+[subrepo]
+	remote = https://github.com/Apothic-AI/fleet-graph
+	branch = master
+	commit = 6659b195d13bee618d8fdc737e15e37a46e24ff3
+	parent = 1718671cae52f262784b0452b573c71357c7240a
+	method = merge
+	cmdver = 0.4.9

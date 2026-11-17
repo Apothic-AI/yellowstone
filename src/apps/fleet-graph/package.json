@@ -1,0 +1,30 @@
+{
+  "name": "fleet-graph",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Read-only flow graph of the Pi fleet: work items and lanes derived from beads, herdr, behold, pil role records and the pi-rooms store.",
+  "engines": {
+    "node": ">=22.6"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types --test test/*.test.ts",
+    "snapshot": "node --experimental-strip-types scripts/snapshot.ts",
+    "verify:live": "bash scripts/verify-live.sh"
+  },
+  "dependencies": {
+    "solid-js": "^1.9.15",
+    "vike": "^0.4.268",
+    "vike-solid": "^0.8.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.5",
+    "vite-plugin-solid": "^2.11.14"
+  }
+}
