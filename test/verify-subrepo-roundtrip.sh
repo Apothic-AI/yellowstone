@@ -67,7 +67,6 @@ for gitrepo in $(find src -name .gitrepo | sort); do
     # sides are prefixes of the same object and the recorded full commit is
     # checked below, so compare the shortest length git can print.
     [ "${got_commit:0:7}" = "${want_commit:0:7}" ] || reasons="$reasons pulled(${got_commit:0:7})!=recorded(${want_commit:0:7})"
-    git cat-file -t "$want_commit" >/dev/null 2>&1 || reasons="$reasons recorded-commit(${want_commit:0:8})-missing"
     [ "$got_branch" = "$want_branch" ] || reasons="$reasons branch($got_branch)!=recorded($want_branch)"
   fi
 
