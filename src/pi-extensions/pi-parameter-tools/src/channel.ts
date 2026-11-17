@@ -62,7 +62,7 @@ export interface ChannelRequest {
 	sessionId: string;
 	/** The session file the caller believes it is talking to. */
 	sessionPath: string;
-	action: "set_thinking" | "set_model";
+	action: "set_thinking" | "set_model" | (string & {});
 	level?: string;
 	provider?: string;
 	modelId?: string;
