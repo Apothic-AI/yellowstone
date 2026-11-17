@@ -79,11 +79,19 @@ class TestFilterAndSort(unittest.TestCase):
                   if field(lane, "T-1")["state"] == "present"]
         self.assertEqual(values, sorted(values, reverse=True))
 
-    def test_unknown_values_sort_last(self):
+    def test_value_less_fields_sort_last(self):
+        """Every field that HAS a value sorts before every field that does not.
+
+        The old assertion was "after the first `unknown`, everything is `unknown`", which is
+        false as soon as a lane is `absent` or `held` — those carry no value either. The
+        invariant that matters is "no number after a non-number".
+        """
         doc = roster_json("--sort", "T-3.value")
-        states = [field(lane, "T-3")["state"] for lane in doc["lanes"]]
-        first_unknown = states.index("unknown") if "unknown" in states else len(states)
-        self.assertTrue(all(state == "unknown" for state in states[first_unknown:]))
+        values = [field(lane, "T-3").get("value") for lane in doc["lanes"]]
+        first_none = values.index(None) if None in values else len(values)
+        self.assertTrue(all(value is None for value in values[first_none:]),
+                        values)
+        self.assertTrue(all(value is not None for value in values[:first_none]), values)
 
     def test_lane_filter(self):
         doc = roster_json("--lane", "w1A:p1")

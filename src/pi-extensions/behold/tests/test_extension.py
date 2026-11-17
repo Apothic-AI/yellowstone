@@ -205,6 +205,8 @@ const ctx = {
   hasPendingMessages: () => false,
   getContextUsage: () => ({ tokens: 100, contextWindow: 200000, percent: 0.05 }),
   getSystemPrompt: () => "SENTINEL_PROMPT_BODY you are a helpful assistant",
+  // The composer is read for presence only; the sentinel proves the text never reaches state.
+  ui: { getEditorText: () => "SENTINEL_DRAFT_TEXT" },
 };
 
 const state = collectState(ctx);
@@ -406,6 +408,11 @@ class TestExtensionBehaviour(unittest.TestCase):
         self.assertTrue(state["idle"])
         self.assertFalse(state["pending_messages"])
         self.assertEqual(state["context_tokens"], 100)
+        # P-12: presence, length and an 8-character digest -- and never the draft itself.
+        self.assertTrue(state["editor_pending"])
+        self.assertEqual(state["editor_length"], len("SENTINEL_DRAFT_TEXT"))
+        self.assertRegex(state["editor_sha256_8"], r"^[0-9a-f]{8}$")
+        self.assertNotIn("SENTINEL_DRAFT_TEXT", json.dumps(state))
 
     def test_it_reports_the_identity_handles_and_no_environment_values(self) -> None:
         result = run_node()

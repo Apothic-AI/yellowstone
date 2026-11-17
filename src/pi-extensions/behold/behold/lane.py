@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import os
 import time
+import dataclasses
 from dataclasses import dataclass, field as dc_field
 from typing import Any, Callable, Sequence
 
@@ -376,7 +377,12 @@ def build_lane(agent: dict[str, Any], ctx: Context) -> BuiltLane:
     started = time.perf_counter()
     # The lane *name* is a handle used only to locate a candidate pil record; ownership is
     # still proven by paneId + pid + session validation below.
-    pin_for_name = fleet_state.room_pin(ctx.paths.agent_dir, pane_id, ctx.policy)
+    # The name hint locates a candidate pil record; ownership is still proven by paneId below.
+    # A missing pane pin used to starve this lookup (``no_usable_pil_name_hint``), which is why
+    # six lanes with a perfectly good lane record resolved to session_pin_stale_no_fallback. The
+    # snapshot lane name is a safe hint: a record for a different pane is refused by paneId.
+    pin_for_name = fleet_state.room_pin(ctx.paths.agent_dir, pane_id, ctx.policy,
+                                        name_hint=name)
     ident = identity.resolve(
         agent,
         policy=ctx.policy,
@@ -384,7 +390,10 @@ def build_lane(agent: dict[str, Any], ctx: Context) -> BuiltLane:
         proc_root=ctx.paths.proc_root,
         loader=ctx.load_session,
         leaf_hint=ctx.leaf_hint,
-        name_hint=pin_for_name.get("name"),
+        # The room pin is the preferred hint because a pin is an explicit statement of naming;
+        # the snapshot lane name is the fallback that keeps the lookup alive when no pin exists.
+        # Both are only hints: record_for refuses a record whose paneId is not this pane.
+        name_hint=pin_for_name.get("name") or name,
         read_sessions=ctx.read_sessions,
     )
     ctx.time("identity+session", started)
@@ -418,7 +427,9 @@ def build_lane(agent: dict[str, Any], ctx: Context) -> BuiltLane:
                 _add(fields, F.unknown(key, _no_session_reason(ident, ctx),
                                        source="identity resolution"))
         _fill_reporter_observation(fields, ctx, ident, pane_id)
-        _fill_state_only(fields, ctx, ident, instance, cwd, pane_id, workspace_id, tab_id)
+        _fill_composer_state(fields, ctx, ident, pane_id)
+        _fill_state_only(fields, ctx, ident, instance, cwd, pane_id, workspace_id, tab_id,
+                         lane_name=name)
         return lane
 
     now = ctx.as_of
@@ -433,7 +444,10 @@ def build_lane(agent: dict[str, Any], ctx: Context) -> BuiltLane:
                                    "runtime_leaf": None,
                                    "chain_state": view.chain_state,
                                    "entries_on_chain": len(view.chain),
-                                   "entries_in_file": len(view.entries)},
+                                   "entries_in_file": len(view.entries),
+                                   **({"orphans": len(view.orphans),
+                                       "orphan_parents": view.orphans[:8]}
+                                      if view.chain_state == session.CHAIN_PARTIAL else {})},
                            source="session header + id/parentId tree (disk)",
                            observed_at=util.iso(entry_ts), age_s=util.age_s(entry_ts, now),
                            note=("DISK_RECONSTRUCTED: the leaf is the last file entry because pi "
@@ -595,15 +609,27 @@ def build_lane(agent: dict[str, Any], ctx: Context) -> BuiltLane:
                            source="session format (no ttft field)",
                            note="requires the separately reviewed P3 live extension"))
 
+    if _chain_partial(view):
+        # T-4/T-5/T-6/T-7 sum, count or measure the chain, so on a partial branch each is an
+        # understatement. Overwriting them here (rather than skipping the block above) keeps the
+        # rule in one place: a partial chain can never leave an aggregate standing.
+        for code, label in (("T-4", "session tokens"), ("T-5", "cache counts"),
+                            ("T-6", "cost"), ("T-7", "throughput")):
+            _add(fields, F.absent(code, PARTIAL_AGGREGATE_REFUSAL,
+                                  source=f"{label}: aggregate over the active branch"))
+
     # -- repo -------------------------------------------------------------------
     _fill_repo(fields, ctx, view, agent, ws)
 
     # -- mode / profile / rooms -------------------------------------------------
-    _fill_mode_profile_rooms(fields, ctx, view, ident, instance, pane_id)
+    _fill_mode_profile_rooms(fields, ctx, view, ident, instance, pane_id, lane_name=name)
     _fill_role(fields, ctx, pane_id, workspace_id, tab_id)
 
     # -- goals / todos / crons --------------------------------------------------
     _fill_goals_todos_crons(fields, ctx, view, ident, instance, cwd)
+
+    # Every session-derived field on a partial chain says so, in one place.
+    _mark_partial(fields, view)
 
     # -- extensions / skills / prompts -----------------------------------------
     _fill_extensions_skills_prompts(fields, ctx, view, instance, ident)
@@ -616,12 +642,61 @@ def build_lane(agent: dict[str, Any], ctx: Context) -> BuiltLane:
 
     # -- the reporter's runtime observation --------------------------------------
     _fill_reporter_observation(fields, ctx, ident, pane_id)
+    _fill_composer_state(fields, ctx, ident, pane_id)
 
     lane.source_timings = {k: round(v[-1], 3) for k, v in ctx.timings.items() if v}
     return lane
 
 
 # --- helpers -----------------------------------------------------------------------
+
+#: Refusal text for a field that sums, counts or measures the chain. Structural, not a
+#: per-field judgement made downstream: a partial branch makes every aggregate an understatement,
+#: and an understated total is indistinguishable from a real one.
+PARTIAL_AGGREGATE_REFUSAL = "chain_partial: aggregate requires a complete chain"
+
+
+def _chain_partial(view: session.SessionView) -> bool:
+    return view.chain_state == session.CHAIN_PARTIAL
+
+
+def _partial_note(view: session.SessionView) -> str | None:
+    """The marker every session-derived field carries on a partial chain."""
+    if not _chain_partial(view):
+        return None
+    orphans = ", ".join(view.orphans[:4]) or "unknown"
+    return (f"chain_partial: the branch is incomplete ({len(view.orphans)} orphan parent(s): "
+            f"{orphans}); read from a terminal record, not aggregated over the chain")
+
+
+#: The fields that read the session's branch. Listed explicitly: a keyword match over `source`
+#: caught file-derived fields (beads, settings) and missed one whose note was already set.
+SESSION_CHAIN_FIELDS = frozenset({
+    "P-1", "P-2", "P-3", "P-4", "P-5", "P-6", "P-7", "P-8",
+    "T-1", "T-2", "T-3", "T-4", "T-5", "T-6", "T-7", "T-8",
+    "M-1", "M-2", "G-1", "G-2", "D-1", "E-1",
+})
+
+
+def _mark_partial(fields: dict[str, F.Field], view: session.SessionView) -> None:
+    """Stamp every branch-derived field with the partial marker, in one place.
+
+    A field that already carries a note keeps it: the marker is appended, never substituted, so
+    a reader loses nothing (``P-4`` keeps its DISK_RECONSTRUCTED explanation *and* learns that
+    the branch is short).
+    """
+    note = _partial_note(view)
+    if note is None:
+        return
+    for code in SESSION_CHAIN_FIELDS:
+        field = fields.get(code)
+        if field is None or field.state not in ("present", "derived", "last_observed", "inferred"):
+            continue
+        merged = f"{field.note} | {note}" if field.note else note
+        if note in (field.note or ""):
+            continue
+        fields[code] = dataclasses.replace(field, note=merged)
+
 
 def _no_session_reason(ident: identity.Identity, ctx: Context) -> str:
     """Why a session-derived field has no value: not read, or read and unavailable.
@@ -633,11 +708,17 @@ def _no_session_reason(ident: identity.Identity, ctx: Context) -> str:
     if not ctx.read_sessions:
         return (f"{SKIPPED_BY_PROJECTION}: no session file was parsed because the requested "
                 f"projection names no session-derived field (identity.state={ident.state})")
-    return f"no validated session: {ident.state}"
+    reason = f"no validated session: {ident.state}"
+    # The state alone is not actionable: "session_pin_stale_no_fallback" does not say whether the
+    # lane record was missing, unusable, or pointed at a broken branch. The identity's own note
+    # names the witness that failed, so the field carries it rather than dropping it.
+    if ident.note:
+        reason = f"{reason} — {ident.note}"
+    return reason
 
 _ALL_FIELD_KEYS = (
     "H-1", "H-2", "H-3", "H-4", "H-5", "H-6",
-    "P-1", "P-2", "P-3", "P-4", "P-5", "P-6", "P-7", "P-8", "P-9", "P-10", "P-11",
+    "P-1", "P-2", "P-3", "P-4", "P-5", "P-6", "P-7", "P-8", "P-9", "P-10", "P-11", "P-12",
     "T-1", "T-2", "T-3", "T-4", "T-5", "T-6", "T-7", "T-8",
     "R-1", "R-2", "R-3", "R-4", "R-5", "R-6", "R-7",
     "M-1", "M-2", "M-3", "M-5", "M-6", "M-7",
@@ -655,6 +736,75 @@ _PATH_DERIVED_KEYS = (
     "E-1", "E-2", "S-1", "S-2", "S-3", "S-4",
     "J-1", "J-2", "J-3", "B-1", "B-2",
 )
+
+
+def _fill_composer_state(fields: dict[str, F.Field], ctx: Context,
+                         ident: identity.Identity, pane_id: str | None) -> None:
+    """P-12: what the lane's composer holds — presence, length and a short digest, never the text.
+
+    The composer buffer exists only inside the pi process; nothing on disk records it, so a pane
+    read reconstructs it lossily from box-drawing characters. The reporter publishes
+    ``editor_pending`` / ``editor_length`` / ``editor_sha256_8``; this field joins that observation
+    on ``(pane id, validated session id)`` exactly as P-11 does.
+
+    States are kept honest: no cache → ``absent`` (not "no draft"), no reporter observation →
+    ``absent`` with that reason, an old reporter that never published the keys → ``absent`` with a
+    reason naming the reporter, never ``pending: false`` by default.
+    """
+    cache = ctx.runtime_cache
+    source = "behold cache pi_state_current (reporter observation)"
+    if cache is None:
+        _add(fields, F.absent("P-12", "the cache is not enabled for this run",
+                              source="behold cache (not enabled)"))
+        return
+    if not pane_id or not ident.session_id:
+        _add(fields, F.unknown("P-12", f"no admitted pane/session to join on: {ident.state}",
+                               source="identity resolution"))
+        return
+    read = cache.read_pi_state(pane_id, session_id=ident.session_id,
+                               freshness_s=ctx.cache_freshness_s)
+    if read.state == cache_mod.ABSENT:
+        _add(fields, F.absent("P-12", "no reporter observation for this lane and session",
+                              source=source))
+        return
+    if read.state == cache_mod.IDENTITY_MISMATCH:
+        _add(fields, F.unknown(
+            "P-12",
+            f"identity_mismatch: the cached observation belongs to session {read.session_id}, "
+            f"not {ident.session_id}", source=source))
+        return
+    if read.state == cache_mod.UNREADABLE:
+        _add(fields, F.error("P-12", read.reason or "the cached observation is unreadable",
+                             source=source))
+        return
+    if read.state == cache_mod.CLOCK_DISPUTED:
+        _add(fields, F.unknown(
+            "P-12", f"clock_disputed: {read.reason or 'the observation timestamp is not trustworthy'}",
+            source=source))
+        return
+    observed = read.value or {}
+    if "editor_pending" not in observed:
+        _add(fields, F.absent(
+            "P-12", "the reporter did not publish the composer (older reporter build)",
+            source=source))
+        return
+    value: dict[str, Any] = {"pending": observed.get("editor_pending")}
+    if isinstance(observed.get("editor_length"), int):
+        value["length"] = observed["editor_length"]
+    if isinstance(observed.get("editor_sha256_8"), str):
+        value["sha256_8"] = observed["editor_sha256_8"]
+    value["freshness"] = "fresh" if read.state == cache_mod.FRESH else "stale"
+    value["observed_at"] = read.observed_at
+    value["age_s"] = None if read.age_s is None else round(read.age_s, 3)
+    note = ("presence, length and an 8-character digest of the composer's draft; the draft text "
+            "itself is never published, stored or logged")
+    if read.state == cache_mod.STALE:
+        _add(fields, F.last_observed(
+            "P-12", value, read.reason or "the observation is older than the freshness window",
+            source=source, observed_at=read.observed_at, age_s=read.age_s, note=note))
+        return
+    _add(fields, F.observed("P-12", value, source=source, observed_at=read.observed_at,
+                            age_s=read.age_s, note=note))
 
 
 def _fill_reporter_observation(fields: dict[str, F.Field], ctx: Context,
@@ -810,8 +960,26 @@ def _fill_repo(fields: dict[str, F.Field], ctx: Context, view: session.SessionVi
                            note="a plain jj read can snapshot a working copy; removing the adapter avoids the question"))
 
 
+def _emit_room_name(fields: dict[str, F.Field], ctx: Context, pin: dict[str, Any],
+                    as_of: str | None) -> None:
+    """M-5 with its provenance. A registry answer says so; a refusal names the failed fact."""
+    if pin.get("name"):
+        value: dict[str, Any] = {"name": pin["name"]}
+        if pin.get("procId"):
+            value["procId"] = pin["procId"]
+        if pin.get("source_kind"):
+            value["source"] = pin["source_kind"]
+        _add(fields, F.present("M-5", value, source=pin.get("path"), observed_at=as_of))
+        return
+    reason = pin.get("error") or "no room pin for this pane"
+    if pin.get("registry_check"):
+        reason = f"{reason}; registry: {pin['registry_check']}"
+    _add(fields, F.absent("M-5", reason, source=pin.get("path")))
+
+
 def _fill_mode_profile_rooms(fields: dict[str, F.Field], ctx: Context, view: session.SessionView,
-                             ident: identity.Identity, instance: str | None, pane_id: str | None) -> None:
+                             ident: identity.Identity, instance: str | None, pane_id: str | None,
+                             lane_name: str | None = None) -> None:
     mode = view.mode_state()
     if mode and mode.get("state"):
         state = mode["state"]
@@ -903,13 +1071,11 @@ def _fill_mode_profile_rooms(fields: dict[str, F.Field], ctx: Context, view: ses
                                note=None if ident.trusted else
                                "identity is not verified: no profile or instance preload"))
 
-    pin = fleet_state.room_pin(ctx.paths.agent_dir, pane_id, ctx.policy)
-    if pin.get("name"):
-        _add(fields, F.present("M-5", {"name": pin["name"], "procId": pin["procId"]},
-                               source=pin.get("path"), observed_at=ctx.as_of_iso))
-    else:
-        _add(fields, F.absent("M-5", pin.get("error") or "no room pin for this pane",
-                              source=pin.get("path")))
+    pin = fleet_state.room_pin(
+        ctx.paths.agent_dir, pane_id, ctx.policy, name_hint=lane_name,
+        boot_id=procfs.boot_id(ctx.paths.proc_root, ctx.policy),
+        pane_proc=(ident.pil or {}).get("pid") if ident.pil else None)
+    _emit_room_name(fields, ctx, pin, ctx.as_of_iso)
     membership = fleet_state.room_membership(ctx.paths.agent_dir, pin.get("name"), ctx.policy)
     if membership.get("error") and not membership.get("rooms"):
         _add(fields, F.unknown("M-6", membership["error"], source="rooms/registry + rooms/rooms",
@@ -1157,7 +1323,8 @@ def _fill_dagr_beads(fields: dict[str, F.Field], ctx: Context, ident: identity.I
 
 def _fill_state_only(fields: dict[str, F.Field], ctx: Context, ident: identity.Identity,
                      instance: str | None, cwd: str | None, pane_id: str | None,
-                     workspace_id: str | None, tab_id: str | None = None) -> None:
+                     workspace_id: str | None, tab_id: str | None = None,
+                     lane_name: str | None = None) -> None:
     """Fill the fields that do not need a session file (repo, rooms, crons, dagr, beads, role)."""
     fake_view = session.SessionView(
         path="", realpath="", version=None, header_id=None, header_cwd=cwd,
@@ -1167,13 +1334,11 @@ def _fill_state_only(fields: dict[str, F.Field], ctx: Context, ident: identity.I
     agent = {"cwd": cwd}
     _fill_role(fields, ctx, pane_id, workspace_id, tab_id)
     _fill_repo(fields, ctx, fake_view, agent, ctx.snapshot.workspace(workspace_id))
-    pin = fleet_state.room_pin(ctx.paths.agent_dir, pane_id, ctx.policy)
-    if pin.get("name"):
-        _add(fields, F.present("M-5", {"name": pin["name"], "procId": pin["procId"]},
-                               source=pin.get("path"), observed_at=ctx.as_of_iso))
-    else:
-        _add(fields, F.absent("M-5", pin.get("error") or "no room pin for this pane",
-                              source=pin.get("path")))
+    pin = fleet_state.room_pin(
+        ctx.paths.agent_dir, pane_id, ctx.policy, name_hint=lane_name,
+        boot_id=procfs.boot_id(ctx.paths.proc_root, ctx.policy),
+        pane_proc=(ident.pil or {}).get("pid") if ident.pil else None)
+    _emit_room_name(fields, ctx, pin, ctx.as_of_iso)
     membership = fleet_state.room_membership(ctx.paths.agent_dir, pin.get("name"), ctx.policy)
     if membership.get("rooms"):
         _add(fields, F.present("M-6", {"rooms": membership["rooms"],

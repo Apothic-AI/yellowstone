@@ -18,8 +18,19 @@ from .. import guard, util
 
 # --- rooms ------------------------------------------------------------------------
 
-def room_pin(agent_dir: str | None, pane_id: str | None, policy: guard.Policy) -> dict[str, Any]:
-    """M-5: the lane's room name from ``rooms/names.json`` pins, keyed by pane."""
+def room_pin(agent_dir: str | None, pane_id: str | None, policy: guard.Policy, *,
+             name_hint: str | None = None, boot_id: str | None = None,
+             pane_proc: int | None = None) -> dict[str, Any]:
+    """M-5: the lane's room name — pane pin first, then a *verified* registry record.
+
+    32 of 34 live lanes had no pane pin, so M-5 read ``absent`` on lanes whose own footer says
+    ``rooms: <name>``: a false absence, which is worse than an unknown. The registry file
+    ``rooms/registry/<name>.json`` records ``name``, ``pid`` and ``bootId`` per live lane, so it
+    can answer — but only when the identity is proven: the file is constructed from the lane
+    name (never a directory listing, which was the pre-read fan-out V3 removed), and accepted
+    only when its ``pid`` is the lane's recorded process, that process is alive, and its
+    ``bootId`` is this machine's boot. Anything else leaves the pin absent with the reason.
+    """
     out: dict[str, Any] = {"name": None, "procId": None, "path": None, "error": None}
     if not agent_dir or not pane_id:
         out["error"] = "no_agent_dir_or_pane"
@@ -41,12 +52,62 @@ def room_pin(agent_dir: str | None, pane_id: str | None, policy: guard.Policy) -
     entry = pins.get(f"pane:{pane_id}")
     if not isinstance(entry, dict):
         out["error"] = "no_pin_for_pane"
+        registry = _registry_lane(agent_dir, policy, name_hint, boot_id, pane_proc)
+        out["registry"] = registry
+        if registry.get("ok"):
+            out.update(name=registry["name"], path=registry["path"],
+                       source_kind="rooms_registry", error=None, verified=True,
+                       procId=f"pid:{registry['pid']}")
+        else:
+            out["registry_check"] = registry.get("reason")
         return out
     if isinstance(entry.get("name"), str):
         out["name"] = entry["name"]
     if isinstance(entry.get("procId"), str):
         out["procId"] = entry["procId"]
+    out["source_kind"] = "pane_pin"
     return out
+
+
+_SAFE_NAME = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
+
+
+def _registry_lane(agent_dir: str, policy: guard.Policy, name_hint: str | None,
+                   boot_id: str | None, pane_proc: int | None) -> dict[str, Any]:
+    """Verify ``rooms/registry/<name>.json`` against the process identity.
+
+    ``ok`` is the only accepting outcome. Every refusal names which fact failed, so M-5's
+    reason can say "pid_mismatch" rather than leaving a reader to guess. The file is read only
+    when the name is safe to compose a path from, and never inferred from a stale one.
+    """
+    if not name_hint:
+        return {"ok": False, "reason": "no_lane_name"}
+    # A leading dot is refused for the same reason PilAccess refuses it: a composed path must not
+    # be able to name a hidden file, and ".." must not be able to climb.
+    if (not set(name_hint) <= _SAFE_NAME) or name_hint.startswith(".") or ".." in name_hint:
+        return {"ok": False, "reason": "unsafe_lane_name"}
+    if not pane_proc:
+        return {"ok": False, "reason": "no_verified_process"}
+    if not boot_id:
+        return {"ok": False, "reason": "no_boot_id"}
+    path = os.path.join(agent_dir, "rooms", "registry", f"{name_hint}.json")
+    if not os.path.exists(path):
+        return {"ok": False, "reason": "no_registry_record", "path": path}
+    try:
+        record = guard.read_json(path, policy, "rooms-registry")
+    except (OSError, ValueError):
+        return {"ok": False, "reason": "registry_unreadable", "path": path}
+    if not isinstance(record, dict) or not isinstance(record.get("name"), str):
+        # A room file (``{"room": ..., "members": [...]}``) lives in the same directory; it is
+        # not a lane record and is refused by shape rather than by a special case.
+        return {"ok": False, "reason": "not_a_lane_record", "path": path}
+    if record["name"] != name_hint:
+        return {"ok": False, "reason": "name_mismatch", "path": path}
+    if record.get("pid") != pane_proc:
+        return {"ok": False, "reason": "pid_mismatch", "path": path}
+    if record.get("bootId") != boot_id:
+        return {"ok": False, "reason": "boot_mismatch", "path": path}
+    return {"ok": True, "name": record["name"], "pid": record["pid"], "path": path}
 
 
 def room_membership(agent_dir: str | None, name: str | None, policy: guard.Policy) -> dict[str, Any]:

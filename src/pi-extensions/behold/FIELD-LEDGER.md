@@ -19,6 +19,22 @@ not the field contract:
 * the first roster's behaviour is documented: it publishes the map, the lanes pick it up
   on their next tick, and the observation reaches the **next** roster run.
 
+**V12 is the composer and partial-chain correction (FT-70).** Two additions and one repaired state:
+
+* **`P-12` — composer pending.** Presence, length and an 8-character digest of the composer's draft,
+  published by the reporter from `ctx.ui.getEditorText()`. The text itself never leaves the process:
+  nothing on disk records the buffer, and a pane read reconstructs it lossily from box-drawing
+  characters, which is why `new-self.py` and `broadcast-to-fleet.py` were scraping for it. The
+  per-lane count is therefore **59** (**60** unique with `M-4`).
+* **`chain_partial` is a first-class `chain_state`.** A dangling `parentId` (compaction or
+  context-edit residue) used to reject the whole session, which made every field of a compacted
+  lane unreadable. The reachable branch is now kept, `P-4.chain_state` reads `chain_partial` with the
+  orphan count and ids, and every session-derived field carries that marker in its note.
+* **Aggregates refuse a partial chain.** `T-4`, `T-5`, `T-6` and `T-7` sum, count or measure the
+  branch, so on `chain_partial` they are **absent** with `chain_partial: aggregate requires a
+  complete chain` — never a smaller number that a reader cannot tell from a real one. Nothing is
+  ever repaired on disk: the session file is a work record.
+
 **V10 is the containment and concurrency correction.** The field contract does not move
 (the per-lane id count stays **57**, 58 unique with `M-4`); what changes is the
 **boundary** and the **transport**:
@@ -336,7 +352,7 @@ in `behold.lanes.by_field_state`.
 
 ## Identity count (re-derived, not hand-kept)
 
-There are **59 unique field ids** in this ledger: **58 per-lane** ids plus `M-4`, which is
+There are **60 unique field ids** in this ledger: **59 per-lane** ids plus `M-4`, which is
 global-only and never a lane field. The two code-side lists agree exactly and are the
 source of truth:
 
@@ -419,6 +435,7 @@ carries none of them: a held lane emits **no** snapshot label, status or cwd.
 | P-9 | session name | `P-9` | 1 | A / absent | latest `session_info.name` | — |
 | P-10 | fork lineage | `P-10` | 1 | A / absent | header `parentSession` (path only) | — |
 | P-11 | runtime observation (reporter) | `P-11` | 0 | **LO** / absent / unknown (identity mismatch, clock disputed) | the cache's `pi_state_current`, joined on `(pane_id, session_id)`; class `last_observed`; `freshness`, `age_s` and the writing `incarnation` travel with the value; `unavailable` names every field the reporter cannot see | a live lane with the reporter installed |
+| P-12 | composer pending (presence only) | `P-12` | 1 | **LO** / absent / unknown | the cache's `pi_state_current`, joined on `(pane id, validated session id)` like `P-11`: the reporter publishes `editor_pending`, `editor_length` and `editor_sha256_8` from `ctx.ui.getEditorText()`. The draft text is **never** published, stored or logged — it is read in-process, hashed and dropped. No cache → absent; an older reporter that does not publish the keys → absent with that reason; never `pending: false` by default | a live lane with a draft in its composer |
 
 `P-4`'s leaf is a **disk reconstruction**, not proof of the runtime-selected branch: pi
 keeps the selected leaf in memory, so the field says `DISK_RECONSTRUCTED` and carries
@@ -548,11 +565,11 @@ separately and never mixed.
 | S skills / prompts | 4 | — | `S-2` `S-4` | — | `S-1` `S-3` (2) |
 | J monitors / jobs | 3 | `J-3` | — | `J-1` `J-2` `J-3` | `J-1` `J-2` (2, last-observed only) |
 | B beads | 2 | — | `B-2` | — | `B-1` (1) |
-| **Total (lane ids)** | **57** | **8** | **5** | **6 items** | **44** |
+| **Total (lane ids)** | **59** | **8** | **5** | **6 items** | **46** |
 
-* **57 lane ids + 1 global-only id (`M-4`) = 58 unique ids.** `M-4` appears in the
+* **59 lane ids + 1 global-only id (`M-4`) = 60 unique ids.** `M-4` appears in the
   `global` block, never in a lane's `fields`.
-* **44 + 8 + 5 = 57.** The three columns partition the lane ids with nothing left over.
+* **46 + 8 + 5 = 59.** The three columns partition the lane ids with nothing left over.
 * The **6 runtime-only items** are exactly `behold.runtime_only_pending`: `T-8`, `J-1`,
   `J-2`, `J-3`, `E-1` (exact list) and `M-7`.
 * No operator field is absent from the output. Every one is either emitted with

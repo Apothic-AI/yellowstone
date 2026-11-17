@@ -226,7 +226,16 @@ def _candidate_checks(
         problems.append("expected_id_mismatch")
     elif expected_id:
         checks.append(Check(f"{label}.expected_id", True, f"== {expected_id}"))
-    if view.chain_state != session.CHAIN_OK:
+    if view.chain_state == session.CHAIN_PARTIAL:
+        # A partial branch is usable: the reachable entries are real. It is not *complete*, so
+        # the reader marks it and refuses aggregates (lane.py). Rejecting the whole session here
+        # is what made a compaction artifact cost seven fields.
+        checks.append(Check(
+            f"{label}.active_branch", True,
+            f"chain_partial: leaf={view.leaf_id} ({view.leaf_source}), {len(view.chain)} entries "
+            f"on chain of {len(view.entries)} in file, {len(view.orphans)} orphan parent(s): "
+            f"{', '.join(view.orphans[:4])}"))
+    elif view.chain_state != session.CHAIN_OK:
         problems.append(f"chain_{view.chain_state}")
         checks.append(Check(f"{label}.active_branch", False, view.chain_state))
     else:
@@ -470,7 +479,13 @@ def resolve(
                          "and the process checks")
     elif pin_path:
         identity.state = PIN_STALE_NO_FALLBACK
-        identity.note = "pin invalid and no usable lane record: refusing to guess another session."
+        # The reason must say WHICH witness failed and how. "no usable lane record" without the
+        # problem names is the kind of reason a reader cannot act on: a missing session file, a
+        # broken branch and an absent record all need different responses.
+        identity.note = (
+            "pin invalid and no usable lane record: refusing to guess another session "
+            f"(pin: {', '.join(pin_problems) or 'unknown'}; "
+            f"lane record: {record_problem or ', '.join(record_problems) or 'absent'})")
     else:
         identity.state = NO_SESSION
         identity.note = "no pin and no usable lane record."

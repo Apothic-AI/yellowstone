@@ -227,6 +227,12 @@ export const ALLOWED_STATE_KEYS = [
   "herdr_tab_id",
   "system_prompt_length",
   "system_prompt_sha256",
+  // The composer, as presence/length/hash only. The text itself never leaves the process:
+  // nothing on disk records it, and a pane read reconstructs it lossily from box-drawing
+  // characters. A draft is the operator's, so only its existence is fleet state.
+  "editor_pending",
+  "editor_length",
+  "editor_sha256_8",
 ] as const;
 
 /**
@@ -258,6 +264,7 @@ type BeholdContext = {
     | { tokens?: number | null; contextWindow?: number; percent?: number | null }
     | undefined;
   getSystemPrompt?: () => string;
+  ui?: { getEditorText?: () => string };
 };
 
 export type AdmissionMap = {
@@ -653,6 +660,24 @@ export function collectState(ctx: BeholdContext): Record<string, unknown> {
   if (workspaceId) state.herdr_workspace_id = workspaceId;
   const tabId = env("HERDR_TAB_ID");
   if (tabId) state.herdr_tab_id = tabId;
+
+  // The composer: presence, length and an 8-hex-character digest of the draft. The text is
+  // read once, hashed and dropped — it is never stored, logged or returned. `pending` is only
+  // set when the accessor exists, so an older pi that does not expose it reports nothing
+  // rather than "no draft".
+  try {
+    const editorText = ctx.ui?.getEditorText?.();
+    if (typeof editorText === "string") {
+      state.editor_pending = editorText.trim().length > 0;
+      state.editor_length = editorText.length;
+      state.editor_sha256_8 = createHash("sha256")
+        .update(editorText, "utf8")
+        .digest("hex")
+        .slice(0, 8);
+    }
+  } catch {
+    /* optional */
+  }
 
   try {
     const prompt = ctx.getSystemPrompt?.();

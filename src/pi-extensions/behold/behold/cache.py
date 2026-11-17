@@ -163,6 +163,11 @@ ALLOWED_STATE_KEYS: dict[str, str] = {
     "herdr_tab_id": "str",
     "system_prompt_length": "int",
     "system_prompt_sha256": "str",
+    # Presence, length and a short digest of the composer's draft. The draft text is not a
+    # fleet field: it is read in-process only to answer "is text pending?".
+    "editor_pending": "bool",
+    "editor_length": "int",
+    "editor_sha256_8": "str",
 }
 
 #: The observation fields the reporter is expected to provide. A field that is missing from
@@ -185,6 +190,9 @@ EXPECTED_OBSERVATIONS: dict[str, str] = {
     "herdr_tab_id": "the reporter did not observe the tab id",
     "system_prompt_length": "the reporter did not observe the system prompt",
     "system_prompt_sha256": "the reporter did not observe the system prompt",
+    "editor_pending": "the reporter did not observe the composer",
+    "editor_length": "the reporter did not observe the composer",
+    "editor_sha256_8": "the reporter did not observe the composer",
 }
 
 #: Observation fields the reporter **cannot** provide at all, with the reason. They are

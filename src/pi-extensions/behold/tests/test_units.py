@@ -90,12 +90,27 @@ class TestLeafSemantics(unittest.TestCase):
             self.assertIn(session.LEAF_HINT_INVALID, view.diagnostics)
             self.assertEqual(view.leaf_source, "last_file_entry")
 
-    def test_missing_parent_marks_chain_broken(self):
+    def test_missing_parent_marks_chain_partial(self):
+        """A removed parent leaves a real, reachable branch: partial, not unusable.
+
+        It used to be ``broken_parent`` and the whole session was rejected, so a compaction
+        artifact cost every field of a compacted lane. The branch is now kept and marked.
+        """
         with tempfile.TemporaryDirectory() as tmp:
             root = _write(tmp, [HEADER, _msg("a", "ghost", role="user")])
             view = session.load(root, guard.Policy())
-            self.assertEqual(view.chain_state, session.CHAIN_BROKEN)
+            self.assertEqual(view.chain_state, session.CHAIN_PARTIAL)
+            self.assertEqual(view.orphans, ["ghost"])
+            self.assertEqual([e.id for e in view.chain], ["a"])
             self.assertTrue(any("missing_parent" in d for d in view.diagnostics))
+
+    def test_no_reachable_leaf_is_still_broken(self):
+        """The partial state must not swallow the genuinely unusable case."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = _write(tmp, [HEADER, _msg("a", None, role="user")])
+            view = session.load(root, guard.Policy(), leaf_hint="does-not-exist")
+            # leaf hint is invalid, so the last file entry is used instead: usable, not broken.
+            self.assertEqual(view.chain_state, session.CHAIN_OK)
 
     def test_cycle_is_detected(self):
         with tempfile.TemporaryDirectory() as tmp:

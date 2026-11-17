@@ -325,6 +325,11 @@ def _compact(raw: dict[str, Any]) -> Entry:
 
 CHAIN_OK = "ok"
 CHAIN_EMPTY = "empty"
+#: The leaf's branch is intact back to a point where a parent is missing. The entries that
+#: survive are real; the branch is **not** the whole history, so a reader may use terminal
+#: records and must not aggregate. ``orphans`` carries the missing parent ids and their count.
+CHAIN_PARTIAL = "chain_partial"
+#: No usable leaf at all (the leaf id is not in the file). Nothing can be reconstructed.
 CHAIN_BROKEN = "broken_parent"
 CHAIN_CYCLE = "cycle"
 LEAF_HINT_INVALID = "leaf_hint_invalid"
@@ -345,6 +350,9 @@ class SessionView:
     leaf_source: str  # last_file_entry | leaf_hint
     chain: list[Entry]
     chain_state: str
+    #: Parent ids that no longer resolve (``chain_partial`` only). Never repaired: the file is a
+    #: work record, and a reader that rewrites it to please itself is the wrong direction.
+    orphans: list[str] = dc_field(default_factory=list)
     diagnostics: list[str] = dc_field(default_factory=list)
     partial_tail: bool = False
     malformed: int = 0
@@ -681,6 +689,7 @@ def load(
         leaf_id = entries[-1].id if entries and entries[-1].id else None
 
     chain: list[Entry] = []
+    orphans: list[str] = []
     chain_state = CHAIN_OK
     if not entries:
         chain_state = CHAIN_EMPTY
@@ -700,7 +709,13 @@ def load(
                 break
             nxt = by_id.get(current.parent)
             if nxt is None:
-                chain_state = CHAIN_BROKEN
+                # A removed parent (compaction / context-edit residue) leaves a child whose
+                # parentId no longer resolves. The reachable branch is real, so it is kept and
+                # marked partial rather than thrown away -- discarding it made every field of a
+                # compacted session permanently unreadable. Aggregates must refuse it; terminal
+                # reads may use it.
+                chain_state = CHAIN_PARTIAL
+                orphans.append(current.parent)
                 diagnostics.append(f"missing_parent:{current.parent}")
                 break
             current = nxt
@@ -722,6 +737,7 @@ def load(
         leaf_source=leaf_source,
         chain=chain,
         chain_state=chain_state,
+        orphans=orphans,
         diagnostics=diagnostics,
         partial_tail=result.partial_tail,
         malformed=result.malformed,
