@@ -16,15 +16,17 @@ Verbs: `pause`, `resume`, `clear`, `edit <obj>`, `add <obj>`, `prioritize <obj>`
 - The queue **self-advances**: `goal_complete` sets a pending advance, and the next goal activates at the settled idle boundary with no human focus step.
 - A stopped next item **stays stopped**. A paused goal you skip to does not silently resume.
 
-## Only three tools
+## Four tools
 
-`goal_complete`, `goal_blocked`, `goal_wait`. There is **no** `create_goal`, `get_goal`, or `update_goal` on pi.
+`goal_complete`, `goal_blocked`, `goal_wait`, `goal_edit`. There is **no** `create_goal` or `get_goal` on pi.
 
-- The agent cannot create or change its own objective; only a typed `/goal` command can.
+- The agent cannot create its own objective; only a typed `/goal` command can. It **can** rewrite an existing one with `goal_edit`, which is intended for an objective change the operator or the owning leader asked for — never for narrowing your own scope.
 - Complete with `goal_complete` — one call, guarded by the current goal id — not `update_goal complete`.
 - Block with `goal_blocked` plus reason and evidence. A blocked goal stops continuing until an explicit `/goal resume`; nothing auto-resumes it.
 - Wait with `goal_wait` (reason, optional deadline) for outside dependencies — CI, review, a reply. It parks instead of burning turns polling, and is not a failure or a hang.
-- Tools stay hidden until a goal exists (`toolVisibility: after-first-goal`). They appear once a goal is set, and at startup for a session that restores an unfinished goal.
+- Edit with `goal_edit({ goal_id, objective, queued_index? })`. It is the agent-callable form of `/goal edit`: in place, no modal, queue preserved, status preserved (a paused goal stays paused). The active goal is re-minted, so use the new id it reports for the next `goal_complete`; the rest of that run gets a binding update naming it. Pass a 1-based `queued_index` to rewrite a queued goal instead, which is rejected while the queue is frozen or mid-transition.
+- **To re-point another lane's goal, message that lane** — `/goal edit <objective>` typed as its input, or an instruction telling it to call `goal_edit`. The tool is session-local and cannot reach a worker from a leader's own session.
+- Tools stay hidden until a goal exists (`toolVisibility: after-first-goal`). They appear once a goal is set, and at startup for a session that restores an unfinished goal. Activation requires only `goal_complete`/`goal_blocked`/`goal_wait`; an allowlist without `goal_edit` still runs goals, it just does not offer the edit tool.
 
 ## `/goal <objective>` replaces everything
 
