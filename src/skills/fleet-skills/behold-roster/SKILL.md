@@ -328,3 +328,16 @@ more or to check a claim:
 - `FIELD-LEDGER.md` — every operator field, its source, its state in this tranche, and the
   gate that still has to close before the value is true of a live fleet
 - `tests/run-tests.sh` — the offline suite (178 tests, standard library only, no network)
+
+## Context usage is a measured field (P-11)
+
+`behold roster --lane <lane> --json` exposes each lane's context window as **`fields.P-11`**:
+`observed.context_percent`, `observed.context_tokens`, `observed.context_window`. For a single lane,
+`~/.overlord/tools/lane-fields <lane> ctx-used ctx-max ctx` prints the same three numbers.
+
+**Never infer context pressure from the size of a session file.** They are different quantities: the
+file is the whole conversation history on disk, the window is what is in the request. On 2026-11-17 a
+lane's session was 118.6 MB while its window was 22.9% of 1,000,000 tokens, and reasoning from file size
+made the lane defer work it had ample room to do — until the operator challenged the claim. A proxy
+that moves in the same direction as the quantity is the most dangerous kind, because it looks like
+evidence.
