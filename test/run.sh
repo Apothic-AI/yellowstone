@@ -77,6 +77,12 @@ if [ "${1:-}" = gates ]; then
   # Hermetic: herdr/behold/pil are stubbed, so it runs on a live machine and in a container.
   gate ./test/verify-lane-supervise-scope.sh
   echo
+  # FT-81: the naming repair loop derived an agent name from its tab label with nothing stopping
+  # two tabs from carrying one label, so three one-pane tabs produced a 155x bare `FAILED` loop.
+  # This pins the duplicate-label guard, herdr's error body in the log, the end of a retry that
+  # cannot succeed, and a UTC stamp. Hermetic: herdr is stubbed from JSON fixtures.
+  gate ./test/verify-lane-name-repair.sh
+  echo
   # The same idea for the spaces themselves. verify-mirror-live covers home/.overlord/tools
   # only — its count does not move when a space's AGENTS.md or .pi/modes appears under home/,
   # which is how a 510-line file and a 108-line file of the same name sat in the tree and on
