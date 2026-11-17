@@ -197,12 +197,49 @@ def _custom_summary(custom_type: str, data: Any) -> dict[str, Any]:
         for key, value in data.items():
             if isinstance(value, str) and value.strip() and key not in ("activatedAt", "source"):
                 text_only = True
-        out["goal"] = {
-            "statuses": dict(sorted(statuses.items())),
-            "count": len(goals) if isinstance(goals, list) else (len(queue) if isinstance(queue, list) else None),
-            "queue_depth": len(queue) if isinstance(queue, list) else None,
-            "text_only": text_only,
-        }
+        # The live pi-goal store writes ``{"goal": {...}}`` — one goal object, or explicit
+        # ``null`` when there is none — while older stores write ``{"goals": [...], "queue": [...]}``.
+        # Reading only the list shape left ``count: null`` on every lane that has a goal, which
+        # is an unknown wearing presence: the leader board could not tell "paused" from "no goal".
+        single = data.get("goal")
+        if isinstance(single, dict):
+            status = single.get("status")
+            if isinstance(status, str):
+                statuses[status] = statuses.get(status, 0) + 1
+            carried = {}
+            for key in ("iteration", "tokensUsed", "timeUsedSeconds", "baselineTokens",
+                        "automaticModelTurns", "toolFreeRepeatCount"):
+                value = single.get(key)
+                if isinstance(value, str) and value.strip():
+                    try:
+                        carried[key] = float(value)
+                    except ValueError:
+                        continue
+                elif isinstance(value, (int, float)) and not isinstance(value, bool):
+                    carried[key] = float(value)
+            for key in ("activeStartedAt", "startedAt", "updatedAt"):
+                if isinstance(single.get(key), str):
+                    carried[key] = single[key]
+            out["goal"] = {
+                "shape": "single",
+                "statuses": dict(sorted(statuses.items())),
+                "count": 1,
+                "status": status if isinstance(status, str) else None,
+                "queue_depth": None,
+                "text_only": text_only,
+                "goal": carried,
+            }
+        else:
+            out["goal"] = {
+                "shape": "list" if isinstance(goals, list) or isinstance(queue, list) else "absent",
+                "statuses": dict(sorted(statuses.items())),
+                "count": len(goals) if isinstance(goals, list) else (len(queue) if isinstance(queue, list) else None),
+                "queue_depth": len(queue) if isinstance(queue, list) else None,
+                "text_only": text_only,
+                # An explicit null goal is the store saying "no goal", which is absent, not a
+                # count of zero and not an unknown.
+                "no_active_goal": ("goal" in data and single is None),
+            }
     return out
 
 

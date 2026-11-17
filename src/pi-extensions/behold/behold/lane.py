@@ -938,14 +938,49 @@ def _fill_goals_todos_crons(fields: dict[str, F.Field], ctx: Context, view: sess
             reason = "goal state is text-only; count withheld (goal text is class 2)"
             _add(fields, F.unknown("G-1", reason, source="session custom goal entry", privacy=1))
             _add(fields, F.unknown("G-2", reason, source="session custom goal entry", privacy=1))
+        elif state.get("no_active_goal"):
+            # The store says "no goal" explicitly (``goal: null``). That is ABSENT — not a count
+            # of zero, and not an unknown: the reader can act on it.
+            _add(fields, F.absent("G-1", "the goal store records no active goal (explicit null)",
+                                  source="session custom goal entry", privacy=1,
+                                  observed_at=goals.get("timestamp")))
+            _add(fields, F.absent("G-2", "the goal store records no active goal (explicit null)",
+                                  source="session custom goal entry", privacy=1,
+                                  observed_at=goals.get("timestamp")))
+        elif state.get("shape") == "single":
+            # The live shape: one goal object with status, iteration and elapsed counters.
+            # Keys stay absent rather than being set to null, so a reader cannot mistake
+            # "not recorded" for "zero".
+            carried = state.get("goal") or {}
+            value: dict[str, Any] = {"count": 1, "by_status": state.get("statuses") or {},
+                                     "shape": "single", "status": state.get("status")}
+            if isinstance(carried.get("iteration"), (int, float)):
+                value["iteration"] = int(carried["iteration"])
+            if isinstance(carried.get("timeUsedSeconds"), (int, float)):
+                value["elapsed_s"] = round(float(carried["timeUsedSeconds"]), 1)
+            if isinstance(carried.get("tokensUsed"), (int, float)):
+                value["tokens_used"] = int(carried["tokensUsed"])
+            _add(fields, F.present(
+                "G-1", value,
+                source="session goal-state entry (single goal: status, iteration, elapsed)",
+                privacy=1, observed_at=goals.get("timestamp")))
+            _add(fields, F.absent(
+                "G-2", "the goal store records one goal and no queue",
+                source="session custom goal entry", privacy=1,
+                observed_at=goals.get("timestamp")))
         else:
             _add(fields, F.present("G-1", {"count": state.get("count"),
                                            "by_status": state.get("statuses")},
                                    source="session custom goal entry (structured counts only)",
                                    privacy=1, observed_at=goals.get("timestamp")))
-            _add(fields, F.present("G-2", state.get("queue_depth"),
-                                   source="session custom goal entry (depth only)", privacy=1,
-                                   observed_at=goals.get("timestamp")))
+            if state.get("queue_depth") is None:
+                _add(fields, F.absent("G-2", "the goal store records no queue",
+                                      source="session custom goal entry", privacy=1,
+                                      observed_at=goals.get("timestamp")))
+            else:
+                _add(fields, F.present("G-2", state.get("queue_depth"),
+                                       source="session custom goal entry (depth only)", privacy=1,
+                                       observed_at=goals.get("timestamp")))
 
     todos = view.todo_state()
     mirror = pi_state.todo_mirror(
