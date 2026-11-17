@@ -68,6 +68,11 @@ pil — start a pi lane inside herdr under a stable, derived name.
                           pi sees them: "pil --session X --role worker" and
                           "pil --role worker --session X" are identical. A pi argument literally
                           named --role therefore cannot be forwarded through pil.
+  pil --spawned-by <lane>
+                          record which lane created this one (PI_SPAWNED_BY, written into the
+                          same role record). The fleet graph reads it as the worker -> leader
+                          edge; without it a worker's parent is only ever inferred. Also set by
+                          `spawn-lane --spawned-by`, which defaults to the calling lane.
   pil --help
 
 The name comes from the herdr tab label, slugified. An auto-generated numeric
@@ -225,6 +230,30 @@ while [ $# -gt 0 ]; do
       shift 2
       ;;
     --role=*) role="${1#*=}"; shift ;;
+    --spawned-by)
+      sb="${2:-}"
+      if [ -z "$sb" ]; then printf 'pil: --spawned-by needs a lane name\n' >&2; exit 2; fi
+      case "$sb" in
+        *[!A-Za-z0-9_-]*)
+          printf 'pil: invalid --spawned-by value "%s" (lane names are [A-Za-z0-9_-]+)\n' "$sb" >&2
+          exit 2
+          ;;
+      esac
+      export PI_SPAWNED_BY="$sb"
+      shift 2
+      ;;
+    --spawned-by=*)
+      sb="${1#*=}"
+      if [ -z "$sb" ]; then printf 'pil: --spawned-by needs a lane name\n' >&2; exit 2; fi
+      case "$sb" in
+        *[!A-Za-z0-9_-]*)
+          printf 'pil: invalid --spawned-by value "%s" (lane names are [A-Za-z0-9_-]+)\n' "$sb" >&2
+          exit 2
+          ;;
+      esac
+      export PI_SPAWNED_BY="$sb"
+      shift
+      ;;
     *) newargs+=("$1"); shift ;;
   esac
   if [ -n "${role:-}" ]; then
@@ -304,7 +333,7 @@ restore_role() {
     while IFS='=' read -r key val; do
       # Accept only the three role variables, and only safe values.
       case "$key" in
-        PI_MODE|PI_PROFILE|PI_MODE_CONFIRM_PROJECT)
+        PI_MODE|PI_PROFILE|PI_MODE_CONFIRM_PROJECT|PI_SPAWNED_BY)
           if [[ "$val" =~ ^[A-Za-z0-9_-]+$ ]]; then
             [ -n "${!key:-}" ] || export "$key=$val"
           fi
@@ -359,6 +388,9 @@ record_role() {
   printf 'PI_MODE=%s PI_PROFILE=%s' "$PI_MODE" "$PI_PROFILE" > "$role_file"
   if [ -n "${PI_MODE_CONFIRM_PROJECT:-}" ]; then
     printf ' PI_MODE_CONFIRM_PROJECT=%s' "$PI_MODE_CONFIRM_PROJECT" >> "$role_file"
+  fi
+  if [ -n "${PI_SPAWNED_BY:-}" ]; then
+    printf ' PI_SPAWNED_BY=%s' "$PI_SPAWNED_BY" >> "$role_file"
   fi
   printf '\n' >> "$role_file"
 }
@@ -671,7 +703,24 @@ selftest_role() {
   else
     printf 'FAIL %-35s file not created\n' "role recorded"; fails=$((fails + 1))
   fi
-  
+
+  # Test 8: parentage is recorded and restored, so a relaunch keeps the tree edge
+  export PI_MODE=worker PI_PROFILE=worker PI_MODE_CONFIRM_PROJECT=1 PI_SPAWNED_BY="lead-lane"
+  ROLE_STATE_DIR="$tmpdir/roles" record_role "spawn-child"
+  content=$(cat "$tmpdir/roles/spawn-child.env" 2>/dev/null)
+  if [[ "$content" =~ PI_SPAWNED_BY=lead-lane ]]; then
+    printf 'ok   %-35s\n' "parentage recorded"
+  else
+    printf 'FAIL %-35s content=%s\n' "parentage recorded" "$content"; fails=$((fails + 1))
+  fi
+  got=$( (unset PI_SPAWNED_BY; ROLE_STATE_DIR="$tmpdir/roles" restore_role spawn-child; printf '%s' "${PI_SPAWNED_BY:-}") )
+  if [ "$got" = "lead-lane" ]; then
+    printf 'ok   %-35s\n' "parentage restored on relaunch"
+  else
+    printf 'FAIL %-35s got=%s\n' "parentage restored on relaunch" "${got:-(empty)}"; fails=$((fails + 1))
+  fi
+  unset PI_SPAWNED_BY
+
   rm -rf "$tmpdir"
   unset PI_MODE PI_PROFILE PI_MODE_CONFIRM_PROJECT
   return "$fails"

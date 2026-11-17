@@ -29,6 +29,11 @@ Options
   --cwd DIR             working directory for the new tab
   --session PATH        resume this session file, must exist (refused otherwise: a missing path
                         makes pi start an empty conversation under that name)
+  --spawned-by LANE     the lane creating this one, recorded as PI_SPAWNED_BY in the child's
+                        pil role record and read by the fleet graph as the worker -> leader edge.
+                        Defaults to the caller's own lane (PI_ROOMS_NAME / PI_LANE_NAME), so a
+                        leader that spawns a worker records the edge without passing anything.
+                        Pass "-" to record no parent deliberately.
   --prompt-file FILE    after the lane is idle, submit this file as its first prompt
   --prompt-text TEXT    same, inline
   --wait SECS           how long to wait for the lane to register and go idle (default 90)
@@ -124,6 +129,9 @@ def main(argv: list[str]) -> int:
     p.add_argument("--role", required=True, choices=("leader", "worker"))
     p.add_argument("--cwd", help="working directory for the new tab")
     p.add_argument("--session", help="session file to resume (must exist)")
+    p.add_argument("--spawned-by",
+                   help="lane creating this one (PI_SPAWNED_BY); defaults to the caller's lane; "
+                        "pass '-' to record none")
     p.add_argument("--prompt-file", help="file submitted as the lane's first prompt once idle")
     p.add_argument("--prompt-text", help="inline first prompt")
     p.add_argument("--wait", type=float, default=90.0, help="seconds to wait for idle (default 90)")
@@ -149,6 +157,21 @@ def main(argv: list[str]) -> int:
                 "pass the shared-store path (~/.pi/agent/sessions/...)", 2)
 
     pil_args = ["pil", "--role", args.role]
+    if args.spawned_by == "-":
+        spawned_by = None
+    else:
+        spawned_by = (args.spawned_by
+                      or os.environ.get("PI_ROOMS_NAME")
+                      or os.environ.get("PI_LANE_NAME")
+                      or os.environ.get("PI_SPAWNED_BY")
+                      or None)
+        if spawned_by:
+            spawned_by = slug(spawned_by)
+            if not spawned_by or not re.fullmatch(r"[a-z0-9_-]+", spawned_by):
+                die(f"--spawned-by '{spawned_by}' is not a lane name", 2)
+            if spawned_by == lane:
+                die("--spawned-by names this same lane; a lane cannot be its own parent", 2)
+            pil_args += ["--spawned-by", spawned_by]
     if args.session:
         pil_args += ["--session", args.session]
     launch = " ".join(f"'{a}'" if " " in a else a for a in pil_args)
@@ -158,7 +181,8 @@ def main(argv: list[str]) -> int:
         tab_cmd += ["--cwd", args.cwd]
 
     summary = {"lane": lane, "label": args.label, "workspace": args.workspace, "role": args.role,
-               "session": args.session, "tab_create": ["herdr", *tab_cmd], "launch": launch,
+               "spawned_by": spawned_by, "session": args.session,
+               "tab_create": ["herdr", *tab_cmd], "launch": launch,
                "pane": None, "tab": None, "status": None, "prompted": False, "ok": False}
 
     if args.dry_run:
@@ -216,6 +240,8 @@ def main(argv: list[str]) -> int:
         print(json.dumps(summary, indent=2))
     else:
         print(f"{lane}  pane={pane}  tab={tab or '?'}  role={args.role}  status={status}")
+        if spawned_by:
+            print(f"  parent recorded: {spawned_by}")
         print(f"  launched: {launch}")
         if prompt:
             print("  first prompt submitted")
