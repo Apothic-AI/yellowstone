@@ -453,6 +453,157 @@ async function orderedQueueScenario() {
   }
 }
 
+function anyMessageText(message) {
+  if (typeof message.content === "string") return message.content;
+  if (!Array.isArray(message.content)) return "";
+  return message.content
+    .filter((part) => part?.type === "text")
+    .map((part) => part.text)
+    .join("\n");
+}
+
+function toolResultText(message) {
+  if (message.role !== "toolResult") return "";
+  if (typeof message.content === "string") return message.content;
+  if (!Array.isArray(message.content)) return "";
+  return message.content
+    .filter((part) => part?.type === "text")
+    .map((part) => part.text)
+    .join("\n");
+}
+
+function persistedQueueSnapshots(session) {
+  return session.sessionManager
+    .getBranch()
+    .filter((candidate) => candidate.type === "custom" && candidate.customType === "goal-state")
+    .map((candidate) => candidate.data?.queue ?? []);
+}
+
+// The one scenario that exercises `goal_edit` through the real tool surface: a
+// real agent session, the real tool registry and executor, real persistence, and
+// a real continuation. An in-process mock cannot prove that the model's call
+// reaches the tool with the schema the extension registered.
+async function goalEditScenario() {
+  const now = Date.now();
+  const restoredGoalId = "edit-smoke-active";
+  const revisedObjective = "revised runtime smoke objective";
+  const restoredGoal = {
+    id: restoredGoalId,
+    text: "original runtime smoke objective",
+    status: "active",
+    startedAt: now,
+    updatedAt: now,
+    iteration: 0,
+    tokensUsed: 0,
+    timeUsedSeconds: 0,
+    baselineTokens: 0,
+    automaticModelTurns: 0,
+    toolFreeRepeatCount: 0,
+  };
+  const harness = await createHarness(
+    [
+      // 1. The model rewrites the objective it is already pursuing.
+      fauxAssistantMessage(fauxToolCall("goal_edit", { goal_id: restoredGoalId, objective: revisedObjective })),
+      // 2. It then tries to finish with the id it was given at kickoff. The edit
+      //    re-mints the id, so this has to be rejected rather than complete work
+      //    under an objective the model never saw.
+      fauxAssistantMessage(
+        fauxToolCall("goal_complete", {
+          goal_id: restoredGoalId,
+          summary: "A stale id must never complete the edited goal.",
+        }),
+      ),
+      // 3. Complete with the id the tool reported, and prove the request carried a
+      //    mid-run binding update: the run's own instructions still name the
+      //    superseded id, so a correct model needs the re-bind to be able to finish.
+      (context) => {
+        const texts = context.messages.map(anyMessageText);
+        const editResult = texts.find((text) => text.includes(`Goal updated: ${revisedObjective}`));
+        assert.ok(editResult, "the edited goal tool result must reach the provider");
+        const editedGoalId = /This goal_id is now ([^\s;]+)/.exec(editResult)?.[1];
+        assert.ok(editedGoalId, "the tool result must name the re-minted goal_id");
+        assert.ok(
+          texts.some(
+            (text) =>
+              text.includes("Goal runtime binding update") &&
+              text.includes(editedGoalId) &&
+              text.includes(revisedObjective),
+          ),
+          "a request after an active edit must carry the re-bound goal id and the edited objective",
+        );
+        return fauxAssistantMessage(
+          fauxToolCall("goal_complete", { goal_id: editedGoalId, summary: "Runtime smoke completed and verified." }),
+        );
+      },
+      // 4. The preserved queue advances and its own goal completes.
+      completionResponse,
+    ],
+    {},
+    (sessionManager) => {
+      sessionManager.appendCustomEntry("goal-state", {
+        goal: restoredGoal,
+        queue: [
+          {
+            ...restoredGoal,
+            id: "edit-smoke-queued",
+            text: "queued smoke objective",
+            status: "queued",
+            activeStartedAt: undefined,
+          },
+        ],
+      });
+    },
+    { experimental: { goals: true }, toolVisibility: "always" },
+  );
+  try {
+    await harness.session.prompt("apply the revised objective");
+    await waitFor(
+      () => harness.session.isIdle && harness.faux.state.callCount === 4,
+      `goal_edit continuation, completion and queue advance (${JSON.stringify({
+        callCount: harness.faux.state.callCount,
+        isIdle: harness.session.isIdle,
+        goalStatus: persistedGoalStatus(harness.session),
+      })})`,
+    );
+    await harness.session.agent.waitForIdle();
+    const toolResults = harness.session.messages.map(toolResultText).filter(Boolean);
+    const editResult = toolResults.find((text) => text.includes(`Goal updated: ${revisedObjective}`));
+    assert.ok(editResult, "goal_edit must report the accepted objective through a real tool result");
+    const newGoalId = /This goal_id is now ([^\s;]+)/.exec(editResult)?.[1];
+    assert.ok(newGoalId, "goal_edit must report the re-minted goal_id");
+    assert.notEqual(newGoalId, restoredGoalId);
+    assert.ok(
+      toolResults.some((text) => text.includes("goal_id does not match the active goal")),
+      "the pre-edit goal_id must be stale",
+    );
+    const prompts = harness.session.messages.map(userMessageText).filter(Boolean);
+    assert.ok(
+      prompts.some((text) => text.includes("queued smoke objective")),
+      "the preserved queue must activate with its own objective",
+    );
+    assert.ok(
+      prompts.every((text) => !text.includes("original runtime smoke objective")),
+      "the superseded objective must not reach the provider again",
+    );
+    assert.equal(harness.faux.state.callCount, 4);
+    assert.ok(
+      persistedGoalHistory(harness.session).some((goal) => goal.text === revisedObjective && goal.id === newGoalId),
+      "the edited objective must be what gets persisted",
+    );
+    assert.ok(
+      persistedQueueSnapshots(harness.session).some((queue) => queue[0]?.text === "queued smoke objective"),
+      "editing the active goal must preserve the queue",
+    );
+    assert.ok(
+      persistedGoalHistory(harness.session).some((goal) => goal.text === "queued smoke objective"),
+      "the preserved queue must advance after the edited goal completes",
+    );
+    assert.equal(persistedGoalStatus(harness.session), null);
+  } finally {
+    await harness.cleanup();
+  }
+}
+
 async function queuedInputScenario() {
   const observedPrompts = [];
   const harness = await createHarness(
@@ -941,6 +1092,7 @@ await automaticToolLoopLimitScenario();
 await retryAtHardLimitScenario();
 await automaticRetryOwnershipScenario();
 await orderedQueueScenario();
+await goalEditScenario();
 await queuedInputScenario();
 await busyEditOwnershipScenario();
 await pauseScenario();
@@ -956,5 +1108,5 @@ await acceptedWaitInputScenario();
 await restoredDeadlineScenario();
 await treePriorityScenario();
 console.log(
-  "pi-goal runtime smoke: normal, runaway guards, retry and busy-edit ownership, ordered queue, queued input, pause, frozen-queue and stale blocked-tool aborts, managed-run RPC, bounded budget behavior, manual compaction, accepted wait input, restored deadline, and asynchronous tree priority passed",
+  "pi-goal runtime smoke: normal, runaway guards, retry and busy-edit ownership, ordered queue, goal_edit through the real tool surface, queued input, pause, frozen-queue and stale blocked-tool aborts, managed-run RPC, bounded budget behavior, manual compaction, accepted wait input, restored deadline, and asynchronous tree priority passed",
 );

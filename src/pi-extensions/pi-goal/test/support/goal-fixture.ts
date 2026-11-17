@@ -34,7 +34,9 @@ export function registerGoal(pi: Parameters<typeof goal>[0], toolVisibility: "al
 }
 
 export function registerGoalWithSettingsPath(pi: Parameters<typeof goal>[0], goalSettingsPath: string) {
-  pi.setActiveTools([...new Set([...pi.getActiveTools(), "goal_complete", "goal_blocked", "goal_wait"])]);
+  pi.setActiveTools([
+    ...new Set([...pi.getActiveTools(), "goal_complete", "goal_blocked", "goal_wait", "goal_edit"]),
+  ]);
   goal(pi, { settingsPath: goalSettingsPath });
 }
 export type GoalTool = {
@@ -47,6 +49,11 @@ export type GoalTool = {
       reason?: string;
       evidence?: string;
       repeated_turns?: number;
+      target?: "active" | "queued";
+      objective?: string;
+      previous_goal_id?: string;
+      queue_position?: number;
+      queue?: Array<{ position: number; goal_id: string; status: string; objective: string }>;
     };
     terminate?: boolean;
   }>;

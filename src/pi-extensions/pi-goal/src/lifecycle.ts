@@ -5,6 +5,7 @@ import { notifyTerminal } from "./errors.js";
 import { type ActiveGoal, loadGoalStateFromSession } from "./persistence.js";
 import {
   buildGoalBindingUpdate,
+  buildGoalEditBindingUpdate,
   buildGoalPrompt,
   buildGoalSafetyPauseNotice,
   buildGoalSystemPrompt,
@@ -570,6 +571,20 @@ export function registerGoalLifecycle(
         content: runtime.inputWakeNeedsPrompt
           ? `${GOAL_BINDING_UPDATE_HEADER}\n\n${buildGoalSystemPrompt(goal)}`
           : buildGoalBindingUpdate(goal),
+        display: false,
+        timestamp: Date.now(),
+      });
+      return { messages };
+    }
+    if (!runtime.queueFrozen && goal?.status === "active" && runtime.editedGoalBindingId === goal.id) {
+      // `goal_edit` re-mints the id inside a running turn, so this request's own
+      // instructions still carry the superseded binding. Re-bind it request-locally
+      // rather than delivering a second user turn: the edited objective governs the
+      // rest of this run, and the guard id matches what the tool reported.
+      messages.push({
+        role: "custom",
+        customType: "goal-edit-binding",
+        content: buildGoalEditBindingUpdate(goal),
         display: false,
         timestamp: Date.now(),
       });
