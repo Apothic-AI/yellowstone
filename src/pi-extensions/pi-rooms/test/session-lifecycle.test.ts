@@ -32,6 +32,7 @@ test("A12-A14 real SessionManager resume/reload retains pin; new/fork do not", a
     const tools = new Map<string, any>();
     const handlers = new Map<string, Function>();
     init({ registerTool: (tool: any) => tools.set(tool.name, tool), registerCommand() {},
+    registerMessageRenderer() {},
       on: (event: string, handler: Function) => handlers.set(event, handler),
       sendMessage() {}, appendEntry() {},
     } as any);

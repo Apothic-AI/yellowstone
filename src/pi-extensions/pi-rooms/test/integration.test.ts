@@ -41,6 +41,7 @@ function loadExtension(env: Record<string, string>): Recorded {
   const pi = {
     registerTool: (def: any) => recorded.tools.set(def.name, def),
     registerCommand: () => {},
+    registerMessageRenderer: () => {},
     on: (event: string, handler: Function) => {
       recorded.handlers.set(event, handler);
       return () => {};

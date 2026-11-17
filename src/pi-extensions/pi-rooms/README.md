@@ -353,6 +353,62 @@ would have to archive a body nothing can fetch back — `rooms_read` covers room
 only, and there is no tool that reads a direct message — so bounding is the only
 mechanism here, and the age prefix is the only compression.
 
+### Message presentation
+
+The transcript block a delivered message draws is controlled by a separate
+presentation file, `<base>/message-view.json`, so that collapsing blocks can
+never rewrite delivery policy (`maxSendsPerSession` lives in `config.json` and is
+a structural cap):
+
+```json
+{ "collapse-rooms-messages": true }
+```
+
+| Field | Default | Meaning |
+|---|---|---|
+| `collapse-rooms-messages` | `true` | A delivered message draws as a one-block summary rather than its whole body. Only an explicit boolean changes it; a missing or malformed file means collapsed |
+
+Collapsed (the default), a message is two lines:
+
+```text
+▸ Rooms · DM from self-improvement-leader · click to expand
+  workspace-prompt rollout DONE: 69/69 spaces pass
+```
+
+```text
+▸ Rooms · #core #7 from dxdb-core · 3 lines · click to expand
+  m2-core green, migration landed
+```
+
+The title names the sender and the destination — a direct message, or the room
+and the post's sequence number — instead of the generic `Pi Rooms Message`, so
+the common case needs no expansion. A reply carries `↩ <message id>` in the
+title.
+
+Expanded (a click, or `/toggle-collapse-rooms-messages expand`), the block adds
+the `id … · reply: … · reply to all: …` routing line and the whole body, hard-
+wrapped to the terminal width:
+
+```text
+▾ Rooms · DM from self-improvement-leader · click to collapse
+  id 0d0a6668 · reply: rooms_dm({to:"self-improvement-leader"}) · reply to all: rooms_reply_all({messageId:"0d0a6668-…"})
+  workspace-prompt rollout DONE: 69/69 spaces pass
+```
+
+Clicking one block toggles that message only, for the rest of the session; the
+decision is not persisted, because the setting is what a new session reads. The
+setting is the state *new* blocks are added in, and flipping it also re-renders
+messages already on screen. pi's Ctrl+O global expansion still wins while it is
+on.
+
+`/toggle-collapse-rooms-messages [collapse|expand|toggle]` flips the setting and
+writes the file; the notification reports what was persisted, and a write that
+fails is reported as a warning instead of being swallowed.
+
+Messages recorded before a renderer existed, or without `details`, still render:
+the persisted `[dm] name · id …` / `[room name #seq] name · id …` header is the
+fallback, so history does not fall behind a block that has nothing to show.
+
 The send cap is off by default and is structural when on: it is enforced on the
 only path that can send, so an agent cannot route around it. A cap is the
 pragmatic brake on two agents volleying indefinitely; a fleet that would rather
@@ -368,6 +424,7 @@ not have one should leave it `null` and rely on delivery modes instead.
 <base>/receipts/<id>.json             pre-migration single-file receipt, still read
 <base>/receipts/<id>/<recipient>.json.lock  held for the duration of one receipt write
 <base>/names.json                name pins (pane, session, cwd)
+<base>/message-view.json        presentation only: the collapse setting
 <base>/rooms/<room>/room.json    members, creator
 <base>/rooms/<room>/log.jsonl    append-only history, messages and membership events
 ```

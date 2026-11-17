@@ -260,6 +260,7 @@ test("the rollback is runnable through the rooms_receipts tool", async () => {
   init({
     registerTool: (def: any) => tools.set(def.name, def),
     registerCommand: () => {},
+    registerMessageRenderer: () => {},
     on: () => () => {},
     sendMessage: () => {},
     appendEntry: () => {},

@@ -13,6 +13,7 @@ const ctx = {
 init({
   registerTool: (tool: any) => tools.set(tool.name, tool),
   registerCommand() {},
+  registerMessageRenderer() {},
   on: (event: string, handler: Function) => handlers.set(event, handler),
   sendMessage: (message: any) => sent.push(message),
   appendEntry() {},

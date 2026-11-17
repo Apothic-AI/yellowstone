@@ -79,6 +79,7 @@ function load(
   const pi = {
     registerTool: (def: any) => tools.set(def.name, def),
     registerCommand: () => {},
+    registerMessageRenderer: () => {},
     on: (event: string, handler: Function) => {
       handlers.set(event, handler);
       return () => {};

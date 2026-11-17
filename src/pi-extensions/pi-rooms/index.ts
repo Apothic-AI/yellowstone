@@ -58,6 +58,14 @@ import {
   type Room,
 } from "./src/store.ts";
 import { claimPin, listPins, pinPath, readPinFile, resolvePin, writePinFile } from "./src/pins.ts";
+import {
+  createRoomsMessagePresentation,
+  flushRoomsMessageViewWrites,
+  readRoomsMessageViewConfig,
+  registerRoomsMessageRenderer,
+  registerRoomsMessageViewCommand,
+  ROOMS_MESSAGE_CUSTOM_TYPE,
+} from "./src/message-view.ts";
 
 interface SessionState {
   name: string;
@@ -147,6 +155,16 @@ function toList(value: string | string[]): string[] {
 export default function (pi: ExtensionAPI): void {
   let session: SessionState | null = null;
 
+  // FT-04: one presentation object for this session's transcript blocks. It is
+  // built here, not in ensure(), because the renderer has to be registered
+  // before the first message can be handed over — a renderer registered on the
+  // first delivery would leave the very first block drawn by pi's default
+  // renderer, expanded.
+  const viewBase = resolveBase();
+  const messageView = createRoomsMessagePresentation(readRoomsMessageViewConfig(viewBase));
+  registerRoomsMessageRenderer(pi, messageView);
+  registerRoomsMessageViewCommand(pi, messageView, viewBase);
+
   /**
    * Resolve this session's name.
    *
@@ -217,6 +235,9 @@ export default function (pi: ExtensionAPI): void {
     }
     const paths = resolvePaths(resolveBase());
     const config = loadConfig(paths);
+    // Re-read the presentation file once per session, so an edit on disk is
+    // honoured by the next lane without a reload of this one.
+    messageView.collapse = readRoomsMessageViewConfig(paths.base).collapse;
     const desired = defaultName(ctx.cwd);
     const name = config.autoJoin ? claimName(paths, desired, process.pid, ctx.cwd) : desired;
     session = {
@@ -452,7 +473,7 @@ export default function (pi: ExtensionAPI): void {
         const isRoom = entry.message.room != null;
         pi.sendMessage(
           {
-            customType: "pi_rooms_message",
+            customType: ROOMS_MESSAGE_CUSTOM_TYPE,
             content: render(entry.message, active.config.staleAfterMs),
             display: true,
             details: entry.message,
@@ -643,10 +664,16 @@ export default function (pi: ExtensionAPI): void {
 
   pi.on("session_shutdown", async () => {
     const active = session;
-    if (active == null) return;
+    if (active == null) {
+      // A setting flipped in a session that never joined still has a write in
+      // flight; drain it before the process goes away.
+      await flushRoomsMessageViewWrites();
+      return;
+    }
     stopWatcher();
     releaseClaimedName(active);
     session = null;
+    await flushRoomsMessageViewWrites();
   });
 
   // -------------------------------------------------------------------------
