@@ -14,7 +14,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type ChannelRequest, sendRequest, socketPathFor } from "./channel.ts";
 import type { ModelRef } from "./params.ts";
-import { applyRequest, type ReceiverSession, startReceiver } from "./receiver.ts";
+import {
+	type ChannelActionHandler,
+	applyRequest,
+	publishReceiverActionRegistry,
+	type ReceiverSession,
+	receiverActionRegistry,
+	startReceiver,
+} from "./receiver.ts";
 
 const ID = "11111111-2222-3333-4444-555555555555";
 const PATH = "/tmp/ft55/session.jsonl";
@@ -346,5 +353,136 @@ describe("who owns the socket", () => {
 		expect(response.ok).toBe(true);
 		expect((response.result as { applied?: string } | undefined)?.applied).toBe("model");
 		rmSync(dir, { recursive: true, force: true });
+	});
+});
+
+// ── the action registry (FT-89's seam) ───────────────────────────────────────
+//
+// Another extension serves its own actions through this receiver rather than
+// opening a second socket. The property under test is not "an action answers"
+// but "an action cannot answer *around* the binding checks": a registered
+// handler must be no easier to reach than a builtin, and a handler that throws
+// must answer rather than leave the caller waiting for its deadline.
+
+function registered(handler: ChannelActionHandler): () => void {
+	return publishReceiverActionRegistry().register(handler);
+}
+
+describe("the receiver action registry", () => {
+	test("publishes one registry per process, so a reload cannot strand handlers", () => {
+		expect(publishReceiverActionRegistry()).toBe(receiverActionRegistry());
+	});
+
+	test("dispatches a registered action and reports the action names", () => {
+		const dispose = registered({
+			actions: ["goal.read.test"],
+			apply: () => ({ ok: true, result: { goals: [{ id: "g1" }] } }),
+		});
+		try {
+			expect(receiverActionRegistry().actions()).toContain("goal.read.test");
+		} finally {
+			dispose();
+		}
+		expect(receiverActionRegistry().actions()).not.toContain("goal.read.test");
+	});
+
+	test("an unregistered action is still refused, not silently ignored", async () => {
+		const result = await applyRequest(
+			{ requestId: "r1", tool: "t", sessionId: ID, sessionPath: PATH, action: "goal.read.absent" },
+			fakeSession(),
+		);
+		expect(result.ok).toBe(false);
+		expect(result.refusal?.code).toBe("invalid_identifier");
+	});
+});
+
+describe("a registered action over the socket (FT-89's dispatch path)", () => {
+	test("answers through the receiver, and cannot answer around the binding check", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "ft89-registry-"));
+		const socketPath = socketPathFor(ID, PATH, dir);
+		const session = fakeSession();
+		const calls: string[] = [];
+		const dispose = registered({
+			actions: ["goal.read.socket"],
+			apply: (req) => {
+				calls.push(req.requestId);
+				return { ok: true, result: { goals: [{ id: "g1", status: "active" }] } };
+			},
+		});
+		const receiver = await startReceiver({ socketPath, session });
+		try {
+			const answered = await sendRequest({
+				sessionId: ID,
+				sessionPath: PATH,
+				request: {
+					requestId: "req-registered",
+					tool: "goal_read_worker",
+					sessionId: ID,
+					sessionPath: PATH,
+					action: "goal.read.socket",
+				},
+				dir,
+				timeoutMs: 2000,
+			});
+			expect(answered.ok).toBe(true);
+			expect((answered.result as { goals?: unknown[] } | undefined)?.goals).toHaveLength(1);
+
+			// The same registered action, addressed to another session: refused by the
+			// binding check, and the handler never runs.
+			const wrong = await sendRequest({
+				sessionId: ID,
+				sessionPath: PATH,
+				request: {
+					requestId: "req-other",
+					tool: "goal_read_worker",
+					sessionId: "99999999-8888-7777-6666-555555555555",
+					sessionPath: PATH,
+					action: "goal.read.socket",
+				},
+				dir,
+				timeoutMs: 2000,
+			});
+			expect(wrong.ok).toBe(false);
+			expect(wrong.refusal?.code).toBe("session_id_mismatch");
+			expect(calls).toEqual(["req-registered"]);
+		} finally {
+			dispose();
+			receiver.close();
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test("a handler that throws answers action_failed instead of leaving the caller to time out", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "ft89-registry-throw-"));
+		const socketPath = socketPathFor(ID, PATH, dir);
+		const dispose = registered({
+			actions: ["goal.read.throws"],
+			apply: () => {
+				throw new Error("the goal store is unreadable");
+			},
+		});
+		const receiver = await startReceiver({ socketPath, session: fakeSession() });
+		try {
+			const response = await sendRequest({
+				sessionId: ID,
+				sessionPath: PATH,
+				request: {
+					requestId: "req-throws",
+					tool: "goal_read_worker",
+					sessionId: ID,
+					sessionPath: PATH,
+					action: "goal.read.throws",
+				},
+				dir,
+				timeoutMs: 2000,
+			});
+			expect(response.ok).toBe(false);
+			expect(response.refusal?.code).toBe("action_failed");
+			expect(response.refusal?.message).toContain("unreadable");
+		} finally {
+			dispose();
+			receiver.close();
+			rmSync(dir, { recursive: true, force: true });
+		}
 	});
 });

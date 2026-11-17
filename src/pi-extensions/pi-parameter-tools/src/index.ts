@@ -33,7 +33,11 @@ import { type ChannelRequest, type ChannelResponse, sendRequest, socketPathFor }
 import { readHerdrEnvironment, resolveLaneSession } from "./herdr.ts";
 import { isHeldPlace } from "./holds.ts";
 import { emptyTarget, type ModelRef, type ParameterToolResult, refusal, summarise, THINKING_LEVELS } from "./params.ts";
-import { type Receiver, startReceiver } from "./receiver.ts";
+import {
+	publishReceiverActionRegistry,
+	type Receiver,
+	startReceiver,
+} from "./receiver.ts";
 import { readSessionHeaderId } from "./session-file.ts";
 import {
 	applyOwnModel,
@@ -197,6 +201,11 @@ function heldRefusal(tool: string): ParameterToolResult | null {
 }
 
 export default function parameterTools(pi: ExtensionAPI) {
+	// Publish the action registry at load, not at first request: another extension
+	// (pi-goal, for FT-89) registers its handlers behind this receiver, and it may
+	// load either side of us. Publishing here means "the socket exists" and "the
+	// registry exists" are the same fact from the moment the extension loads.
+	publishReceiverActionRegistry();
 	// The receiver: this session listens for requests from other lanes that want its
 	// model or its thinking level changed. It is started with the session and closed
 	// with it, and it changes only this session, with this session's own setters.

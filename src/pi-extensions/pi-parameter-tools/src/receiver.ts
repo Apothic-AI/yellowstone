@@ -47,6 +47,79 @@ import { isThinkingLevel, type ModelRef, type ParameterToolResult } from "./para
 
 const MAX_REQUEST_BYTES = 64 * 1024;
 
+/**
+ * The action registry — how another extension (pi-goal, for FT-89) serves its
+ * own actions through this receiver instead of opening a second socket.
+ *
+ * One socket per session is the invariant worth protecting: a second socket
+ * means a second derivation of the session's identity and one more place for a
+ * caller to trust the wrong peer. A registered handler therefore runs *behind*
+ * the binding checks in `checkBinding`, which stay the only implementation.
+ */
+export interface ChannelActionHandler {
+	/** The action names this handler serves. */
+	actions: readonly string[];
+	/** Answer the request. Throwing is allowed and becomes a typed refusal. */
+	apply(request: ChannelRequest, session: ReceiverSession): Promise<ChannelActionResult> | ChannelActionResult;
+}
+
+/** What a registered action answers. Deliberately not `ParameterToolResult`: that
+ *  type is shaped for model/thinking changes and carries fields a goal read has
+ *  no meaning for. */
+export interface ChannelActionResult {
+	ok: boolean;
+	refusal?: { code: string; message: string; detail?: Record<string, unknown> };
+	result?: Record<string, unknown>;
+}
+
+/** The registry's published identity on `globalThis`, so an extension in another
+ *  package can find it without importing this one across a repo boundary. */
+export const RECEIVER_ACTIONS_KEY = Symbol.for("pi.receiver-actions.v1");
+
+export interface ReceiverActionRegistry {
+	readonly version: 1;
+	register(handler: ChannelActionHandler): () => void;
+	actions(): string[];
+}
+
+const receiverActions = new Map<string, ChannelActionHandler>();
+
+function buildRegistry(): ReceiverActionRegistry {
+	return {
+		version: 1,
+		register(handler) {
+			for (const action of handler.actions) receiverActions.set(action, handler);
+			return () => {
+				for (const action of handler.actions) {
+					if (receiverActions.get(action) === handler) receiverActions.delete(action);
+				}
+			};
+		},
+		actions() {
+			return [...receiverActions.keys()].sort();
+		},
+	};
+}
+
+/**
+ * Publish the registry once per process. Idempotent on purpose: pi may load this
+ * extension more than once (a reload, a second profile), and a second registry
+ * would leave the first one's handlers unreachable.
+ */
+export function publishReceiverActionRegistry(): ReceiverActionRegistry {
+	const holder = globalThis as unknown as Record<symbol, ReceiverActionRegistry | undefined>;
+	const existing = holder[RECEIVER_ACTIONS_KEY];
+	if (existing && existing.version === 1) return existing;
+	const registry = buildRegistry();
+	holder[RECEIVER_ACTIONS_KEY] = registry;
+	return registry;
+}
+
+/** The registry this process publishes, for handlers registered in-process. */
+export function receiverActionRegistry(): ReceiverActionRegistry {
+	return publishReceiverActionRegistry();
+}
+
 /** What the receiver needs from its own session to answer a request. */
 export interface ReceiverSession {
 	sessionId: string | null;
@@ -325,6 +398,39 @@ async function handleConnection(socket: Socket, session: ReceiverSession): Promi
 }
 
 async function respondWithResult(socket: Socket, request: ChannelRequest, session: ReceiverSession): Promise<void> {
+	const identity = { sessionId: session.sessionId, sessionPath: session.sessionPath };
+	const action =
+		request && typeof request.action === "string" ? receiverActions.get(request.action) : undefined;
+	if (action) {
+		// Registered actions run behind the same binding check as the builtins:
+		// serving an action must not be a way to skip the identity rule.
+		const binding = checkBinding(request, session);
+		if (binding) {
+			respond(socket, binding);
+			return;
+		}
+		let answer: ChannelActionResult;
+		try {
+			answer = await action.apply(request, session);
+		} catch (error) {
+			// A handler that throws must answer, not leave the caller waiting for
+			// its deadline: an unfinished request reads as a hung worker.
+			answer = {
+				ok: false,
+				refusal: {
+					code: "action_failed",
+					message: error instanceof Error ? error.message : String(error),
+				},
+			};
+		}
+		respond(socket, {
+			ok: answer.ok,
+			refusal: answer.refusal,
+			result: answer.ok ? answer.result : undefined,
+			receiver: identity,
+		});
+		return;
+	}
 	const result = await applyRequest(request, session);
 	respond(socket, {
 		ok: result.ok,
@@ -344,28 +450,52 @@ function respond(socket: Socket, response: ChannelResponse): void {
 	socket.end();
 }
 
-/** The refusal or the result of a request, decided by the receiver. */
-export async function applyRequest(request: ChannelRequest, session: ReceiverSession): Promise<ParameterToolResult> {
-	const identity = { sessionId: session.sessionId, sessionPath: session.sessionPath };
+/**
+ * The binding every request must satisfy before any action — builtin or
+ * registered — may touch this session: it must be a request, this session must
+ * have an identity, the request must name *this* session by id and by file, and
+ * the session must not be in a held place.
+ *
+ * Returns the refusal response, or `undefined` when the request may proceed.
+ */
+function checkBinding(
+	request: ChannelRequest,
+	session: ReceiverSession,
+): ChannelResponse | undefined {
+	const answer = (code: string, message: string, detail?: Record<string, unknown>): ChannelResponse => ({
+		ok: false,
+		refusal: { code, message, ...(detail ? { detail } : {}) },
+		receiver: { sessionId: session.sessionId, sessionPath: session.sessionPath },
+	});
 	if (!request || typeof request !== "object") {
-		return refuse("invalid_identifier", "the request is not a request this build can read", identity);
+		return answer("invalid_identifier", "the request is not a request this build can read");
 	}
 	if (!session.sessionId || !session.sessionPath) {
-		return refuse("no_session_file", "this session has no identity to answer for", identity);
+		return answer("no_session_file", "this session has no identity to answer for");
 	}
-	// The binding: the request must name *this* session, by id and by file.
 	if (request.sessionId !== session.sessionId) {
-		return refuse("session_id_mismatch", "that request names another session", identity, {
+		return answer("session_id_mismatch", "that request names another session", {
 			requestedSessionId: request.sessionId,
 		});
 	}
 	if (normaliseSessionPath(request.sessionPath) !== normaliseSessionPath(session.sessionPath)) {
-		return refuse("session_identity_mismatch", "that request names another session file", identity, {
+		return answer("session_identity_mismatch", "that request names another session file", {
 			requestedSessionPath: request.sessionPath,
 		});
 	}
 	if (isHeldPlace(session)) {
-		return refuse("held_lane", "this session is in a held or reserved place", identity);
+		return answer("held_lane", "this session is in a held or reserved place");
+	}
+	return undefined;
+}
+
+/** The refusal or the result of a request, decided by the receiver. */
+export async function applyRequest(request: ChannelRequest, session: ReceiverSession): Promise<ParameterToolResult> {
+	const identity = { sessionId: session.sessionId, sessionPath: session.sessionPath };
+	const binding = checkBinding(request, session);
+	if (binding) {
+		const refusal = binding.refusal ?? { code: "invalid_identifier", message: "refused" };
+		return refuse(refusal.code, refusal.message, identity, refusal.detail);
 	}
 
 	if (request.action === "set_thinking") {
