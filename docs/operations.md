@@ -65,6 +65,45 @@ cannot do for you:
   inside this checkout, so an uncommitted or half-merged tree is no longer a
   private inconvenience — it is what those lanes load.
 
+## Running a batch of lanes against shared repositories
+
+A batch dispatcher starts several worker lanes at once. The only thing that may be serialized is
+the **repository a job writes**, never the directory it was started in:
+
+```bash
+~/.overlord/tools/si-batch-dispatch.py --jobs spec.json --check   # resolve every job's lock set
+~/.overlord/tools/si-batch-dispatch.py --jobs spec.json           # dispatch
+```
+
+Every job declares `"repo"` — the repository it is allowed to write — and a job with
+`"commits": true` and no `repo` is **refused before it spawns**. The declaration is resolved with
+`git rev-parse --git-common-dir`, so all worktrees of one repository share one lock, and the lock
+is a `flock` on `<git-common-dir>/si-batch-dispatch.lock`: inside the repository, outside the
+working tree, released by the kernel if the dispatcher dies. A job's cwd repository is locked too
+when it differs from the declaration, because a lane that writes outside its declared repo is a
+defect and a defect should wait rather than race.
+
+**Why cwd was not enough, once.** On 2026-11-17 the dispatcher keyed its one-at-a-time rule on
+cwd. FT-74's worker had cwd `~/Documents/Fleet` and did its work inside the yellowstone tree, so
+its `git commit --amend` raced an FT-72 lane in that shared checkout and replaced that lane's
+commit **subject** (the tree was byte-identical; only the message was lost). `~/Documents/Fleet`
+is not a git repository at all, so the two jobs collided over a directory name that neither one
+held. A cwd is where a lane starts, not where it writes.
+
+### A collision is corrected forward
+
+**Never force-push a shared branch to hide a collision.** If your commit replaced another lane's,
+land a new commit that restores what was lost and says in its message what happened — that is what
+`9548281b7` does for the FT-72 subject above, and it is why the incident is still readable today.
+Rewriting published history makes the tree look tidy and destroys the only evidence of the race,
+and every lane that had already fetched the old tip now has a repository that disagrees with the
+remote. The restored commit is the record; do not delete it.
+
+If the tree itself was corrupted rather than a message, the same rule holds: repair forward with a
+commit that describes the damage, and record the incident in the item that owns the work. A forced
+push is only legitimate on a branch nobody else has fetched, which is a property you can check and
+usually cannot prove.
+
 ## When things break
 
 ### An agent looks stuck

@@ -83,6 +83,16 @@ if [ "${1:-}" = gates ]; then
   # cannot succeed, and a UTC stamp. Hermetic: herdr is stubbed from JSON fixtures.
   gate ./test/verify-lane-name-repair.sh
   echo
+  # FT-83: the push dispatcher serialized jobs by the cwd each worker was spawned in, and FT-74's
+  # worker had cwd ~/Documents/Fleet while amending inside the yellowstone tree — so its amend
+  # raced an FT-72 lane in that shared checkout and replaced that lane's commit subject.
+  # ~/Documents/Fleet is not even a git repository, so the two jobs shared one fake resource name
+  # and neither held the tree it was writing. This pins the lock to the RESOLVED repository (all
+  # worktrees of one repo share one lock), requires a commit job to declare its repo, locks the cwd
+  # repo as well when it differs, and checks the lockfile lives in the git dir and not the work
+  # tree. Hermetic: temp repositories and a stub spawner.
+  gate ./test/verify-dispatch-lock.sh
+  echo
   # The same idea for the spaces themselves. verify-mirror-live covers home/.overlord/tools
   # only — its count does not move when a space's AGENTS.md or .pi/modes appears under home/,
   # which is how a 510-line file and a 108-line file of the same name sat in the tree and on
