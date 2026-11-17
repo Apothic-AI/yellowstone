@@ -321,12 +321,12 @@ export function registerGoalTools(pi: ExtensionAPI, runtime: GoalRuntime) {
     name: GOAL_WAIT_TOOL,
     exposure: "model-only",
     label: "Goal Wait",
-    description: `Keep the active /goal alive but quiet while something outside this session is expected — CI finishing, a review landing, a reply arriving. The goal pauses, stays resumable, and records why. Call it alone, after arranging whatever will wake it, or pass resume_after_ms as a safety deadline. Requests below ${MIN_GOAL_WAIT_DELAY_MS}ms are clamped to ${MIN_GOAL_WAIT_DELAY_MS}ms. Do not use it for ordinary unfinished work: if there is anything left you can do yourself, do it instead.`,
+    description: `Keep the active /goal alive but quiet while something outside this session is expected — CI finishing, a review landing, a reply arriving. The goal pauses, stays resumable, and records why. Call it alone, after arranging whatever will wake it, and pass resume_after_ms from your estimate how long the remaining goal work or the awaited event will take — not an arbitrary round number. Requests below ${MIN_GOAL_WAIT_DELAY_MS}ms are clamped to ${MIN_GOAL_WAIT_DELAY_MS}ms. Do not use it for ordinary unfinished work: if there is anything left you can do yourself, do it instead.`,
     promptSnippet: "Pause the active /goal while waiting on something outside this session",
     promptGuidelines: [
       "Use goal_wait only when progress genuinely depends on a later external event — not when work remains that you could do now.",
-      `Prefer deadlines measured in minutes; anything under ${MIN_GOAL_WAIT_DELAY_MS}ms is a polling loop and is clamped.`,
-      "Omit resume_after_ms when a message will wake the goal anyway; pass it only as a bounded safety net.",
+      `Set resume_after_ms from your estimate how long the remaining goal work or the awaited event will take, and state the basis in reason; anything under ${MIN_GOAL_WAIT_DELAY_MS}ms is a polling loop and is clamped.`,
+      "Omit resume_after_ms only when arriving input will wake the goal sooner; a stated estimate beats a guessed round number.",
       "Call goal_wait alone: a sibling tool call in the same turn can prevent the turn from ending.",
     ],
     parameters: Type.Object({
@@ -343,7 +343,7 @@ export function registerGoalTools(pi: ExtensionAPI, runtime: GoalRuntime) {
       resume_after_ms: Type.Optional(
         Type.Integer({
           minimum: 1,
-          description: `Safety wake-up in milliseconds. Clamped up to ${MIN_GOAL_WAIT_DELAY_MS}ms. Omit to wait for external input only.`,
+          description: `Wake-up delay in milliseconds: your estimate of how long the remaining goal work or the awaited event will take. Raised to ${MIN_GOAL_WAIT_DELAY_MS}ms if lower. Omit to wait for external input only.`,
         }),
       ),
     }),
