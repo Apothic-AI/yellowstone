@@ -280,13 +280,18 @@ failure modes are silent.
 
 **`@signalridge/pi-goal`** — the goal extension, and it is **not** `pi-codex-goal`.
 It replaced that extension and is stricter; do not carry old instructions across.
-Verified against the installed source (`@signalridge/pi-goal` 1.4.8), not the README:
+Verified against the installed source (`@signalridge/pi-goal` 1.5.0), not the README:
 
-- **Tool surface is three tools: `goal_complete`, `goal_blocked`, `goal_wait`.**
-  There is no `create_goal`, `get_goal` or `update_goal` — so on pi **an agent cannot
-  create or change its own goal objective**. Only a `/goal` slash command does that.
+- **Tool surface is four tools: `goal_complete`, `goal_blocked`, `goal_wait`, `goal_edit`.**
+  There is no `create_goal` or `get_goal` — on pi an agent still cannot create its own
+  objective; only a `/goal` slash command does that. It *can* rewrite an existing one with
+  `goal_edit({ goal_id, objective, queued_index? })` (agent-callable `/goal edit`: in place,
+  queue and status preserved, active goal re-minted so use the reported new id). That tool is
+  session-local — to re-point a worker's goal, message that worker. Use it only for an
+  objective change the operator or owner asked for, never to narrow your own scope.
   Tools are hidden until a goal exists (`toolVisibility: after-first-goal`), so a
-  fresh session will not see them.
+  fresh session will not see them; activation needs only the three lifecycle tools, so an
+  allowlist without `goal_edit` still runs goals.
 - **`/goal <objective>` REPLACES the active goal and wipes the whole queue**, behind a
   `Replace goal?` confirm modal. A modal in an agent pane absorbs the next Enter, so
   the send reports success and no turn runs. Prefer, in order: `/goal edit <obj>`
