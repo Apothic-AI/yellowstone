@@ -36,7 +36,21 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
   // pi-parameter-tools receiver. Registration is a disposition, not a throw: a
   // process without the receiver is a documented state a caller can report as
   // `unknown`, never as "no goals".
-  registerGoalReceiverActions(() => runtime);
+  // FT-89: the receiver registry is published by pi-parameter-tools, which pi may
+  // load *after* this extension (it does: pi-goal is 23rd in the package list and
+  // parameter-tools 25th). A one-shot registration at load therefore finds no
+  // registry and silently serves nothing — measured, not theorised. So the
+  // registration is attempted now and again at session_start, which is after every
+  // extension has loaded; the second attempt is a no-op once the first succeeded.
+  let receiverActions: { registered: boolean; dispose: () => void } | null = null;
+  const ensureReceiverActions = () => {
+    if (receiverActions && receiverActions.registered) return;
+    receiverActions = registerGoalReceiverActions(() => runtime);
+  };
+  ensureReceiverActions();
+  pi.on("session_start", () => {
+    ensureReceiverActions();
+  });
 
   // FT-89: a deferred write lands at the boundary the deferral names. Expiry and
   // application are the same hook, so a worker that never settles resolves its
