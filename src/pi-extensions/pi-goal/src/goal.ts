@@ -62,9 +62,19 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
   const settle = () => {
     settleDeferredWrites(runtime);
   };
-  pi.on("turn_end", settle);
-  pi.on("agent_end", settle);
-  pi.on("agent_settled", settle);
+  pi.on("agent_start", () => {
+    workerIdle = false;
+  });
+  pi.on("turn_end", () => {
+    settle();
+  });
+  pi.on("agent_end", () => {
+    settle();
+  });
+  pi.on("agent_settled", () => {
+    workerIdle = true;
+    settle();
+  });
 }
 
 export default function goal(pi: ExtensionAPI, options: GoalOptions = {}) {

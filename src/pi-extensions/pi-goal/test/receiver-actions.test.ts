@@ -373,6 +373,46 @@ describe("deferral through the receiver (FT-89)", () => {
   });
 
 
+
+  test("a defer request while the worker is idle is applied now, not parked", () => {
+    // A deferral created outside a turn has no later boundary to land on: it would
+    // sit deferred until it expired, which is a lost write with a token attached.
+    const { state, runtime } = writable(["g1"]);
+    const store = createDeferralStore();
+    const answer = applyGoalWrite(
+      runtime,
+      { op: "add", objective: "asked for with defer while idle", defer: true },
+      allow,
+      store,
+      Date.now(),
+      () => true,
+    );
+    assert.equal(answer.ok, true);
+    const result = answer.result as { deferred?: boolean; order: string[]; applied?: string };
+    assert.equal(result.deferred, false, "an idle worker gets the write now");
+    assert.equal(result.applied, "add");
+    assert.equal(result.order.length, 2);
+    assert.equal(state.persisted, 1);
+    assert.deepEqual(store.pending(), [], "nothing is left parked");
+  });
+
+  test("a defer request while the worker is busy is parked, as asked", () => {
+    const { state, runtime } = writable(["g1"]);
+    const store = createDeferralStore();
+    const answer = applyGoalWrite(
+      runtime,
+      { op: "add", objective: "asked for with defer mid-turn", defer: true },
+      allow,
+      store,
+      Date.now(),
+      () => false,
+    );
+    assert.equal((answer.result as { deferred?: boolean }).deferred, undefined);
+    assert.equal((answer.result as { applied: boolean }).applied, false);
+    assert.equal(state.persisted, 0, "nothing is written while a turn is running");
+    assert.equal(store.pending().length, 1);
+  });
+
   test("a deferred edit replays with its objective, and the order is unchanged", () => {
     const { state, runtime } = writable(["g1", "g2"]);
     const store = createDeferralStore();

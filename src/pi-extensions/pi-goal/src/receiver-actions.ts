@@ -258,6 +258,7 @@ export function applyGoalWrite(
   authorizer: WriteAuthorizer = DENY_ALL,
   deferrals: DeferralStore = defaultDeferralStore,
   now: number = Date.now(),
+  isIdle: () => boolean = () => false,
 ): ChannelAnswer {
   if (!runtime) {
     return { ok: false, refusal: { code: "no_goal_state", message: "this session has no goal runtime bound" } };
@@ -281,6 +282,16 @@ export function applyGoalWrite(
     };
   }
 
+  if (request.defer === true && isIdle()) {
+    // Nothing to defer: the worker is idle, and a deferral created outside a turn
+    // has no later boundary to land on — it would sit deferred until expiry.
+    const answer = applyOp(runtime, fields);
+    if (!answer.ok) return answer;
+    return {
+      ok: true,
+      result: { ...(answer.result as Record<string, unknown>), deferred: false, note: "worker was idle; applied now" },
+    };
+  }
   if (request.defer === true) {
     const token = `defer-${now}-${Math.random().toString(36).slice(2, 10)}`;
     deferrals.defer({
@@ -414,6 +425,7 @@ export function registerGoalReceiverActions(
   authorizer: WriteAuthorizer | null = null,
   lookup: LaneLookup = createLaneLookup(defaultPilDir()),
   deferrals: DeferralStore = defaultDeferralStore,
+  isIdle: () => boolean = () => false,
 ): { registered: boolean; reason?: string; dispose: () => void } {
   if (!registry) {
     return {
@@ -436,7 +448,7 @@ export function registerGoalReceiverActions(
       }
       if (request.action === GOAL_WRITE_ACTION) {
         const chosen = authorizer ?? authorizerForSession(session as unknown as Record<string, unknown>, lookup);
-        return applyGoalWrite(runtime(), request, chosen, deferrals);
+        return applyGoalWrite(runtime(), request, chosen, deferrals, Date.now(), isIdle);
       }
       return { ok: false, refusal: { code: "invalid_identifier", message: "not an action this handler serves" } };
     },
