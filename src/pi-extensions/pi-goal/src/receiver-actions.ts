@@ -16,6 +16,14 @@
 // nothing starts a turn: a read costs the worker nothing.
 
 import type { GoalRuntime, ActiveGoal } from "./runtime.js";
+import { createGoal } from "./runtime.js";
+import {
+  addToTail,
+  moveToIndex,
+  type QueueResult,
+  removeById,
+  replaceObjective,
+} from "./queue-ops.js";
 
 /** The shape pi-parameter-tools publishes. Structural on purpose: pi-goal must
  *  not import across a repo boundary, and a changed registry version must be a
@@ -124,9 +132,109 @@ export function findReceiverActionRegistry(
  * that state can say "unknown" instead of "no goals". Registration is returned
  * as a disposer so a reload can withdraw exactly what it added.
  */
+/**
+ * The write path's authorization seam.
+ *
+ * Default deny, deliberately: until a resolver reads the durable records that
+ * say who the caller is and which worker is theirs, every write is refused with
+ * caller_unresolved. There must be no window in which an unverified caller can
+ * change a queue, and a resolver is passed in rather than imported so the
+ * receiver never guesses at identity it has not checked.
+ */
+export interface WriteAuthorizer {
+  authorize(request: Record<string, unknown>): { ok: true } | { ok: false; refusal: ChannelRefusal };
+}
+
+const DENY_ALL: WriteAuthorizer = {
+  authorize: () => ({
+    ok: false,
+    refusal: {
+      code: "caller_unresolved",
+      message: "this receiver cannot verify who is asking, so it changes nothing",
+    },
+  }),
+};
+
+export interface ChannelRefusal {
+  code: string;
+  message: string;
+  detail?: Record<string, unknown>;
+}
+
+export const GOAL_WRITE_ACTION = "goal.write";
+
+/** Queue length is the version a caller reads and writes against: it is the
+ *  cheapest value that changes whenever the order a caller saw can differ. */
+function queueVersion(runtime: GoalRuntime): number {
+  return runtime.queuedGoals.length;
+}
+
+export function applyGoalWrite(
+  runtime: GoalRuntime | null,
+  request: Record<string, unknown>,
+  authorizer: WriteAuthorizer = DENY_ALL,
+): ChannelAnswer {
+  if (!runtime) {
+    return { ok: false, refusal: { code: "no_goal_state", message: "this session has no goal runtime bound" } };
+  }
+  const decision = authorizer.authorize(request);
+  if (!decision.ok) return { ok: false, refusal: decision.refusal };
+
+  const op = typeof request.op === "string" ? request.op : "";
+  const id = typeof request.id === "string" ? request.id : undefined;
+  const objective = typeof request.objective === "string" ? request.objective : undefined;
+  const index = typeof request.index === "number" ? request.index : undefined;
+  const expected = typeof request.expectedQueueLength === "number" ? request.expectedQueueLength : undefined;
+
+  if (expected !== undefined && expected !== queueVersion(runtime)) {
+    return {
+      ok: false,
+      refusal: {
+        code: "stale_queue",
+        message: "the queue moved since it was read; re-read before writing",
+        detail: { expected, current: queueVersion(runtime) },
+      },
+    };
+  }
+
+  let result: QueueResult;
+  if (op === "add") {
+    if (!objective) return { ok: false, refusal: { code: "missing_field", message: "add needs an objective" } };
+    const goal = createGoal(objective, undefined, runtime.activeGoal ? runtime.activeGoal.tokensUsed : 0);
+    result = addToTail(runtime.queuedGoals, goal);
+  } else if (op === "edit") {
+    if (!id || !objective) {
+      return { ok: false, refusal: { code: "missing_field", message: "edit needs a goal id and an objective" } };
+    }
+    result = replaceObjective(runtime.queuedGoals, id, objective);
+  } else if (op === "prioritize") {
+    if (!id || index === undefined) {
+      return { ok: false, refusal: { code: "missing_field", message: "prioritize needs a goal id and an index" } };
+    }
+    result = moveToIndex(runtime.queuedGoals, id, index);
+  } else if (op === "remove") {
+    if (!id) return { ok: false, refusal: { code: "missing_field", message: "remove needs a goal id" } };
+    result = removeById(runtime.queuedGoals, id);
+  } else {
+    return {
+      ok: false,
+      refusal: { code: "unknown_op", message: "that is not an operation this worker performs", detail: { op } },
+    };
+  }
+
+  if (!result.ok) return { ok: false, refusal: result.refusal };
+  runtime.queuedGoals = result.queue;
+  runtime.persistQueue();
+  return {
+    ok: true,
+    result: { applied: op, order: result.order, queueLength: queueVersion(runtime) },
+  };
+}
+
 export function registerGoalReceiverActions(
   runtime: () => GoalRuntime | null,
   registry: ReceiverActionRegistryLike | undefined = findReceiverActionRegistry(),
+  authorizer: WriteAuthorizer = DENY_ALL,
 ): { registered: boolean; reason?: string; dispose: () => void } {
   if (!registry) {
     return {
@@ -136,12 +244,11 @@ export function registerGoalReceiverActions(
     };
   }
   const dispose = registry.register({
-    actions: [GOAL_READ_ACTION],
+    actions: [GOAL_READ_ACTION, GOAL_WRITE_ACTION],
     apply: (request) => {
-      if (request.action !== GOAL_READ_ACTION) {
-        return { ok: false, refusal: { code: "invalid_identifier", message: "not an action this handler serves" } };
-      }
-      return readGoals(runtime());
+      if (request.action === GOAL_READ_ACTION) return readGoals(runtime());
+      if (request.action === GOAL_WRITE_ACTION) return applyGoalWrite(runtime(), request, authorizer);
+      return { ok: false, refusal: { code: "invalid_identifier", message: "not an action this handler serves" } };
     },
   });
   return { registered: true, dispose };

@@ -3,6 +3,8 @@ import { describe, test } from "vitest";
 
 import {
   GOAL_READ_ACTION,
+  GOAL_WRITE_ACTION,
+  applyGoalWrite,
   findReceiverActionRegistry,
   readGoals,
   registerGoalReceiverActions,
@@ -103,7 +105,11 @@ describe("registration with the receiver", () => {
     const registry = fakeRegistry();
     const disposition = registerGoalReceiverActions(() => runtime(), registry);
     assert.equal(disposition.registered, true);
-    assert.deepEqual(registry.actionsSeen, [GOAL_READ_ACTION]);
+    assert.deepEqual(
+      registry.actionsSeen,
+      [GOAL_READ_ACTION, GOAL_WRITE_ACTION],
+      "the receiver serves both halves; a write action registered but unreachable would be a silent gap",
+    );
     disposition.dispose();
     assert.equal(registry.disposed, true);
   });
@@ -126,5 +132,117 @@ describe("registration with the receiver", () => {
       undefined,
       "a registry this build cannot understand must read as absent, not as a partial match",
     );
+  });
+});
+
+describe("goal.write: default deny, proven by an unchanged queue", () => {
+  function writableRuntime(queued: ReturnType<typeof goal>[]) {
+    const state = { queuedGoals: queued, activeGoal: null, persisted: 0 };
+    return {
+      state,
+      runtime: {
+        get queuedGoals() {
+          return state.queuedGoals;
+        },
+        set queuedGoals(next: unknown) {
+          state.queuedGoals = next as never;
+        },
+        activeGoal: null,
+        persistQueue() {
+          state.persisted += 1;
+        },
+      } as never,
+    };
+  }
+
+  test("an unverifiable caller is refused, and the queue is untouched afterwards", () => {
+    const { state, runtime } = writableRuntime([goal({ id: "g1" }), goal({ id: "g2" })]);
+    const before = JSON.stringify(state.queuedGoals);
+    const answer = applyGoalWrite(runtime, { action: GOAL_WRITE_ACTION, op: "remove", id: "g1" });
+    assert.equal(answer.ok, false);
+    assert.equal(answer.refusal?.code, "caller_unresolved");
+    assert.equal(JSON.stringify(state.queuedGoals), before, "a refused write changes nothing");
+    assert.equal(state.persisted, 0, "and persists nothing");
+  });
+
+  test("with a resolver that admits, the write applies and persists exactly once", () => {
+    const { state, runtime } = writableRuntime([goal({ id: "g1" }), goal({ id: "g2" })]);
+    const allow = { authorize: () => ({ ok: true }) as const };
+    const answer = applyGoalWrite(runtime, { action: GOAL_WRITE_ACTION, op: "remove", id: "g1" }, allow as never);
+    assert.equal(answer.ok, true);
+    assert.deepEqual((answer.result as { order: string[] }).order, ["g2"]);
+    assert.equal(state.persisted, 1);
+  });
+});
+
+describe("goal.write: the invariants a leader relies on", () => {
+  function writableRuntime(queued: ReturnType<typeof goal>[]) {
+    const state = { queuedGoals: queued, persisted: 0 };
+    return {
+      state,
+      runtime: {
+        get queuedGoals() {
+          return state.queuedGoals;
+        },
+        set queuedGoals(next: unknown) {
+          state.queuedGoals = next as never;
+        },
+        activeGoal: null,
+        persistQueue() {
+          state.persisted += 1;
+        },
+      } as never,
+    };
+  }
+  const allow = { authorize: () => ({ ok: true }) as const };
+
+  test("add appends to the tail and reports the order", () => {
+    const { runtime } = writableRuntime([goal({ id: "g1" })]);
+    const answer = applyGoalWrite(runtime, { op: "add", objective: "third thing" }, allow as never);
+    assert.equal(answer.ok, true);
+    const order = (answer.result as { order: string[] }).order;
+    assert.equal(order.length, 2);
+    assert.equal(order[0], "g1", "the existing goal keeps its position");
+  });
+
+  test("edit changes one objective and moves nothing", () => {
+    const { runtime } = writableRuntime([goal({ id: "g1" }), goal({ id: "g2" })]);
+    const answer = applyGoalWrite(runtime, { op: "edit", id: "g2", objective: "rewritten" }, allow as never);
+    assert.equal(answer.ok, true);
+    assert.deepEqual((answer.result as { order: string[] }).order, ["g1", "g2"]);
+  });
+
+  test("prioritize lands on the exact index, and an impossible index is refused", () => {
+    const { runtime } = writableRuntime([goal({ id: "g1" }), goal({ id: "g2" }), goal({ id: "g3" })]);
+    const ok = applyGoalWrite(runtime, { op: "prioritize", id: "g3", index: 0 }, allow as never);
+    assert.equal(ok.ok, true);
+    assert.deepEqual((ok.result as { order: string[] }).order, ["g3", "g1", "g2"]);
+    const bad = applyGoalWrite(runtime, { op: "prioritize", id: "g3", index: 9 }, allow as never);
+    assert.equal(bad.ok, false);
+    assert.equal(bad.refusal?.code, "index_out_of_range");
+  });
+
+  test("an unknown goal is goal_not_found, not a shorter queue", () => {
+    const { state, runtime } = writableRuntime([goal({ id: "g1" })]);
+    const answer = applyGoalWrite(runtime, { op: "remove", id: "ghost" }, allow as never);
+    assert.equal(answer.ok, false);
+    assert.equal(answer.refusal?.code, "goal_not_found");
+    assert.equal(state.queuedGoals.length, 1);
+    assert.equal(state.persisted, 0);
+  });
+
+  test("a queue that moved since it was read is refused with both values", () => {
+    const { runtime } = writableRuntime([goal({ id: "g1" }), goal({ id: "g2" })]);
+    const answer = applyGoalWrite(runtime, { op: "remove", id: "g1", expectedQueueLength: 1 }, allow as never);
+    assert.equal(answer.ok, false);
+    assert.equal(answer.refusal?.code, "stale_queue");
+    assert.deepEqual(answer.refusal?.detail, { expected: 1, current: 2 });
+  });
+
+  test("an unknown op and a missing field are named refusals", () => {
+    const { runtime } = writableRuntime([]);
+    assert.equal((applyGoalWrite(runtime, { op: "reorder-everything" }, allow as never).refusal as { code: string }).code, "unknown_op");
+    assert.equal((applyGoalWrite(runtime, { op: "remove" }, allow as never).refusal as { code: string }).code, "missing_field");
+    assert.equal((applyGoalWrite(null, { op: "remove", id: "g1" }, allow as never).refusal as { code: string }).code, "no_goal_state");
   });
 });

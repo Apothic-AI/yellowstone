@@ -1115,6 +1115,19 @@ export class GoalRuntime {
     return marker.split(":", 1)[0];
   }
 
+  /**
+   * FT-89: persist the queue as it stands, through the same serializer
+   * `persistGoal` uses. A queue edit made by a leader has to reach the session
+   * file the same way a local one does: one serializer, one entry type, so the
+   * queue in memory and the queue on disk cannot disagree about the order.
+   */
+  persistQueue() {
+    this.pi.appendEntry(
+      GOAL_STATE_ENTRY_TYPE,
+      serializeGoalState(this.activeGoal ?? undefined, this.queuedGoals, this.pendingQueueAction),
+    );
+  }
+
   persistGoal(goal: ActiveGoal) {
     if (!isTerminalGoalStatus(goal.status) || this.terminalDetails?.goalId !== goal.id) {
       this.clearTerminalDetails();
