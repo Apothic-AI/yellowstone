@@ -43,9 +43,19 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
   // registration is attempted now and again at session_start, which is after every
   // extension has loaded; the second attempt is a no-op once the first succeeded.
   let receiverActions: { registered: boolean; dispose: () => void } | null = null;
+  // A fresh session has no turn running. Cleared on agent_start, restored at every
+  // boundary that resolves deferrals.
+  let workerIdle = true;
   const ensureReceiverActions = () => {
     if (receiverActions && receiverActions.registered) return;
-    receiverActions = registerGoalReceiverActions(() => runtime);
+    receiverActions = registerGoalReceiverActions(
+      () => runtime,
+      undefined,
+      null,
+      undefined,
+      undefined,
+      () => workerIdle,
+    );
   };
   ensureReceiverActions();
   pi.on("session_start", () => {
