@@ -55,9 +55,16 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
   // FT-89: a deferred write lands at the boundary the deferral names. Expiry and
   // application are the same hook, so a worker that never settles resolves its
   // deferrals to target_gone instead of leaving the caller waiting on a token.
-  pi.on("agent_settled", () => {
+  // Three boundaries, because a deferral that never resolves is a lost write and the
+  // events are cheap: turn_end fires after every assistant turn, agent_end when a
+  // low-level run ends, agent_settled when pi is finally idle. Applying twice is
+  // harmless (settling is idempotent); applying never is not.
+  const settle = () => {
     settleDeferredWrites(runtime);
-  });
+  };
+  pi.on("turn_end", settle);
+  pi.on("agent_end", settle);
+  pi.on("agent_settled", settle);
 }
 
 export default function goal(pi: ExtensionAPI, options: GoalOptions = {}) {
