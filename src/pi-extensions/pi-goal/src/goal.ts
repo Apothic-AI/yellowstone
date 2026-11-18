@@ -4,7 +4,7 @@ import { GoalCommandController } from "./commands.js";
 import { registerGoalLifecycle } from "./lifecycle.js";
 import { GoalRunController } from "./run-protocol.js";
 import { GoalRuntime } from "./runtime.js";
-import { registerGoalReceiverActions } from "./receiver-actions.js";
+import { registerGoalReceiverActions, settleDeferredWrites } from "./receiver-actions.js";
 import { registerGoalTools } from "./tools.js";
 
 interface GoalOptions {
@@ -37,6 +37,13 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
   // process without the receiver is a documented state a caller can report as
   // `unknown`, never as "no goals".
   registerGoalReceiverActions(() => runtime);
+
+  // FT-89: a deferred write lands at the boundary the deferral names. Expiry and
+  // application are the same hook, so a worker that never settles resolves its
+  // deferrals to target_gone instead of leaving the caller waiting on a token.
+  pi.on("agent_settled", () => {
+    settleDeferredWrites(runtime);
+  });
 }
 
 export default function goal(pi: ExtensionAPI, options: GoalOptions = {}) {

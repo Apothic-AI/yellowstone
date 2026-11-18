@@ -18,6 +18,7 @@
 import type { GoalRuntime, ActiveGoal } from "./runtime.js";
 import { createGoal } from "./runtime.js";
 import { createLaneLookup, type LaneLookup, type LaneRecord } from "./lane-lookup.js";
+import { createDeferralStore, type DeferralStore } from "./write-deferrals.js";
 import { createWriteAuthorizer } from "./write-authorization.js";
 import {
   addToTail,
@@ -173,6 +174,10 @@ export interface ChannelRefusal {
 }
 
 export const GOAL_WRITE_ACTION = "goal.write";
+export const GOAL_WRITE_STATUS_ACTION = "goal.write_status";
+
+/** One store per process: a deferral belongs to the worker that accepted it. */
+const defaultDeferralStore = createDeferralStore();
 
 /** Queue length is the version a caller reads and writes against: it is the
  *  cheapest value that changes whenever the order a caller saw can differ. */
@@ -180,10 +185,79 @@ function queueVersion(runtime: GoalRuntime): number {
   return runtime.queuedGoals.length;
 }
 
+/** The fields a write names, after validation. */
+interface WriteFields {
+  op: string;
+  id?: string;
+  objective?: string;
+  index?: number;
+}
+
+/** Shape validation, shared by an immediate write and a deferred one: a request
+ *  that could never be applied must not be accepted as a deferral and fail later. */
+function validateFields(request: Record<string, unknown>): { ok: true; fields: WriteFields } | { ok: false; refusal: ChannelRefusal } {
+  const op = typeof request.op === "string" ? request.op : "";
+  const id = typeof request.id === "string" ? request.id : undefined;
+  const objective = typeof request.objective === "string" ? request.objective : undefined;
+  const index = typeof request.index === "number" ? request.index : undefined;
+  if (op === "add") {
+    if (!objective) return { ok: false, refusal: { code: "missing_field", message: "add needs an objective" } };
+    return { ok: true, fields: { op, objective } };
+  }
+  if (op === "edit") {
+    if (!id || !objective) {
+      return { ok: false, refusal: { code: "missing_field", message: "edit needs a goal id and an objective" } };
+    }
+    return { ok: true, fields: { op, id, objective } };
+  }
+  if (op === "prioritize") {
+    if (!id || index === undefined) {
+      return { ok: false, refusal: { code: "missing_field", message: "prioritize needs a goal id and an index" } };
+    }
+    return { ok: true, fields: { op, id, index } };
+  }
+  if (op === "remove") {
+    if (!id) return { ok: false, refusal: { code: "missing_field", message: "remove needs a goal id" } };
+    return { ok: true, fields: { op, id } };
+  }
+  return {
+    ok: false,
+    refusal: { code: "unknown_op", message: "that is not an operation this worker performs", detail: { op } },
+  };
+}
+
+/** Apply a validated op to the queue and persist it through the one write path. */
+function applyOp(runtime: GoalRuntime, fields: WriteFields): ChannelAnswer {
+  let result: QueueResult;
+  if (fields.op === "add") {
+    const goal = createGoal(fields.objective as string, undefined, runtime.activeGoal ? runtime.activeGoal.tokensUsed : 0);
+    result = addToTail(runtime.queuedGoals, goal);
+  } else if (fields.op === "edit") {
+    result = replaceObjective(runtime.queuedGoals, fields.id as string, fields.objective as string);
+  } else if (fields.op === "prioritize") {
+    result = moveToIndex(runtime.queuedGoals, fields.id as string, fields.index as number);
+  } else {
+    result = removeById(runtime.queuedGoals, fields.id as string);
+  }
+  if (!result.ok) return { ok: false, refusal: result.refusal };
+  runtime.queuedGoals = result.queue;
+  runtime.persistQueue();
+  return { ok: true, result: { applied: fields.op, order: result.order, queueLength: queueVersion(runtime) } };
+}
+
+/**
+ * A write, either applied now or deferred to the worker settled boundary.
+ *
+ * Deferral is for a worker that is mid-turn: applying the write under a running
+ * turn would move the queue the turn is operating on. The caller gets a token it
+ * can look up (goal.write_status), so a deferral is never a silent drop.
+ */
 export function applyGoalWrite(
   runtime: GoalRuntime | null,
   request: Record<string, unknown>,
   authorizer: WriteAuthorizer = DENY_ALL,
+  deferrals: DeferralStore = defaultDeferralStore,
+  now: number = Date.now(),
 ): ChannelAnswer {
   if (!runtime) {
     return { ok: false, refusal: { code: "no_goal_state", message: "this session has no goal runtime bound" } };
@@ -191,12 +265,11 @@ export function applyGoalWrite(
   const decision = authorizer.authorize(request);
   if (!decision.ok) return { ok: false, refusal: decision.refusal };
 
-  const op = typeof request.op === "string" ? request.op : "";
-  const id = typeof request.id === "string" ? request.id : undefined;
-  const objective = typeof request.objective === "string" ? request.objective : undefined;
-  const index = typeof request.index === "number" ? request.index : undefined;
-  const expected = typeof request.expectedQueueLength === "number" ? request.expectedQueueLength : undefined;
+  const validated = validateFields(request);
+  if (!validated.ok) return { ok: false, refusal: validated.refusal };
+  const fields = validated.fields;
 
+  const expected = typeof request.expectedQueueLength === "number" ? request.expectedQueueLength : undefined;
   if (expected !== undefined && expected !== queueVersion(runtime)) {
     return {
       ok: false,
@@ -208,38 +281,69 @@ export function applyGoalWrite(
     };
   }
 
-  let result: QueueResult;
-  if (op === "add") {
-    if (!objective) return { ok: false, refusal: { code: "missing_field", message: "add needs an objective" } };
-    const goal = createGoal(objective, undefined, runtime.activeGoal ? runtime.activeGoal.tokensUsed : 0);
-    result = addToTail(runtime.queuedGoals, goal);
-  } else if (op === "edit") {
-    if (!id || !objective) {
-      return { ok: false, refusal: { code: "missing_field", message: "edit needs a goal id and an objective" } };
-    }
-    result = replaceObjective(runtime.queuedGoals, id, objective);
-  } else if (op === "prioritize") {
-    if (!id || index === undefined) {
-      return { ok: false, refusal: { code: "missing_field", message: "prioritize needs a goal id and an index" } };
-    }
-    result = moveToIndex(runtime.queuedGoals, id, index);
-  } else if (op === "remove") {
-    if (!id) return { ok: false, refusal: { code: "missing_field", message: "remove needs a goal id" } };
-    result = removeById(runtime.queuedGoals, id);
-  } else {
+  if (request.defer === true) {
+    const token = `defer-${now}-${Math.random().toString(36).slice(2, 10)}`;
+    deferrals.defer({
+      token,
+      op: fields.op,
+      targetId: fields.id ?? null,
+      order: runtime.queuedGoals.map((item) => item.id),
+      now,
+    });
     return {
-      ok: false,
-      refusal: { code: "unknown_op", message: "that is not an operation this worker performs", detail: { op } },
+      ok: true,
+      result: {
+        applied: false,
+        deferred_until: "agent_settled",
+        token,
+        order: runtime.queuedGoals.map((item) => item.id),
+      },
     };
   }
 
-  if (!result.ok) return { ok: false, refusal: result.refusal };
-  runtime.queuedGoals = result.queue;
-  runtime.persistQueue();
-  return {
-    ok: true,
-    result: { applied: op, order: result.order, queueLength: queueVersion(runtime) },
-  };
+  return applyOp(runtime, fields);
+}
+
+/**
+ * Apply every pending deferral, now that the worker has settled. A deferral whose
+ * goal is gone (a queued goal the worker itself consumed) is settled too: the write
+ * was accepted, and re-reporting it as lost would be a second, quieter lie.
+ */
+export function applyDueDeferrals(
+  runtime: GoalRuntime | null,
+  deferrals: DeferralStore = defaultDeferralStore,
+  now: number = Date.now(),
+): { applied: string[]; refused: Array<{ token: string; code: string }> } {
+  const applied: string[] = [];
+  const refused: Array<{ token: string; code: string }> = [];
+  if (!runtime) return { applied, refused };
+  for (const record of deferrals.pending()) {
+    const validated = validateFields({ op: record.op, id: record.targetId ?? undefined });
+    if (!validated.ok || record.op !== "remove") {
+      // Only a removal can be replayed without the objective it was applied to
+      // being stored; the rest are refused rather than guessed at.
+      deferrals.settle(record.token, now);
+      refused.push({ token: record.token, code: validated.ok ? "deferred_op_not_replayable" : validated.refusal.code });
+      continue;
+    }
+    const answer = applyOp(runtime, validated.fields);
+    deferrals.settle(record.token, now);
+    if (answer.ok) applied.push(record.token);
+    else refused.push({ token: record.token, code: answer.refusal?.code ?? "unknown" });
+  }
+  return { applied, refused };
+}
+/**
+ * The settled boundary: expire what can no longer land, then apply what can.
+ *
+ * Both halves belong to the same moment. Expiring here is what turns a worker
+ * that died mid-turn into a stated target_gone instead of a deferral that sits
+ * at "deferred" for the rest of the process lifetime.
+ */
+export function settleDeferredWrites(runtime: GoalRuntime | null, now: number = Date.now()) {
+  const expired = defaultDeferralStore.expire(now);
+  const outcome = applyDueDeferrals(runtime, defaultDeferralStore, now);
+  return { expired: expired.map((record) => record.token), ...outcome };
 }
 
 /** The caller's claim from the request. It selects which record to check; it never
@@ -297,6 +401,7 @@ export function registerGoalReceiverActions(
   registry: ReceiverActionRegistryLike | undefined = findReceiverActionRegistry(),
   authorizer: WriteAuthorizer | null = null,
   lookup: LaneLookup = createLaneLookup(defaultPilDir()),
+  deferrals: DeferralStore = defaultDeferralStore,
 ): { registered: boolean; reason?: string; dispose: () => void } {
   if (!registry) {
     return {
@@ -306,12 +411,20 @@ export function registerGoalReceiverActions(
     };
   }
   const dispose = registry.register({
-    actions: [GOAL_READ_ACTION, GOAL_WRITE_ACTION],
+    actions: [GOAL_READ_ACTION, GOAL_WRITE_ACTION, GOAL_WRITE_STATUS_ACTION],
     apply: (request, session) => {
       if (request.action === GOAL_READ_ACTION) return readGoals(runtime());
+      if (request.action === GOAL_WRITE_STATUS_ACTION) {
+        const token = typeof request.token === "string" ? request.token : "";
+        const record = deferrals.status(token);
+        if (!record) {
+          return { ok: false, refusal: { code: "unknown_token", message: "no deferral was issued with that token" } };
+        }
+        return { ok: true, result: { ...record } as unknown as Record<string, unknown> };
+      }
       if (request.action === GOAL_WRITE_ACTION) {
         const chosen = authorizer ?? authorizerForSession(session as unknown as Record<string, unknown>, lookup);
-        return applyGoalWrite(runtime(), request, chosen);
+        return applyGoalWrite(runtime(), request, chosen, deferrals);
       }
       return { ok: false, refusal: { code: "invalid_identifier", message: "not an action this handler serves" } };
     },

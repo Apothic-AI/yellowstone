@@ -2,15 +2,18 @@ import assert from "node:assert/strict";
 import { describe, test } from "vitest";
 
 import {
+  applyDueDeferrals,
   authorizerForSession,
   GOAL_READ_ACTION,
   GOAL_WRITE_ACTION,
+  GOAL_WRITE_STATUS_ACTION,
   applyGoalWrite,
   findReceiverActionRegistry,
   readGoals,
   registerGoalReceiverActions,
   type ReceiverActionRegistryLike,
 } from "../src/receiver-actions.js";
+import { createDeferralStore } from "../src/write-deferrals.js";
 
 /**
  * FT-89, worker side: a leader reads the worker's queue from the worker's own
@@ -108,7 +111,7 @@ describe("registration with the receiver", () => {
     assert.equal(disposition.registered, true);
     assert.deepEqual(
       registry.actionsSeen,
-      [GOAL_READ_ACTION, GOAL_WRITE_ACTION],
+      [GOAL_READ_ACTION, GOAL_WRITE_ACTION, GOAL_WRITE_STATUS_ACTION],
       "the receiver serves both halves; a write action registered but unreachable would be a silent gap",
     );
     disposition.dispose();
@@ -318,3 +321,68 @@ describe("the production wiring: the claim selects a record, the records decide"
     assert.equal(decision.refusal?.code, "caller_unresolved");
   });
 });
+
+describe("deferral through the receiver (FT-89)", () => {
+  function writable(ids: string[]) {
+    const state = { queuedGoals: ids.map((id) => goal({ id })), persisted: 0 };
+    return {
+      state,
+      runtime: {
+        get queuedGoals() {
+          return state.queuedGoals;
+        },
+        set queuedGoals(next: unknown) {
+          state.queuedGoals = next as never;
+        },
+        activeGoal: null,
+        persistQueue() {
+          state.persisted += 1;
+        },
+      } as never,
+    };
+  }
+  const allow = { authorize: () => ({ ok: true }) as const } as never;
+
+  test("defer:true answers with a token and changes nothing yet", () => {
+    const { state, runtime } = writable(["g1", "g2"]);
+    const store = createDeferralStore();
+    const answer = applyGoalWrite(runtime, { op: "remove", id: "g1", defer: true }, allow, store);
+    assert.equal(answer.ok, true);
+    const result = answer.result as { applied: boolean; deferred_until: string; token: string };
+    assert.equal(result.applied, false);
+    assert.equal(result.deferred_until, "agent_settled");
+    assert.ok(result.token, "a deferral without a token cannot be looked up");
+    assert.equal(state.queuedGoals.length, 2, "nothing is applied at defer time");
+    assert.equal(state.persisted, 0);
+    assert.equal(store.status(result.token)?.state, "deferred");
+  });
+
+  test("the settled boundary applies it once, and the token then reads applied", () => {
+    const { state, runtime } = writable(["g1", "g2"]);
+    const store = createDeferralStore();
+    const answer = applyGoalWrite(runtime, { op: "remove", id: "g1", defer: true }, allow, store);
+    const token = (answer.result as { token: string }).token;
+    const first = applyDueDeferrals(runtime, store, Date.now());
+    assert.deepEqual(first.applied, [token]);
+    assert.deepEqual(state.queuedGoals.map((g: { id: string }) => g.id), ["g2"]);
+    assert.equal(state.persisted, 1);
+    const second = applyDueDeferrals(runtime, store, Date.now());
+    assert.deepEqual(second.applied, [], "settling twice must not re-apply");
+    assert.equal(state.persisted, 1);
+    assert.equal(store.status(token)?.state, "applied");
+  });
+
+  test("a deferral past its lifetime is target_gone, not an eternal deferral", () => {
+    const { runtime } = writable(["g1"]);
+    const store = createDeferralStore(1000);
+    const answer = applyGoalWrite(runtime, { op: "remove", id: "g1", defer: true }, allow, store, 5_000);
+    const token = (answer.result as { token: string }).token;
+    store.expire(5_999);
+    assert.equal(store.status(token)?.state, "deferred", "the bound is the lifetime, not a guess");
+    store.expire(6_000);
+    const record = store.status(token);
+    assert.equal(record?.state, "target_gone");
+    assert.equal(record?.lastSeenAt, 5_000, "the outcome carries when the queue was last seen");
+  });
+});
+
