@@ -372,6 +372,34 @@ describe("deferral through the receiver (FT-89)", () => {
     assert.equal(store.status(token)?.state, "applied");
   });
 
+
+  test("a deferred edit replays with its objective, and the order is unchanged", () => {
+    const { state, runtime } = writable(["g1", "g2"]);
+    const store = createDeferralStore();
+    const answer = applyGoalWrite(
+      runtime,
+      { op: "edit", id: "g2", objective: "written while the worker was mid-turn", defer: true },
+      allow,
+      store,
+    );
+    const token = (answer.result as { token: string }).token;
+    assert.equal(state.persisted, 0, "nothing is written before the boundary");
+    const outcome = applyDueDeferrals(runtime, store, Date.now());
+    assert.deepEqual(outcome.applied, [token]);
+    assert.equal(state.persisted, 1, "the replay persists through the one write path");
+    assert.deepEqual(
+      state.queuedGoals.map((g: { id: string }) => g.id),
+      ["g1", "g2"],
+      "a deferred edit must not reorder the queue",
+    );
+    assert.equal(
+      (state.queuedGoals[1] as { text: string }).text,
+      "written while the worker was mid-turn",
+      "the objective the caller asked for is the one that lands",
+    );
+    assert.equal(store.status(token)?.state, "applied");
+  });
+
   test("a deferral past its lifetime is target_gone, not an eternal deferral", () => {
     const { runtime } = writable(["g1"]);
     const store = createDeferralStore(1000);

@@ -287,6 +287,8 @@ export function applyGoalWrite(
       token,
       op: fields.op,
       targetId: fields.id ?? null,
+      objective: fields.objective,
+      index: fields.index,
       order: runtime.queuedGoals.map((item) => item.id),
       now,
     });
@@ -318,12 +320,17 @@ export function applyDueDeferrals(
   const refused: Array<{ token: string; code: string }> = [];
   if (!runtime) return { applied, refused };
   for (const record of deferrals.pending()) {
-    const validated = validateFields({ op: record.op, id: record.targetId ?? undefined });
-    if (!validated.ok || record.op !== "remove") {
-      // Only a removal can be replayed without the objective it was applied to
-      // being stored; the rest are refused rather than guessed at.
+    const validated = validateFields({
+      op: record.op,
+      id: record.targetId ?? undefined,
+      objective: record.objective,
+      index: record.index,
+    });
+    if (!validated.ok) {
+      // A record that cannot be replayed is reported, not silently dropped: the
+      // caller asked for something and is owed an answer about it.
       deferrals.settle(record.token, now);
-      refused.push({ token: record.token, code: validated.ok ? "deferred_op_not_replayable" : validated.refusal.code });
+      refused.push({ token: record.token, code: validated.refusal.code });
       continue;
     }
     const answer = applyOp(runtime, validated.fields);

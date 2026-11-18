@@ -23,10 +23,22 @@ export interface DeferralRecord {
   lastSeenAt: number | null;
   op: string;
   targetId: string | null;
+  /** The rest of the write, so it can be replayed at the boundary exactly as it
+   *  was asked for. A record that stores only the op cannot apply an edit. */
+  objective?: string;
+  index?: number;
 }
 
 export interface DeferralStore {
-  defer(input: { token: string; op: string; targetId: string | null; order: string[]; now: number }): DeferralRecord;
+  defer(input: {
+    token: string;
+    op: string;
+    targetId: string | null;
+    objective?: string;
+    index?: number;
+    order: string[];
+    now: number;
+  }): DeferralRecord;
   status(token: string): DeferralRecord | null;
   settle(token: string, now: number): DeferralRecord | null;
   expire(now: number): DeferralRecord[];
@@ -48,6 +60,8 @@ export function createDeferralStore(ttlMs: number = DEFAULT_DEFERRAL_TTL_MS): De
         lastSeenAt: input.now,
         op: input.op,
         targetId: input.targetId,
+        objective: input.objective,
+        index: input.index,
       };
       records.set(input.token, record);
       return record;
