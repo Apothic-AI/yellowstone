@@ -78,15 +78,24 @@ export const RECEIVER_ACTIONS_KEY = Symbol.for("pi.receiver-actions.v1");
 
 export interface ReceiverActionRegistry {
 	readonly version: 1;
+	/** The live handlers, owned by the published registry rather than by this module
+	 *  instance: a reload re-executes this file, and a module-local map would leave
+	 *  the new dispatcher looking at an empty map while the old one held the
+	 *  handlers. */
+	readonly handlers: Map<string, ChannelActionHandler>;
 	register(handler: ChannelActionHandler): () => void;
 	actions(): string[];
+	get(action: string): ChannelActionHandler | undefined;
 }
 
-const receiverActions = new Map<string, ChannelActionHandler>();
-
 function buildRegistry(): ReceiverActionRegistry {
+	const receiverActions = new Map<string, ChannelActionHandler>();
 	return {
 		version: 1,
+		handlers: receiverActions,
+		get(action) {
+			return receiverActions.get(action);
+		},
 		register(handler) {
 			for (const action of handler.actions) receiverActions.set(action, handler);
 			return () => {
@@ -400,7 +409,9 @@ async function handleConnection(socket: Socket, session: ReceiverSession): Promi
 async function respondWithResult(socket: Socket, request: ChannelRequest, session: ReceiverSession): Promise<void> {
 	const identity = { sessionId: session.sessionId, sessionPath: session.sessionPath };
 	const action =
-		request && typeof request.action === "string" ? receiverActions.get(request.action) : undefined;
+		request && typeof request.action === "string"
+			? publishReceiverActionRegistry().get(request.action)
+			: undefined;
 	if (action) {
 		// Registered actions run behind the same binding check as the builtins:
 		// serving an action must not be a way to skip the identity rule.

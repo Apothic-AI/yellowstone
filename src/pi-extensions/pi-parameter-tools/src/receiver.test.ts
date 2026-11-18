@@ -386,6 +386,24 @@ describe("the receiver action registry", () => {
 		expect(receiverActionRegistry().actions()).not.toContain("goal.read.test");
 	});
 
+
+	test("a reloaded module instance dispatches through the same registry", () => {
+		// pi re-executes an extension file on reload. If dispatch read a module-local
+		// map, the new instance would look at an empty one while the handlers live in
+		// the registry published by the old instance — actions would vanish from a
+		// healthy process. The registry owns the handlers, so identity is the property.
+		const registry = publishReceiverActionRegistry();
+		const dispose = registry.register({ actions: ["goal.reload.test"], apply: () => ({ ok: true }) });
+		try {
+			expect(publishReceiverActionRegistry()).toBe(registry);
+			expect(publishReceiverActionRegistry().handlers).toBe(registry.handlers);
+			expect(registry.get("goal.reload.test")).toBeDefined();
+		} finally {
+			dispose();
+		}
+		expect(registry.get("goal.reload.test")).toBeUndefined();
+	});
+
 	test("an unregistered action is still refused, not silently ignored", async () => {
 		const result = await applyRequest(
 			{ requestId: "r1", tool: "t", sessionId: ID, sessionPath: PATH, action: "goal.read.absent" },
