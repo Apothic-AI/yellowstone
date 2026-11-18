@@ -64,8 +64,8 @@ describe("who may write a worker's queue", () => {
     );
   });
 
-  test("a lane addressing itself is allowed — its own queue is its own business", () => {
-    assert.equal(codeOf(authorizer({ ...worker, mode: "worker" })), "ALLOWED");
+  test("a lane addressing itself over the socket is refused, and the code says why", () => {
+    assert.equal(codeOf(authorizer({ ...worker, mode: "worker" })), "self_addressed_write");
   });
 
   test("a worker target whose record says leader is not writable from outside", () => {
@@ -78,5 +78,13 @@ describe("who may write a worker's queue", () => {
       ),
       "target_role_not_worker",
     );
+  });
+});
+
+describe("the receiver's own record", () => {
+  const leader = { ...worker, sessionId: "s-leader", lane: "yellowstone-leader", mode: "leader" };
+  test("a target the receiver cannot place in a lane is target_unresolved, not 'not a worker'", () => {
+    const a = authorizer(leader, { ...worker, lane: null, mode: null });
+    assert.equal(codeOf(a), "target_unresolved");
   });
 });

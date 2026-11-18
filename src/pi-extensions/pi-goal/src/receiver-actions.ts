@@ -17,6 +17,8 @@
 
 import type { GoalRuntime, ActiveGoal } from "./runtime.js";
 import { createGoal } from "./runtime.js";
+import { createLaneLookup, type LaneLookup, type LaneRecord } from "./lane-lookup.js";
+import { createWriteAuthorizer } from "./write-authorization.js";
 import {
   addToTail,
   moveToIndex,
@@ -145,6 +147,15 @@ export interface WriteAuthorizer {
   authorize(request: Record<string, unknown>): { ok: true } | { ok: false; refusal: ChannelRefusal };
 }
 
+/** Where the fleet keeps its own records. Overridable so a test never reads the
+ *  live fleet. */
+export function defaultPilDir(env: NodeJS.ProcessEnv = process.env): string {
+  const explicit = env.PI_PIL_DIR;
+  if (explicit && explicit.trim()) return explicit.trim();
+  const home = env.HOME || "";
+  return home + "/.local/state/pil";
+}
+
 const DENY_ALL: WriteAuthorizer = {
   authorize: () => ({
     ok: false,
@@ -231,10 +242,61 @@ export function applyGoalWrite(
   };
 }
 
+/** The caller's claim from the request. It selects which record to check; it never
+ *  decides the answer. */
+function claimedCallerSessionId(request: Record<string, unknown>): string | null {
+  const caller = request.caller;
+  if (!caller || typeof caller !== "object") return null;
+  const id = (caller as Record<string, unknown>).sessionId;
+  return typeof id === "string" && id.trim() ? id.trim() : null;
+}
+
+/**
+ * Resolve the caller from the fleet's records, given the claim it carried.
+ *
+ * An unreadable claim, an unknown session id, or a lane with no role record all
+ * resolve to null — and the rule then refuses caller_unresolved. There is no
+ * branch here that guesses: a receiver that guessed would be a receiver that
+ * lets a lane command a queue it was never given.
+ */
+export function resolveCallerIdentity(
+  request: Record<string, unknown>,
+  lookup: LaneLookup,
+): { sessionId: string; sessionPath: null; lane: string; mode: string | null; workspaceId: string | null } | null {
+  const claimed = claimedCallerSessionId(request);
+  if (!claimed) return null;
+  const record: LaneRecord | null = lookup.bySessionId(claimed);
+  if (!record) return null;
+  return {
+    sessionId: record.sessionId,
+    sessionPath: null,
+    lane: record.lane,
+    mode: lookup.modeOf(record.lane),
+    workspaceId: record.workspaceId,
+  };
+}
+
+/** The authorizer for one request: the receiver's own identity as the target, the
+ *  claimed caller resolved through the records. */
+export function authorizerForSession(
+  session: Record<string, unknown>,
+  lookup: LaneLookup,
+): WriteAuthorizer {
+  const sessionId = typeof session.sessionId === "string" ? session.sessionId : null;
+  const sessionPath = typeof session.sessionPath === "string" ? session.sessionPath : null;
+  const workspaceId = typeof session.workspaceId === "string" ? session.workspaceId : null;
+  const lane = (lookup.bySessionId(sessionId ?? "") || null)?.lane ?? null;
+  return createWriteAuthorizer({
+    target: { sessionId, sessionPath, lane, mode: lane ? lookup.modeOf(lane) : null, workspaceId },
+    source: { resolveCaller: (request) => resolveCallerIdentity(request, lookup) },
+  });
+}
+
 export function registerGoalReceiverActions(
   runtime: () => GoalRuntime | null,
   registry: ReceiverActionRegistryLike | undefined = findReceiverActionRegistry(),
-  authorizer: WriteAuthorizer = DENY_ALL,
+  authorizer: WriteAuthorizer | null = null,
+  lookup: LaneLookup = createLaneLookup(defaultPilDir()),
 ): { registered: boolean; reason?: string; dispose: () => void } {
   if (!registry) {
     return {
@@ -245,9 +307,12 @@ export function registerGoalReceiverActions(
   }
   const dispose = registry.register({
     actions: [GOAL_READ_ACTION, GOAL_WRITE_ACTION],
-    apply: (request) => {
+    apply: (request, session) => {
       if (request.action === GOAL_READ_ACTION) return readGoals(runtime());
-      if (request.action === GOAL_WRITE_ACTION) return applyGoalWrite(runtime(), request, authorizer);
+      if (request.action === GOAL_WRITE_ACTION) {
+        const chosen = authorizer ?? authorizerForSession(session as unknown as Record<string, unknown>, lookup);
+        return applyGoalWrite(runtime(), request, chosen);
+      }
       return { ok: false, refusal: { code: "invalid_identifier", message: "not an action this handler serves" } };
     },
   });

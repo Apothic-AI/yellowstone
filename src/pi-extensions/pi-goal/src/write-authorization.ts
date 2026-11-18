@@ -37,8 +37,10 @@ function sameSession(a: LaneIdentity, b: LaneIdentity): boolean {
 /**
  * The rule, in the order it must be applied:
  *
- *   1. a lane addressing itself is allowed — it is its own queue, and refusing it
- *      would make a worker unable to do locally what a leader may do remotely;
+ *   1. a lane addressing *itself* over the socket is refused. The claim "I am this
+ *      session" cannot be verified from a request, and nothing needs it: a lane
+ *      changes its own queue with its own tools. Accepting it would be the one
+ *      path a caller could take by claiming an identity it does not hold;
  *   2. an unresolvable caller is refused `caller_unresolved`;
  *   3. the caller must be a leader (`caller_role_not_leader`);
  *   4. the target must be a worker (`target_role_not_worker`) — a leader is not a
@@ -53,7 +55,15 @@ export function createWriteAuthorizer(options: {
   return {
     authorize(request) {
       const caller = options.source.resolveCaller(request);
-      if (caller && sameSession(caller, options.target)) return { ok: true };
+      if (caller && sameSession(caller, options.target)) {
+        return {
+          ok: false,
+          refusal: refusal(
+            "self_addressed_write",
+            "a lane changes its own queue locally; a write arriving over the socket must come from another lane",
+          ),
+        };
+      }
       if (!caller || !caller.sessionId || !caller.lane) {
         return {
           ok: false,
@@ -70,6 +80,16 @@ export function createWriteAuthorizer(options: {
             callerLane: caller.lane,
             callerMode: caller.mode,
           }),
+        };
+      }
+      if (!options.target.sessionId || !options.target.lane || !options.target.mode) {
+        return {
+          ok: false,
+          refusal: refusal(
+            "target_unresolved",
+            "this receiver cannot place its own session in a lane, so it cannot say whether a write is legitimate",
+            { targetLane: options.target.lane, targetMode: options.target.mode },
+          ),
         };
       }
       if (options.target.mode !== "worker") {

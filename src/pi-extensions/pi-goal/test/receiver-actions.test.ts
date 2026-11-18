@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, test } from "vitest";
 
 import {
+  authorizerForSession,
   GOAL_READ_ACTION,
   GOAL_WRITE_ACTION,
   applyGoalWrite,
@@ -244,5 +245,76 @@ describe("goal.write: the invariants a leader relies on", () => {
     assert.equal((applyGoalWrite(runtime, { op: "reorder-everything" }, allow as never).refusal as { code: string }).code, "unknown_op");
     assert.equal((applyGoalWrite(runtime, { op: "remove" }, allow as never).refusal as { code: string }).code, "missing_field");
     assert.equal((applyGoalWrite(null, { op: "remove", id: "g1" }, allow as never).refusal as { code: string }).code, "no_goal_state");
+  });
+});
+
+describe("the production wiring: the claim selects a record, the records decide", () => {
+  function lookupFixture() {
+    return {
+      bySessionId: (sessionId: string) => {
+        if (sessionId === "s-leader") return { lane: "yellowstone-leader", sessionId, workspaceId: "w17" };
+        if (sessionId === "s-far-leader") return { lane: "far-leader", sessionId, workspaceId: "w25" };
+        if (sessionId === "s-worker") return { lane: "yellowstone-worker", sessionId, workspaceId: "w17" };
+        return null;
+      },
+      modeOf: (lane: string) => {
+        if (lane === "yellowstone-leader" || lane === "far-leader") return "leader";
+        if (lane === "yellowstone-worker") return "worker";
+        return null;
+      },
+    } as never;
+  }
+  const session = { sessionId: "s-worker", sessionPath: "/tmp/w.jsonl", workspaceId: "w17" };
+
+  test("a leader in the same workspace is admitted, resolved from the record and not the claim", () => {
+    const authorizer = authorizerForSession(session, lookupFixture());
+    const decision = authorizer.authorize({ caller: { sessionId: "s-leader" } }) as { ok: boolean };
+    assert.equal(decision.ok, true);
+  });
+
+  test("a claim naming no record is refused: the roll call decides, not the claim", () => {
+    const authorizer = authorizerForSession(session, lookupFixture());
+    const decision = authorizer.authorize({ caller: { sessionId: "s-invented" } }) as {
+      ok: boolean;
+      refusal?: { code: string };
+    };
+    assert.equal(decision.ok, false);
+    assert.equal(decision.refusal?.code, "caller_unresolved");
+  });
+
+  test("a refusal at the wiring leaves the queue untouched and persists nothing", () => {
+    // The property is "refused ⇒ nothing happened", which lives where the ops and
+    // the persist meet — not in the rule's decision alone.
+    const state = { queuedGoals: [goal({ id: "g1" })], persisted: 0 };
+    const runtime = {
+      get queuedGoals() {
+        return state.queuedGoals;
+      },
+      set queuedGoals(next: unknown) {
+        state.queuedGoals = next as never;
+      },
+      activeGoal: null,
+      persistQueue() {
+        state.persisted += 1;
+      },
+    } as never;
+    const before = JSON.stringify(state.queuedGoals);
+    const authorizer = authorizerForSession(session, lookupFixture());
+    const answer = applyGoalWrite(
+      runtime,
+      { action: GOAL_WRITE_ACTION, op: "remove", id: "g1", caller: { sessionId: "s-far-leader" } },
+      authorizer,
+    );
+    assert.equal(answer.ok, false);
+    assert.equal(answer.refusal?.code, "not_my_worker");
+    assert.equal(JSON.stringify(state.queuedGoals), before, "a refused write is not a partial write");
+    assert.equal(state.persisted, 0, "and it reaches no persist");
+  });
+
+  test("no claim at all is refused", () => {
+    const authorizer = authorizerForSession(session, lookupFixture());
+    const decision = authorizer.authorize({}) as { ok: boolean; refusal?: { code: string } };
+    assert.equal(decision.ok, false);
+    assert.equal(decision.refusal?.code, "caller_unresolved");
   });
 });
