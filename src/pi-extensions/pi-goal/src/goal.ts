@@ -66,9 +66,14 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
     workerIdle = false;
   });
   pi.on("turn_end", () => {
+    // Any boundary that resolves deferrals also means no turn is running: clearing
+    // idleness only on agent_settled leaves it stuck false after a turn that ended
+    // with agent_end, and then every defer request parks forever.
+    workerIdle = true;
     settle();
   });
   pi.on("agent_end", () => {
+    workerIdle = true;
     settle();
   });
   pi.on("agent_settled", () => {
