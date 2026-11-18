@@ -11,7 +11,7 @@
 // observations rather than inferences (the last-seen queue and when that reading was taken,
 // so a caller reading an outcome later can tell expired from applied).
 
-export type DeferralState = "deferred" | "applied" | "target_gone";
+export type DeferralState = "deferred" | "applied" | "refused" | "target_gone";
 
 export interface DeferralRecord {
   token: string;
@@ -23,6 +23,8 @@ export interface DeferralRecord {
   lastSeenAt: number | null;
   op: string;
   targetId: string | null;
+  /** Why a replay was refused. A refusal is an outcome, not an application. */
+  refusalCode?: string;
   /** The rest of the write, so it can be replayed at the boundary exactly as it
    *  was asked for. A record that stores only the op cannot apply an edit. */
   objective?: string;
@@ -41,6 +43,7 @@ export interface DeferralStore {
   }): DeferralRecord;
   status(token: string): DeferralRecord | null;
   settle(token: string, now: number): DeferralRecord | null;
+  refuse(token: string, code: string, now: number): DeferralRecord | null;
   expire(now: number): DeferralRecord[];
   pending(): DeferralRecord[];
 }
@@ -73,6 +76,14 @@ export function createDeferralStore(ttlMs: number = DEFAULT_DEFERRAL_TTL_MS): De
       const record = records.get(token);
       if (!record || record.state !== "deferred") return record ?? null;
       record.state = "applied";
+      record.updatedAt = now;
+      return record;
+    },
+    refuse(token, code, now) {
+      const record = records.get(token);
+      if (!record || record.state !== "deferred") return record ?? null;
+      record.state = "refused";
+      record.refusalCode = code;
       record.updatedAt = now;
       return record;
     },

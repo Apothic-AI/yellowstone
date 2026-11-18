@@ -400,6 +400,20 @@ describe("deferral through the receiver (FT-89)", () => {
     assert.equal(store.status(token)?.state, "applied");
   });
 
+
+  test("a deferral whose goal is gone reports refused, never applied", () => {
+    const { runtime } = writable(["g1"]);
+    const store = createDeferralStore();
+    const answer = applyGoalWrite(runtime, { op: "remove", id: "ghost", defer: true }, allow, store);
+    const token = (answer.result as { token: string }).token;
+    const outcome = applyDueDeferrals(runtime, store, Date.now());
+    assert.deepEqual(outcome.applied, []);
+    assert.equal(outcome.refused[0]?.code, "goal_not_found");
+    const record = store.status(token);
+    assert.equal(record?.state, "refused", "a refused replay reported as applied would be a false success");
+    assert.equal(record?.refusalCode, "goal_not_found");
+  });
+
   test("a deferral past its lifetime is target_gone, not an eternal deferral", () => {
     const { runtime } = writable(["g1"]);
     const store = createDeferralStore(1000);

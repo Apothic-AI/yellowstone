@@ -329,14 +329,19 @@ export function applyDueDeferrals(
     if (!validated.ok) {
       // A record that cannot be replayed is reported, not silently dropped: the
       // caller asked for something and is owed an answer about it.
-      deferrals.settle(record.token, now);
+      deferrals.refuse(record.token, validated.refusal.code, now);
       refused.push({ token: record.token, code: validated.refusal.code });
       continue;
     }
     const answer = applyOp(runtime, validated.fields);
-    deferrals.settle(record.token, now);
-    if (answer.ok) applied.push(record.token);
-    else refused.push({ token: record.token, code: answer.refusal?.code ?? "unknown" });
+    if (answer.ok) {
+      deferrals.settle(record.token, now);
+      applied.push(record.token);
+    } else {
+      const code = answer.refusal?.code ?? "unknown";
+      deferrals.refuse(record.token, code, now);
+      refused.push({ token: record.token, code });
+    }
   }
   return { applied, refused };
 }
