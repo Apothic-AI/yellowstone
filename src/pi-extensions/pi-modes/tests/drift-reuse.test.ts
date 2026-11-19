@@ -4,6 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { fingerprintsForKeys, loadModes, resolveModeSelection } from "../src/modes.ts";
+import { createModeState } from "../src/mode-state.ts";
+import { projectApprovalDigest } from "../src/project-mode-approvals.ts";
+
+const PROJECT_V1 = "the approved project half";
+const PROJECT_V2 = "an edited project half that was never approved";
 
 const APPROVED = "the fleet contract";
 const CHANGED = "a different contract";
@@ -136,4 +141,53 @@ test("reuse is the default, so an edited definition keeps the approved text unas
   const result = resolveModeSelection({ baseKey: "leader", overlayKeys: [] }, driftedModes, { fingerprints });
   assert.equal(result.blocked, false, "the default is not block");
   assert.equal(result.base?.systemPrompt, APPROVED, "the approved text, not the edited file");
+});
+
+test("a drifted project half reuses its snapshot even though its approval no longer matches", () => {
+  // The live proof found this, and this test is the mechanism written down: editing a project mode
+  // file makes isProjectModeApproved false, because the digest it was approved under has changed.
+  // The degrade path then replaces the project half with the global fallback and marks the key
+  // `substituted` -- and the drift loop skips those keys, so `reuse` was never consulted and the
+  // lane silently ran the shallower definition alone. Drift has to be judged before the fallback,
+  // because a changed digest is exactly what drift is.
+  const f = fixture();
+  writeMode(join(f.globalDir, "leader.json"), modeFile(APPROVED));
+  const projectFile = join(f.projectDir, "leader.json");
+  writeMode(projectFile, overlayFile("leader", PROJECT_V1));
+  const composed = load(f);
+  const projectMode = composed.find((mode) => mode.scope === "project");
+  assert.ok(projectMode, "the project half composes onto the global one");
+
+  const state = createModeState({ baseKey: "leader", overlayKeys: [] }, composed, "command", {
+    driftPolicy: "reuse",
+  });
+  const approvals = new Map([[projectFile, projectApprovalDigest(projectMode)]]);
+
+  const clean = resolveModeSelection({ baseKey: "leader", overlayKeys: [] }, composed, {
+    fingerprints: state.fingerprints,
+    driftPolicy: "reuse",
+    projectApprovals: approvals,
+  });
+  assert.equal(clean.blocked, false);
+  assert.ok(
+    clean.base?.systemPrompt?.includes(PROJECT_V1),
+    "a clean composition carries the approved project text",
+  );
+
+  writeFileSync(projectFile, overlayFile("leader", PROJECT_V2));
+  const drifted = load(f);
+  const reused = resolveModeSelection({ baseKey: "leader", overlayKeys: [] }, drifted, {
+    fingerprints: state.fingerprints,
+    driftPolicy: "reuse",
+    projectApprovals: approvals,
+  });
+  assert.equal(reused.blocked, false, "the composition is never dropped");
+  assert.ok(
+    reused.base?.systemPrompt?.includes(PROJECT_V1),
+    "the pre-drift project text survives an edit, approved or not",
+  );
+  assert.ok(
+    !reused.base?.systemPrompt?.includes(PROJECT_V2),
+    "and the unapproved text is never composed",
+  );
 });

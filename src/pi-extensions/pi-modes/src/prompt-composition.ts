@@ -124,13 +124,11 @@ export function resolveModeSelection(
   // Dropping the whole selection here would let an unconfirmed project file take the fleet contract
   // with it — the failure that makes a composition worse than no composition at all.
   const approvals = policy.projectApprovals;
-  const substituted = new Set<string>();
   const degrade = (mode: ResolvedMode | undefined): ResolvedMode | undefined => {
     if (!mode || !approvals || mode.scope !== "project") return mode;
     if (isProjectModeApproved(mode, approvals)) return mode;
     const fallback = mode.fallback;
     if (!fallback) return mode;
-    substituted.add(mode.key);
     diagnostics.push({
       key: mode.key,
       message: `project text dropped: ${mode.path ? displaySafe(mode.path) : "the project definition"} is not confirmed; continuing with the ${fallback.scope} definition alone`,
@@ -142,20 +140,17 @@ export function resolveModeSelection(
       scope: fallback.scope,
     } as ResolvedMode;
   };
-  base = degrade(base);
-  for (let index = 0; index < overlays.length; index += 1) {
-    const next = degrade(overlays[index]);
-    if (next) overlays[index] = next;
-  }
+  // The composition is judged *before* the unconfirmed-project fallback runs. A project half whose
+  // file changed is unapproved precisely because its digest moved, and degrading it first replaced it
+  // with the shallower definition before `reuse` could restore the text it was approved under -- the
+  // live proof caught a drifted cwd mode silently losing its project half that way.
   const components = [...(base ? [base] : []), ...overlays];
+  const resolvedByDrift = new Set<string>();
   // `reuse` is the default: an edited definition file must not cost a lane the instructions it was
   // approved to run. `block` still exists, but it withholds the drifted key only.
   const driftPolicy = policy.driftPolicy ?? "reuse";
   if (policy.fingerprints) {
     for (const key of selectedKeys(normalized)) {
-      // A substituted definition is the shallower one; its fingerprint was never recorded under
-      // this key while the key was project-scoped, so drift cannot be judged for it here.
-      if (substituted.has(key)) continue;
       const expected = policy.fingerprints[key];
       const current = byKey.get(key);
       const actual = current ? modeDefinitionFingerprint(current) : undefined;
@@ -173,19 +168,6 @@ export function resolveModeSelection(
         });
       }
     }
-  }
-  const unconfirmed = approvals
-    ? components.filter((mode) => !isProjectModeApproved(mode, approvals))
-    : [];
-  if (unconfirmed.length > 0) {
-    for (const mode of unconfirmed) {
-      diagnostics.push({
-        key: mode.key,
-        message: `project mode from ${mode.path ? displaySafe(mode.path) : "an unknown file"}${mode.promptPath ? ` (prompt in ${displaySafe(mode.promptPath)})` : ""} is not confirmed; review it with /mode-preview, then confirm it with /mode-reapprove (--confirm-project headless)`,
-      });
-    }
-    diagnostics.push({ message: "composition blocked until its project modes are confirmed" });
-    return { overlays: [], diagnostics, driftedKeys, blocked: true };
   }
   // Drift resolves per key. A definition file that moved cannot take the rest of the composition
   // with it: whatever happens to this key -- the approved snapshot, the new text, or nothing at
@@ -212,6 +194,7 @@ export function resolveModeSelection(
           path: snapshot.path,
         } as ResolvedMode;
         replacements.set(key, restored);
+        resolvedByDrift.add(key);
         diagnostics.push({
           key,
           message: `using the composition first seen at ${snapshot.firstSeenAt}; ${changedPath} changed since -- /mode-reapprove adopts the new text`,
@@ -219,6 +202,7 @@ export function resolveModeSelection(
         continue;
       }
       withheld.push(key);
+      resolvedByDrift.add(key);
       diagnostics.push({
         key,
         message:
@@ -241,6 +225,30 @@ export function resolveModeSelection(
     // `components` was captured before drift resolved; the constraints must see the composition
     // that actually runs, not the one the files were about to produce.
     components.splice(0, components.length, ...[...(base ? [base] : []), ...overlays]);
+  }
+  // The unconfirmed-project fallback runs on what drift did not resolve: a key restored from its
+  // approved snapshot is approved by construction, and a withheld key is not composed at all.
+  // Everything else degrades exactly as it did before.
+  if (base && !resolvedByDrift.has(base.key)) base = degrade(base);
+  for (let index = 0; index < overlays.length; index += 1) {
+    const mode = overlays[index];
+    if (resolvedByDrift.has(mode.key)) continue;
+    const next = degrade(mode);
+    if (next) overlays[index] = next;
+  }
+  components.splice(0, components.length, ...[...(base ? [base] : []), ...overlays]);
+  const unconfirmed = approvals
+    ? components.filter((mode) => !isProjectModeApproved(mode, approvals))
+    : [];
+  if (unconfirmed.length > 0) {
+    for (const mode of unconfirmed) {
+      diagnostics.push({
+        key: mode.key,
+        message: `project mode from ${mode.path ? displaySafe(mode.path) : "an unknown file"}${mode.promptPath ? ` (prompt in ${displaySafe(mode.promptPath)})` : ""} is not confirmed; review it with /mode-preview, then confirm it with /mode-reapprove (--confirm-project headless)`,
+      });
+    }
+    diagnostics.push({ message: "composition blocked until its project modes are confirmed" });
+    return { overlays: [], diagnostics, driftedKeys, blocked: true };
   }
   {
     // Keep the composition a lane is actually running, so a later drift has something verified to
