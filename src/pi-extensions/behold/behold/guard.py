@@ -244,7 +244,14 @@ _AUDIT_STATE = {
 
 #: The only spawn purposes that may ever be permitted. A purpose outside this tuple is
 #: refused by :func:`permit_spawn` itself, before any process exists.
-SPAWN_PERMIT_PURPOSES: tuple[str, ...] = ("herdr-snapshot-capture",)
+SPAWN_PERMIT_PURPOSES: tuple[str, ...] = (
+    "herdr-snapshot-capture",
+    # FT-91: the mode composition digest must be computed by pi-modes own fingerprint,
+    # and the only way to call it is the owner-side script. One exact argv per call,
+    # one shot, purpose recorded in the guard event log — the same shape as the snapshot
+    # capture, and refused for every other argv and every second spawn with the permit.
+    "mode-composed-digest",
+)
 
 #: Permits and the cache scope share one lock: the audit hook runs on every audited
 #: event, so the state it reads must not be mutated halfway through a check.

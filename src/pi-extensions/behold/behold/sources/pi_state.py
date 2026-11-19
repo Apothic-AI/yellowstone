@@ -28,6 +28,7 @@ from dataclasses import dataclass
 from typing import Any, Sequence
 
 from .. import guard
+from . import mode_composed
 
 
 def instance_from_agent_dir(agent_dir: str | None, instances_dir: str | None) -> str | None:
@@ -372,6 +373,73 @@ COMPOSED_UNSUPPORTED = (
 )
 
 
+
+def _spawn_permit(cmd):
+    """One-shot permit for exactly this argv, recorded with its purpose."""
+    return guard.permit_spawn(cmd, purpose="mode-composed-digest")
+
+
+def _verify_composed(
+    key: str,
+    recorded: dict[str, Any],
+    cwd: str | None,
+    runner,
+) -> dict[str, Any]:
+    """Compare a composed definition against the digest pi-modes would record now.
+
+    The composition is pi-modes' own (base + overlay), so the expected value comes from
+    its fingerprint function through the owner-side script. A missing runner, a missing
+    cwd or an unavailable script is ``unverifiable`` with the reason — never drift, and
+    never a match.
+    """
+    digest = recorded.get('digest')
+    if not digest:
+        return {'key': key, 'state': 'unverifiable', 'reason': 'recorded digest missing'}
+    if runner is None:
+        # A disabled runner is the more fundamental answer than a missing cwd: it says no
+        # composition can be run at all, which is what a reader needs to know first.
+        return {'key': key, 'state': 'unverifiable', 'reason': COMPOSED_UNSUPPORTED}
+    if not cwd:
+        return {'key': key, 'state': 'unverifiable', 'reason': 'no cwd for the composition'}
+    recorded_path = recorded.get('path')
+    def call(**kwargs):
+        try:
+            return runner(cwd, key, permit=_spawn_permit, **kwargs)
+        except Exception as exc:  # a runner that raises is an absence, not a verdict
+            return {'available': False, 'reason': f'composed_digest_failed:{exc.__class__.__name__}'}
+
+    result = call()
+    if not result or not result.get('available'):
+        reason = (result or {}).get('reason') or 'composed_digest_unavailable'
+        return {'key': key, 'state': 'unverifiable', 'reason': reason}
+    same = result.get('digest') == digest
+    if not same and recorded_path and result.get('path') != recorded_path:
+        # Only a launcher's own materialised copy needs the override: the path is part of
+        # the fingerprint, so the same text at the instance path hashes differently from
+        # the discovered definition. When the discovered path IS the recorded one, the
+        # override branch would build the definition differently and invent a drift.
+        override = call(recorded_path=recorded_path)
+        if override and override.get('available'):
+            result = override
+            same = result.get('digest') == digest
+    detail = {
+        'key': key,
+        'state': 'match' if same else 'drift',
+        'recorded': digest,
+        'current': result.get('digest'),
+        'scope': result.get('scope'),
+        'path': result.get('path') or recorded.get('path'),
+        'composed': True,
+    }
+    if not same:
+        detail['latent'] = True
+        detail['note'] = (
+            'latent: the lane keeps running its intact composition until the next mode '
+            'replay, then the changed composition is dropped'
+        )
+    return detail
+
+
 def mode_drift(
     recorded: dict[str, Any] | None,
     *,
@@ -380,6 +448,7 @@ def mode_drift(
     cwd: str | None,
     overlays: list[str] | None = None,
     drift_policy: str | None = None,
+    composed_runner=mode_composed.composed_digest,
 ) -> dict[str, Any]:
     """Recompute the recorded digest for the recorded path, honestly.
 
@@ -395,10 +464,12 @@ def mode_drift(
     # hashing files: the accepted digest covers the composed result. Report that honestly
     # instead of comparing against the wrong object.
     if overlays:
-        out["state"] = "unverifiable"
-        out["reason"] = COMPOSED_UNSUPPORTED
         out["composed_overlays"] = list(overlays)
-        return out
+        results = [
+            _verify_composed(key, fp, cwd, composed_runner)
+            for key, fp in sorted(recorded.items())
+        ]
+        return _summarise(out, results)
     results = []
     for key, fp in sorted(recorded.items()):
         path = fp.get("path")
@@ -420,10 +491,15 @@ def mode_drift(
             continue
         resolved_scope = scope
         if resolved_scope == "project":
-            out["state"] = "unverifiable"
-            out["reason"] = COMPOSED_UNSUPPORTED
-            out["details"] = [{"key": key, "state": "unverifiable", "reason": COMPOSED_UNSUPPORTED}]
-            return out
+            results.append(_verify_composed(key, {"digest": digest, "path": path}, cwd, composed_runner))
+            continue
+        # Every definition is checked with pi-modes' own fingerprint, not a replica: the
+        # Python replication disagreed with the owner for instance-copied modes (recorded
+        # path part of the digest), which reported healthy lanes as drifted. The recorded
+        # path is passed so the named copy is digested rather than the discovered one.
+        if composed_runner is not None and cwd:
+            results.append(_verify_composed(key, {"digest": digest, "path": path}, cwd, composed_runner))
+            continue
         if resolved_scope is None:
             if global_mode_dir and os.path.realpath(path).startswith(os.path.realpath(global_mode_dir) + os.sep):
                 resolved_scope = "global"
@@ -468,6 +544,10 @@ def mode_drift(
                 "path": path,
             }
         )
+    return _summarise(out, results, recorded=recorded)
+
+
+def _summarise(out: dict[str, Any], results: list[dict[str, Any]], recorded=None) -> dict[str, Any]:
     states = {r["state"] for r in results}
     if "drift" in states:
         out["state"] = "drift"
@@ -478,8 +558,36 @@ def mode_drift(
         out["reason"] = "some definitions matched, others are unverifiable"
     else:
         out["state"] = "unverifiable"
-        out["reason"] = "no definition could be re-checked"
+        # Keep the specific reason: "no definition could be re-checked" describes the shape
+        # of the answer, while the reason the composition could not run is what a reader
+        # can act on. Distinct reasons are listed rather than collapsed.
+        reasons = []
+        for detail in results:
+            reason = detail.get("reason")
+            if reason and reason not in reasons:
+                reasons.append(reason)
+        if len(reasons) == 1:
+            out["reason"] = reasons[0]
+        elif reasons:
+            out["reason"] = "; ".join(reasons[:3])
+        else:
+            out["reason"] = "no definition could be re-checked"
     out["details"] = results
+    # Age context: a drift count is meaningless without it. Eight lanes drifted right after
+    # somebody edited a mode is expected; eight a week after any edit is a fault.
+    paths: list[str] = []
+    for detail in results:
+        path = detail.get("path")
+        if path:
+            paths.append(path)
+    if recorded:
+        for fp in recorded.values():
+            path = (fp or {}).get("path")
+            if path:
+                paths.append(path)
+    age = mode_composed.newest_edit(paths) if paths else None
+    if age:
+        out["composed_newest_edit"] = age
     return out
 
 

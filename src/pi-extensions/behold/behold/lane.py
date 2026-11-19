@@ -1012,16 +1012,40 @@ def _fill_mode_profile_rooms(fields: dict[str, F.Field], ctx: Context, view: ses
                                        "customType": mode.get("customType")},
                                source="session custom mode state + mode definition files (path/digest/label only)",
                                privacy=1, observed_at=mode.get("timestamp"), note=version_note))
+        composed_overlays = (
+            state.get("overlayKeys") if mode.get("customType") == "pi-mode-state.v3" else None
+        )
         drift = pi_state.mode_drift(
             state.get("fingerprints") if mode.get("customType") == "pi-mode-state.v3" else None,
             policy=ctx.policy,
-                                    global_mode_dir=ctx.paths.global_mode_dir,
-                                    cwd=view.header_cwd)
-        if drift["state"] == "drift":
-            _add(fields, F.present("M-2", drift, source="recomputed pi-modes definition digest",
-                                   privacy=1, note="recorded digest != current file digest"))
-        elif drift["state"] in ("matched", "partial"):
-            _add(fields, F.present("M-2", drift, source="recomputed pi-modes definition digest",
+            global_mode_dir=ctx.paths.global_mode_dir,
+            cwd=view.header_cwd,
+            # A composed selection records the digest of the composition, so every key must
+            # be checked against the composition — comparing the base file would report a
+            # false drift on a lane that is exactly as it recorded.
+            overlays=composed_overlays or None)
+        # The surface vocabulary is match / drift / unknown. `partial` and `unverifiable`
+        # are `unknown` at this level (something could not be checked, so the lane is not
+        # blessed), while `detail_state` keeps the precise answer for a reader who needs it.
+        reported = dict(drift)
+        reported["detail_state"] = drift.get("state")
+        if drift.get("state") == "matched":
+            reported["state"] = "match"
+        elif drift.get("state") == "drift":
+            reported["state"] = "drift"
+            reported["latent"] = True
+        else:
+            reported["state"] = "unknown"
+        if reported["state"] == "drift":
+            _add(fields, F.present("M-2", reported, source="pi-modes' own composition digest",
+                                   privacy=1,
+                                   note="recorded digest != composition now; latent: the lane keeps "
+                                        "running its intact composition until the next mode replay"))
+        elif reported["state"] == "match":
+            _add(fields, F.present("M-2", reported, source="pi-modes' own composition digest",
+                                   privacy=1))
+        elif drift.get("state") == "partial":
+            _add(fields, F.present("M-2", reported, source="pi-modes' own composition digest",
                                    privacy=1))
         else:
             _add(fields, F.unknown("M-2", drift.get("reason") or "digest not recomputable",

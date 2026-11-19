@@ -251,20 +251,87 @@ class TestR5TimeAndBranch(unittest.TestCase):
         self.assertIsNone(p4["runtime_leaf"])
         self.assertIn("DISK_RECONSTRUCTED", field(lane, "P-4")["note"])
 
-    def test_composed_mode_is_unverifiable_not_drift(self):
+    def _composed_fixture(self, tmp):
+        mode = {"schemaVersion": 1, "key": "leader", "label": "Leader",
+                "description": "d", "promptStrategy": "append", "systemPrompt": "x",
+                "requires": [], "conflictsWith": [], "before": [], "after": []}
+        path = os.path.join(tmp, "leader.json")
+        with open(path, "w") as fh:
+            json.dump(mode, fh)
+        digest = pi_state.mode_definition_fingerprint(dict(mode, scope="global", path=path))
+        return {"leader": {"digest": digest, "scope": "global", "path": path}}, tmp
+
+    def test_composed_mode_is_unverifiable_when_no_composition_can_be_run(self):
+        # FT-91 keeps the rule that mattered: a composition nobody can recompute is
+        # unverifiable. It must never become drift (accusing a healthy lane) or match
+        # (blessing a lane nobody checked).
         with tempfile.TemporaryDirectory() as tmp:
-            mode = {"schemaVersion": 1, "key": "leader", "label": "Leader",
-                    "description": "d", "promptStrategy": "append", "systemPrompt": "x",
-                    "requires": [], "conflictsWith": [], "before": [], "after": []}
-            path = os.path.join(tmp, "leader.json")
-            with open(path, "w") as fh:
-                json.dump(mode, fh)
-            digest = pi_state.mode_definition_fingerprint(dict(mode, scope="global", path=path))
+            recorded, tmpdir = self._composed_fixture(tmp)
             drift = pi_state.mode_drift(
-                {"leader": {"digest": digest, "scope": "global", "path": path}},
-                policy=guard.Policy(), global_mode_dir=tmp, cwd=None, overlays=["deep-review"])
+                recorded, policy=guard.Policy(), global_mode_dir=tmpdir, cwd=None,
+                overlays=["deep-review"], composed_runner=None)
             self.assertEqual(drift["state"], "unverifiable")
             self.assertIn("composed", drift["reason"])
+
+    def test_composed_mode_matches_when_the_owner_side_digest_agrees(self):
+        # The expected value is pi-modes own fingerprint; the runner stands in for the
+        # script that imports it, so this test never reimplements the digest.
+        with tempfile.TemporaryDirectory() as tmp:
+            recorded, tmpdir = self._composed_fixture(tmp)
+            recorded_digest = recorded["leader"]["digest"]
+            drift = pi_state.mode_drift(
+                recorded, policy=guard.Policy(), global_mode_dir=tmpdir, cwd=tmpdir,
+                overlays=["deep-review"],
+                composed_runner=lambda cwd, key, **_: {
+                    "available": True, "scope": "global", "digest": recorded_digest,
+                    "path": os.path.join(tmpdir, "leader.json")})
+            self.assertEqual(drift["state"], "matched")
+            self.assertTrue(drift["details"][0]["composed"])
+
+    def test_composed_drift_is_reported_as_latent_not_as_a_running_change(self):
+        # A drifted lane keeps running its intact composition until the next replay. A
+        # surface that says it is running the native prompt would repeat the hand-pass
+        # error: the change is recorded, not in force.
+        with tempfile.TemporaryDirectory() as tmp:
+            recorded, tmpdir = self._composed_fixture(tmp)
+            drift = pi_state.mode_drift(
+                recorded, policy=guard.Policy(), global_mode_dir=tmpdir, cwd=tmpdir,
+                overlays=["deep-review"],
+                composed_runner=lambda cwd, key, **_: {
+                    "available": True, "scope": "global", "digest": "different",
+                    "path": os.path.join(tmpdir, "leader.json")})
+            self.assertEqual(drift["state"], "drift")
+            detail = drift["details"][0]
+            self.assertTrue(detail.get("latent"))
+            self.assertIn("until the next mode", detail.get("note", ""))
+            self.assertNotIn("native prompt", json.dumps(drift))
+
+    def test_a_failed_composition_is_unverifiable_with_its_reason(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            recorded, tmpdir = self._composed_fixture(tmp)
+            drift = pi_state.mode_drift(
+                recorded, policy=guard.Policy(), global_mode_dir=tmpdir, cwd=tmpdir,
+                overlays=["deep-review"],
+                composed_runner=lambda cwd, key, **_: {"available": False,
+                                                  "reason": "digest_script_missing:/nope"})
+            self.assertEqual(drift["state"], "unverifiable")
+            self.assertIn("digest_script_missing",
+                          drift["reason"] or drift["details"][0]["reason"])
+
+    def test_the_age_context_is_reported_so_the_count_can_be_read(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            recorded, tmpdir = self._composed_fixture(tmp)
+            drift = pi_state.mode_drift(
+                recorded, policy=guard.Policy(), global_mode_dir=tmpdir, cwd=tmpdir,
+                overlays=["deep-review"],
+                composed_runner=lambda cwd, key, **_: {
+                    "available": True, "scope": "global",
+                    "digest": recorded["leader"]["digest"],
+                    "path": os.path.join(tmpdir, "leader.json")})
+            age = drift.get("composed_newest_edit")
+            self.assertIsNotNone(age, "a drift answer without its age cannot be interpreted")
+            self.assertIn("age_s", age)
+            self.assertEqual(age["path"], os.path.join(tmpdir, "leader.json"))
 
     def test_project_scope_is_unverifiable(self):
         drift = pi_state.mode_drift(
