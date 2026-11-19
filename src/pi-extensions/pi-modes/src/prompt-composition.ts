@@ -241,14 +241,22 @@ export function resolveModeSelection(
     ? components.filter((mode) => !isProjectModeApproved(mode, approvals))
     : [];
   if (unconfirmed.length > 0) {
+    // One unapproved file may not take the role contract with it either. The security property is
+    // unchanged -- unapproved text is never composed -- but the cost is now the key that was not
+    // confirmed, not the whole composition. A project half with a shallower definition has already
+    // degraded above; this is the file that has nowhere to fall back to.
+    const unconfirmedKeys = new Set(unconfirmed.map((mode) => mode.key));
     for (const mode of unconfirmed) {
       diagnostics.push({
         key: mode.key,
-        message: `project mode from ${mode.path ? displaySafe(mode.path) : "an unknown file"}${mode.promptPath ? ` (prompt in ${displaySafe(mode.promptPath)})` : ""} is not confirmed; review it with /mode-preview, then confirm it with /mode-reapprove (--confirm-project headless)`,
+        message: `project mode from ${mode.path ? displaySafe(mode.path) : "an unknown file"}${mode.promptPath ? ` (prompt in ${displaySafe(mode.promptPath)})` : ""} is not confirmed; withheld from the composition, everything else is unaffected -- review it with /mode-preview, then confirm it with /mode-reapprove (--confirm-project headless)`,
       });
     }
-    diagnostics.push({ message: "composition blocked until its project modes are confirmed" });
-    return { overlays: [], diagnostics, driftedKeys, blocked: true };
+    if (base && unconfirmedKeys.has(base.key)) base = undefined;
+    for (let index = overlays.length - 1; index >= 0; index -= 1) {
+      if (unconfirmedKeys.has(overlays[index].key)) overlays.splice(index, 1);
+    }
+    components.splice(0, components.length, ...[...(base ? [base] : []), ...overlays]);
   }
   {
     // Keep the composition a lane is actually running, so a later drift has something verified to

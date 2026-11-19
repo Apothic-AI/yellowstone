@@ -191,3 +191,24 @@ test("a drifted project half reuses its snapshot even though its approval no lon
     "and the unapproved text is never composed",
   );
 });
+
+test("an unconfirmed project overlay is withheld, not fatal to the whole composition", () => {
+  // The same principle as drift, on the neighbouring path: one unapproved file must not cost the
+  // lane its role contract. The security property is unchanged -- the unapproved text is never
+  // composed -- but the cost is the key that was not confirmed, nothing else.
+  const f = fixture();
+  writeMode(join(f.globalDir, "leader.json"), modeFile(APPROVED));
+  writeMode(join(f.projectDir, "extra.json"), overlayFile("extra", "unapproved project text"));
+  const modes = load(f);
+  const result = resolveModeSelection({ baseKey: "leader", overlayKeys: ["extra"] }, modes, {
+    driftPolicy: "reuse",
+    projectApprovals: new Map(),
+  });
+  assert.equal(result.blocked, false, "one unapproved file cannot drop the whole composition");
+  assert.equal(result.base?.systemPrompt, APPROVED, "the base still composes");
+  assert.deepEqual(result.overlays, [], "the unconfirmed key is the part withheld");
+  assert.ok(
+    result.diagnostics.some((d) => (d.message ?? "").includes("is not confirmed")),
+    "and the reason names the file",
+  );
+});
