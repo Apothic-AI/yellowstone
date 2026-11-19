@@ -2,6 +2,7 @@ import {
   type BuildSystemPromptOptions,
   formatSkillsForPrompt,
 } from "@earendil-works/pi-coding-agent";
+import { ensureSnapshot, readSnapshot } from "./mode-snapshots.ts";
 import {
   type DefinitionFingerprints,
   type DriftPolicy,
@@ -191,11 +192,59 @@ export function resolveModeSelection(
     });
     return { overlays: [], diagnostics, driftedKeys, blocked: true };
   }
-  if (driftedKeys.length > 0 && (policy.driftPolicy ?? "block") === "block") {
+  const driftPolicy = policy.driftPolicy ?? "block";
+  if (driftedKeys.length > 0 && driftPolicy === "block") {
     diagnostics.push({
       message: "composition blocked until /mode-reapprove or explicit reactivation",
     });
     return { overlays: [], diagnostics, driftedKeys, blocked: true };
+  }
+  if (driftedKeys.length > 0 && driftPolicy === "reuse") {
+    // Drift means the files moved; it does not mean the approved instructions are gone. Compose
+    // from the snapshot the lane was approved under, but only when that snapshot proves itself
+    // against the recorded digest. A missing or non-verifying snapshot blocks with its reason --
+    // reuse never becomes a guess, and it never silently falls back to the native prompt.
+    const approved = new Map<string, ResolvedMode>();
+    const missing: string[] = [];
+    for (const key of driftedKeys) {
+      const digest = policy.fingerprints?.[key]?.digest;
+      const snapshot = digest ? readSnapshot(key, digest) : null;
+      if (!snapshot) {
+        missing.push(key);
+        continue;
+      }
+      const current = byKey.get(key);
+      const restored = {
+        ...(current ?? {}),
+        ...snapshot.definition,
+        key,
+        scope: snapshot.scope as ResolvedMode["scope"],
+        path: snapshot.path,
+      } as ResolvedMode;
+      approved.set(key, restored);
+      const changedPath = current?.path ?? key;
+      diagnostics.push({
+        key,
+        message: `using the composition first seen at ${snapshot.firstSeenAt}; ${changedPath} changed since -- /mode-reapprove adopts the new text`,
+      });
+    }
+    if (missing.length > 0) {
+      diagnostics.push({
+        message: `no verified snapshot for ${missing.join(", ")}; composition blocked until /mode-reapprove`,
+      });
+      return { overlays: [], diagnostics, driftedKeys, blocked: true };
+    }
+    if (base && approved.has(base.key)) base = approved.get(base.key);
+    for (let index = 0; index < overlays.length; index += 1) {
+      const replacement = approved.get(overlays[index].key);
+      if (replacement) overlays[index] = replacement;
+    }
+  }
+  if (driftedKeys.length === 0) {
+    // Keep the composition a lane is actually running, so a later drift has something verified
+    // to fall back on. Idempotent: one stat per component once the file exists.
+    const firstSeenAt = new Date().toISOString();
+    for (const mode of [...(base ? [base] : []), ...overlays]) ensureSnapshot(mode, firstSeenAt);
   }
 
   if (base?.promptStrategy === "replace_final" && normalized.overlayKeys.length > 0) {

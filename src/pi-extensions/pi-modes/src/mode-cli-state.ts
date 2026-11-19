@@ -83,7 +83,8 @@ function coerceV3State(data: unknown): ModeStateV3 | undefined {
   if (
     value.driftPolicy !== "block" &&
     value.driftPolicy !== "warn" &&
-    value.driftPolicy !== "allow"
+    value.driftPolicy !== "allow" &&
+    value.driftPolicy !== "reuse"
   ) {
     return undefined;
   }

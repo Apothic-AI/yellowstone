@@ -10,7 +10,7 @@ export const MODE_STATE_TYPE_V1 = "pi-mode-state.v1";
 export const MODE_STATE_TYPE = MODE_STATE_TYPE_V1;
 export const MODE_STATE_TYPE_V2 = "pi-mode-state.v2";
 export const MODE_STATE_TYPE_V3 = "pi-mode-state.v3";
-export type DriftPolicy = "block" | "warn" | "allow";
+export type DriftPolicy = "block" | "warn" | "allow" | "reuse";
 export type ActivationSource =
   | "command"
   | "selector"
@@ -206,7 +206,8 @@ function parseV3State(data: unknown): ModeStateV3 | undefined {
   if (
     value.driftPolicy !== "block" &&
     value.driftPolicy !== "warn" &&
-    value.driftPolicy !== "allow"
+    value.driftPolicy !== "allow" &&
+    value.driftPolicy !== "reuse"
   ) {
     return undefined;
   }

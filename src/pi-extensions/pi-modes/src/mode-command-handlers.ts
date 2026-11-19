@@ -388,23 +388,30 @@ export function registerModeCommands(pi: ExtensionAPI, services: ModeCommandServ
   });
 
   pi.registerCommand("mode-policy", {
-    description: "Set definition drift policy: block, warn, or allow",
+    description: "Set definition drift policy: block, warn, allow, or reuse",
     getArgumentCompletions: (prefix) =>
-      ["block", "warn", "allow"]
+      ["block", "warn", "allow", "reuse"]
         .filter((value) => value.startsWith(prefix.trim().toLowerCase()))
         .map((value) => ({ value, label: value })),
     handler: async (args, ctx) => {
       try {
         const policy = args.trim().toLowerCase();
-        if (policy !== "block" && policy !== "warn" && policy !== "allow") {
-          throw new Error("Usage: /mode-policy <block|warn|allow>");
+        if (
+          policy !== "block" &&
+          policy !== "warn" &&
+          policy !== "allow" &&
+          policy !== "reuse"
+        ) {
+          throw new Error("Usage: /mode-policy <block|warn|allow|reuse>");
         }
         if (
           policy !== "block" &&
           ctx.mode === "tui" &&
           !(await ctx.ui.confirm(
             `Use ${policy} drift policy?`,
-            "Changed prompt definitions may be applied before explicit reapproval.",
+            policy === "reuse"
+              ? "A drifted composition is recomposed from the definition it was approved under, and the files that changed are named. /mode-reapprove adopts the new text."
+              : "Changed prompt definitions may be applied before explicit reapproval.",
           ))
         )
           return;
