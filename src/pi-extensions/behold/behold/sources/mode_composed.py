@@ -45,6 +45,22 @@ TIMEOUT_SECONDS = 20
 _CACHE: dict[tuple[str, str], dict[str, Any]] = {}
 
 
+def agent_dir(env: dict[str, str] | None = None) -> str:
+    """The agent directory pi itself uses, where the shared base modes live."""
+    source = env if env is not None else os.environ
+    return os.path.abspath(os.path.expanduser(source.get(AGENT_DIR_ENV) or DEFAULT_AGENT_DIR))
+
+
+def base_mode_path(key: str, env: dict[str, str] | None = None) -> str:
+    """The shared base definition for a key: the other half of a composed digest.
+
+    A project overlay composes on top of this file, so its mtime is as much an input to
+    the lane's mode as the overlay is. An age taken from the overlay alone can exonerate a
+    lane that the base is what drifted.
+    """
+    return os.path.join(agent_dir(env), "modes", key + ".json")
+
+
 def digest_script_path(env: dict[str, str] | None = None) -> str:
     value = (env or os.environ).get(DIGEST_SCRIPT_ENV) or DEFAULT_DIGEST_SCRIPT
     return os.path.abspath(os.path.expanduser(value))

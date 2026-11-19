@@ -1048,9 +1048,13 @@ def _fill_mode_profile_rooms(fields: dict[str, F.Field], ctx: Context, view: ses
             _add(fields, F.present("M-2", reported, source="pi-modes' own composition digest",
                                    privacy=1))
         else:
-            _add(fields, F.unknown("M-2", drift.get("reason") or "digest not recomputable",
-                                   source="mode definition files", privacy=1,
-                                   note="behold does not invent a digest algorithm"))
+            # The field is PRESENT and its value is unknown: a reader must be able to tell
+            # "we could not compute it" from "there is nothing to say". Collapsing those
+            # into a field-level unknown was the regression an A/B caught.
+            _add(fields, F.present("M-2", reported, source="pi-modes' own composition digest",
+                                   privacy=1, observed_at=mode.get("timestamp"),
+                                   note="composition not verifiable: %s"
+                                        % (drift.get("reason") or "digest not recomputable")))
     else:
         _add(fields, F.absent("M-1", "no pi-mode-state.v3 entry on the active branch",
                               source="session custom entries", privacy=1))

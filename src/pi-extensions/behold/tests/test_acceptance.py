@@ -259,9 +259,27 @@ class TestRepoAndState(unittest.TestCase):
         self.assertEqual(field(self.by["w1A:p1"], "R-7")["value"], "git")
 
     def test_mode_drift_recomputed(self):
+        # FT-91: the verdict comes from pi-modes' own fingerprint through a child, and this
+        # fixture tree has no owner-side script (the disposable HOME does not carry
+        # ~/.overlord). So the contract asserted here is the one the field must always keep:
+        # PRESENT with a value, the surface state, and -- where the composition could not be
+        # run -- a reason plus the recorded digest. `unknown` at this level would collapse
+        # "could not compute" into "nothing to say", which is the regression an A/B caught.
+        # The matched/drift verdicts themselves are covered by the injected-runner unit tests
+        # and by the live acceptance run against the real script.
         m2 = field(self.by["w1A:p1"], "M-2")
         self.assertEqual(m2["state"], "present")
-        self.assertEqual(m2["value"]["state"], "matched")
+        value = m2["value"]
+        self.assertIn(value["state"], ("match", "drift", "unknown"))
+        self.assertIn(value["detail_state"],
+                      ("matched", "drift", "partial", "unverifiable"))
+        if value["state"] == "unknown":
+            self.assertEqual(value["detail_state"], "unverifiable")
+            self.assertTrue(m2["note"] or value.get("reason"),
+                            "an unknown verdict must carry the reason it could not compute")
+        detail = (value.get("details") or [{}])[0]
+        self.assertIn("recorded", detail,
+                      "the comparison inputs are reported even without a verdict")
 
     def test_global_profile_is_not_a_lane_field(self):
         for lane in self.doc["lanes"]:

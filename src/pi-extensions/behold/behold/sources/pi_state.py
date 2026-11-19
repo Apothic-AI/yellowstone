@@ -394,13 +394,18 @@ def _verify_composed(
     """
     digest = recorded.get('digest')
     if not digest:
-        return {'key': key, 'state': 'unverifiable', 'reason': 'recorded digest missing'}
+        return {'key': key, 'state': 'unverifiable', 'reason': 'recorded digest missing',
+                'key': key, 'path': recorded.get('path')}
+    # Whatever happens next, the comparison's inputs are reported: a reader must see what the
+    # lane recorded even when no verdict is rendered. `unknown` means cannot compute, never
+    # will not judge.
+    inputs = {'key': key, 'recorded': digest, 'path': recorded.get('path')}
     if runner is None:
         # A disabled runner is the more fundamental answer than a missing cwd: it says no
         # composition can be run at all, which is what a reader needs to know first.
-        return {'key': key, 'state': 'unverifiable', 'reason': COMPOSED_UNSUPPORTED}
+        return {'key': key, 'state': 'unverifiable', 'reason': COMPOSED_UNSUPPORTED, **inputs}
     if not cwd:
-        return {'key': key, 'state': 'unverifiable', 'reason': 'no cwd for the composition'}
+        return {'key': key, 'state': 'unverifiable', 'reason': 'no cwd for the composition', **inputs}
     recorded_path = recorded.get('path')
     def call(**kwargs):
         try:
@@ -411,8 +416,9 @@ def _verify_composed(
     result = call()
     if not result or not result.get('available'):
         reason = (result or {}).get('reason') or 'composed_digest_unavailable'
-        return {'key': key, 'state': 'unverifiable', 'reason': reason}
+        return {'key': key, 'state': 'unverifiable', 'reason': reason, **inputs}
     same = result.get('digest') == digest
+    covered = [p for p in (result.get('path'), recorded_path, mode_composed.base_mode_path(key)) if p]
     if not same and recorded_path and result.get('path') != recorded_path:
         # Only a launcher's own materialised copy needs the override: the path is part of
         # the fingerprint, so the same text at the instance path hashes differently from
@@ -422,6 +428,7 @@ def _verify_composed(
         if override and override.get('available'):
             result = override
             same = result.get('digest') == digest
+            covered.extend(p for p in (override.get('path'),) if p)
     detail = {
         'key': key,
         'state': 'match' if same else 'drift',
@@ -429,6 +436,10 @@ def _verify_composed(
         'current': result.get('digest'),
         'scope': result.get('scope'),
         'path': result.get('path') or recorded.get('path'),
+        # Every input the digest covers: on a composed lane the base and the overlay are
+        # both part of the fingerprint, and an age taken from the overlay alone can
+        # exonerate a lane the base is what drifted.
+        'paths': sorted({p for p in covered if p}),
         'composed': True,
     }
     if not same:
@@ -577,9 +588,9 @@ def _summarise(out: dict[str, Any], results: list[dict[str, Any]], recorded=None
     # somebody edited a mode is expected; eight a week after any edit is a fault.
     paths: list[str] = []
     for detail in results:
-        path = detail.get("path")
-        if path:
-            paths.append(path)
+        for path in (detail.get("paths") or [detail.get("path")]):
+            if path:
+                paths.append(path)
     if recorded:
         for fp in recorded.values():
             path = (fp or {}).get("path")

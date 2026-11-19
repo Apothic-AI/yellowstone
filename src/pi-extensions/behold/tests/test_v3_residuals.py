@@ -12,6 +12,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 from tests.helpers import AS_OF, FIXTURE_ROOT, ROOT, field, lanes, require_fixtures, roster, roster_json
@@ -306,6 +307,42 @@ class TestR5TimeAndBranch(unittest.TestCase):
             self.assertIn("until the next mode", detail.get("note", ""))
             self.assertNotIn("native prompt", json.dumps(drift))
 
+    def test_the_age_names_the_newest_input_including_the_base(self):
+        # On a composed lane the base and the overlay are both part of the fingerprint.
+        # An age taken from the overlay alone can exonerate a lane the base drifted, and
+        # that is the failure this asserts against: the newest input wins, whichever half
+        # it is.
+        with tempfile.TemporaryDirectory() as tmp:
+            recorded, tmpdir = self._composed_fixture(tmp)
+            overlay = recorded["leader"]["path"]
+            base = os.path.join(tmpdir, "base-leader.json")
+            with open(base, "w") as fh:
+                fh.write("{}")
+            now = time.time()
+            os.utime(overlay, (now - 500, now - 500))
+            os.utime(base, (now - 10, now - 10))
+            runner_digest = recorded["leader"]["digest"]
+
+            def runner(cwd, key, **kwargs):
+                return {"available": True, "scope": "global", "digest": runner_digest,
+                        "path": base}
+
+            drift = pi_state.mode_drift(
+                recorded, policy=guard.Policy(), global_mode_dir=tmpdir, cwd=tmpdir,
+                overlays=["deep-review"], composed_runner=runner)
+            age = drift.get("composed_newest_edit") or {}
+            self.assertEqual(age.get("path"), base,
+                             "the base is the newest input and must be the age reported")
+            self.assertLessEqual(age.get("age_s", 10**9), 60)
+
+            # And the other way round: a newer overlay must win instead.
+            os.utime(overlay, (now, now))
+            drift2 = pi_state.mode_drift(
+                recorded, policy=guard.Policy(), global_mode_dir=tmpdir, cwd=tmpdir,
+                overlays=["deep-review"], composed_runner=runner)
+            age2 = drift2.get("composed_newest_edit") or {}
+            self.assertEqual(age2.get("path"), overlay,
+                             "whichever input is newest is the one named")
     def test_a_failed_composition_is_unverifiable_with_its_reason(self):
         with tempfile.TemporaryDirectory() as tmp:
             recorded, tmpdir = self._composed_fixture(tmp)
