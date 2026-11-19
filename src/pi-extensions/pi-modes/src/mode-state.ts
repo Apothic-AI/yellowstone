@@ -164,7 +164,7 @@ export function createModeState(
   const candidate = {
     ...normalized,
     fingerprints: options.fingerprints ?? fingerprintsForKeys(selectedKeys(normalized), modes),
-    driftPolicy: options.driftPolicy ?? "block",
+    driftPolicy: options.driftPolicy ?? "reuse",
     activatedAt: options.activatedAt ?? new Date().toISOString(),
     source,
   };

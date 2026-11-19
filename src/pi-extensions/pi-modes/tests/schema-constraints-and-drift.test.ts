@@ -195,8 +195,12 @@ test("fingerprints ignore constraint list order but detect prompt and provenance
     fingerprints: state.fingerprints,
     driftPolicy: "block",
   });
-  assert.equal(blocked.blocked, true);
-  assert.deepEqual(blocked.driftedKeys, ["portfolio"]);
+  // The requirement changed (FT-92b): drift withholds the drifted key and leaves the rest of the
+  // composition alone. This assertion used to demand `blocked: true`, which dropped the whole
+  // composition -- and with it the lane's entire role contract -- for one edited file.
+  assert.equal(blocked.blocked, false, "drift no longer drops the whole composition");
+  assert.deepEqual(blocked.overlays, [], "the drifted key is the part withheld");
+  assert.deepEqual(blocked.driftedKeys, ["portfolio"], "and the drift is still detected");
 
   const warning = resolveModeSelection({ baseKey: null, overlayKeys: ["portfolio"] }, [changed], {
     fingerprints: state.fingerprints,
@@ -227,10 +231,14 @@ test("fingerprints ignore constraint list order but detect prompt and provenance
   const malformedSelection = { baseKey: "exact", overlayKeys: ["review"] };
   const exactState = createModeState(malformedSelection, [exact, review], "command");
   const changedExact = { ...exact, systemPrompt: "changed exact" };
+  // The same requirement applied to replace_final: a drifted base used to block the whole
+  // composition under every policy. Now the drifted key is the part withheld, the review overlay
+  // still composes, and /mode-reapprove is how the new exact prompt is adopted.
   const exactDrift = resolveModeSelection(malformedSelection, [changedExact, review], {
     fingerprints: exactState.fingerprints,
     driftPolicy: "block",
   });
-  assert.equal(exactDrift.blocked, true);
+  assert.equal(exactDrift.blocked, false, "a drifted replace_final base no longer drops the composition");
+  assert.equal(exactDrift.base, undefined, "the drifted base is the part withheld");
   assert.deepEqual(exactDrift.driftedKeys, ["exact"]);
 });

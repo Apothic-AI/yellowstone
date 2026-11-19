@@ -148,6 +148,9 @@ export function resolveModeSelection(
     if (next) overlays[index] = next;
   }
   const components = [...(base ? [base] : []), ...overlays];
+  // `reuse` is the default: an edited definition file must not cost a lane the instructions it was
+  // approved to run. `block` still exists, but it withholds the drifted key only.
+  const driftPolicy = policy.driftPolicy ?? "reuse";
   if (policy.fingerprints) {
     for (const key of selectedKeys(normalized)) {
       // A substituted definition is the shallower one; its fingerprint was never recorded under
@@ -166,7 +169,7 @@ export function resolveModeSelection(
         driftedKeys.push(key);
         diagnostics.push({
           key,
-          message: `definition changed since activation (${policy.driftPolicy ?? "block"} policy)`,
+          message: `definition changed since activation (${driftPolicy} policy)`,
         });
       }
     }
@@ -184,67 +187,71 @@ export function resolveModeSelection(
     diagnostics.push({ message: "composition blocked until its project modes are confirmed" });
     return { overlays: [], diagnostics, driftedKeys, blocked: true };
   }
-  if (base?.promptStrategy === "replace_final" && driftedKeys.includes(base.key)) {
-    diagnostics.push({
-      key: base.key,
-      message:
-        "drifted replace_final is blocked under every policy until explicit confirmed reactivation",
-    });
-    return { overlays: [], diagnostics, driftedKeys, blocked: true };
-  }
-  const driftPolicy = policy.driftPolicy ?? "block";
-  if (driftedKeys.length > 0 && driftPolicy === "block") {
-    diagnostics.push({
-      message: "composition blocked until /mode-reapprove or explicit reactivation",
-    });
-    return { overlays: [], diagnostics, driftedKeys, blocked: true };
-  }
-  if (driftedKeys.length > 0 && driftPolicy === "reuse") {
-    // Drift means the files moved; it does not mean the approved instructions are gone. Compose
-    // from the snapshot the lane was approved under, but only when that snapshot proves itself
-    // against the recorded digest. A missing or non-verifying snapshot blocks with its reason --
-    // reuse never becomes a guess, and it never silently falls back to the native prompt.
-    const approved = new Map<string, ResolvedMode>();
-    const missing: string[] = [];
+  // Drift resolves per key. A definition file that moved cannot take the rest of the composition
+  // with it: whatever happens to this key -- the approved snapshot, the new text, or nothing at
+  // all -- every other component composes exactly as it would have. Dropping the whole composition
+  // for one edited file cost a lane its entire role contract and fell back to the native prompt
+  // (FT-91); no policy does that now. The drifted key is the *part* that drifted, and so it is the
+  // only part that changes.
+  if (driftedKeys.length > 0) {
+    const replacements = new Map<string, ResolvedMode>();
+    const withheld: string[] = [];
     for (const key of driftedKeys) {
+      // warn and allow keep the new text, and the diagnostic above already named the change.
+      if (driftPolicy !== "reuse" && driftPolicy !== "block") continue;
+      const current = byKey.get(key);
+      const changedPath = current?.path ?? key;
       const digest = policy.fingerprints?.[key]?.digest;
-      const snapshot = digest ? readSnapshot(key, digest) : null;
-      if (!snapshot) {
-        missing.push(key);
+      const snapshot = driftPolicy === "reuse" && digest ? readSnapshot(key, digest) : null;
+      if (snapshot) {
+        const restored = {
+          ...(current ?? {}),
+          ...snapshot.definition,
+          key,
+          scope: snapshot.scope as ResolvedMode["scope"],
+          path: snapshot.path,
+        } as ResolvedMode;
+        replacements.set(key, restored);
+        diagnostics.push({
+          key,
+          message: `using the composition first seen at ${snapshot.firstSeenAt}; ${changedPath} changed since -- /mode-reapprove adopts the new text`,
+        });
         continue;
       }
-      const current = byKey.get(key);
-      const restored = {
-        ...(current ?? {}),
-        ...snapshot.definition,
-        key,
-        scope: snapshot.scope as ResolvedMode["scope"],
-        path: snapshot.path,
-      } as ResolvedMode;
-      approved.set(key, restored);
-      const changedPath = current?.path ?? key;
+      withheld.push(key);
       diagnostics.push({
         key,
-        message: `using the composition first seen at ${snapshot.firstSeenAt}; ${changedPath} changed since -- /mode-reapprove adopts the new text`,
+        message:
+          driftPolicy === "reuse"
+            ? `no verified snapshot for this definition; withheld from the composition, everything else is unaffected -- /mode-reapprove adopts the new text`
+            : `withheld from the composition by the block policy, everything else is unaffected -- /mode-reapprove adopts the new text`,
       });
     }
-    if (missing.length > 0) {
-      diagnostics.push({
-        message: `no verified snapshot for ${missing.join(", ")}; composition blocked until /mode-reapprove`,
-      });
-      return { overlays: [], diagnostics, driftedKeys, blocked: true };
-    }
-    if (base && approved.has(base.key)) base = approved.get(base.key);
+    if (base && replacements.has(base.key)) base = replacements.get(base.key);
     for (let index = 0; index < overlays.length; index += 1) {
-      const replacement = approved.get(overlays[index].key);
+      const replacement = replacements.get(overlays[index].key);
       if (replacement) overlays[index] = replacement;
     }
+    if (withheld.length > 0) {
+      if (base && withheld.includes(base.key)) base = undefined;
+      for (let index = overlays.length - 1; index >= 0; index -= 1) {
+        if (withheld.includes(overlays[index].key)) overlays.splice(index, 1);
+      }
+    }
+    // `components` was captured before drift resolved; the constraints must see the composition
+    // that actually runs, not the one the files were about to produce.
+    components.splice(0, components.length, ...[...(base ? [base] : []), ...overlays]);
   }
-  if (driftedKeys.length === 0) {
-    // Keep the composition a lane is actually running, so a later drift has something verified
-    // to fall back on. Idempotent: one stat per component once the file exists.
+  {
+    // Keep the composition a lane is actually running, so a later drift has something verified to
+    // fall back on. Every key that did not drift seeds here -- a withheld or substituted key is
+    // skipped, because its snapshot must stay the one it was approved under. Idempotent: one stat
+    // per component once the file exists.
     const firstSeenAt = new Date().toISOString();
-    for (const mode of [...(base ? [base] : []), ...overlays]) ensureSnapshot(mode, firstSeenAt);
+    for (const mode of [...(base ? [base] : []), ...overlays]) {
+      if (driftedKeys.includes(mode.key)) continue;
+      ensureSnapshot(mode, firstSeenAt);
+    }
   }
 
   if (base?.promptStrategy === "replace_final" && normalized.overlayKeys.length > 0) {
