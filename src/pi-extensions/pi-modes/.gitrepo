@@ -6,7 +6,7 @@
 [subrepo]
 	remote = https://github.com/Apothic-AI/pi-modes
 	branch = main
-	commit = 17389c223d637e91877834a15e8bbb82aa0c8bf2
-	parent = 8eec665b94bb7c93b6876925722b315e6842a3be
+	commit = 4e9463670ed2338b1553ba85e4e2a5fe2ae07149
+	parent = 4bd251313dae641131f92ed289f682b03f480a9d
 	method = merge
 	cmdver = 0.4.9
