@@ -180,16 +180,23 @@ export function resolveModeSelection(
   // for one edited file cost a lane its entire role contract and fell back to the native prompt
   // (FT-91); no policy does that now. The drifted key is the *part* that drifted, and so it is the
   // only part that changes.
+  //
+  // Both block and reuse prefer the approved snapshot, because an edited file must not cost a lane
+  // the instructions it was approved to run. The policy governs the case where no snapshot exists:
+  // block and reuse withhold that key, warn and allow let the new text through.
   if (driftedKeys.length > 0) {
     const replacements = new Map<string, ResolvedMode>();
     const withheld: string[] = [];
     for (const key of driftedKeys) {
-      // warn and allow keep the new text, and the diagnostic above already named the change.
+      // warn and allow keep the new text, and the diagnostic above already named the change. block
+      // and reuse both prefer the text the lane was approved under: the policy decides only what
+      // happens when there is *no* verified snapshot, so a lane on the old default needs no
+      // migration to get its pre-drift text back.
       if (driftPolicy !== "reuse" && driftPolicy !== "block") continue;
       const current = byKey.get(key);
       const changedPath = current?.path ?? key;
       const digest = policy.fingerprints?.[key]?.digest;
-      const snapshot = driftPolicy === "reuse" && digest ? readSnapshot(key, digest) : null;
+      const snapshot = digest ? readSnapshot(key, digest) : null;
       if (snapshot) {
         const restored = {
           ...(current ?? {}),
@@ -211,10 +218,7 @@ export function resolveModeSelection(
       resolvedByDrift.add(key);
       diagnostics.push({
         key,
-        message:
-          driftPolicy === "reuse"
-            ? `no verified snapshot for this definition; withheld from the composition, everything else is unaffected -- /mode-reapprove adopts the new text`
-            : `withheld from the composition by the block policy, everything else is unaffected -- /mode-reapprove adopts the new text`,
+        message: `no verified snapshot for this definition; withheld from the composition, everything else is unaffected -- /mode-reapprove adopts the new text`,
       });
     }
     if (base && replacements.has(base.key)) base = replacements.get(base.key);

@@ -124,7 +124,36 @@ test("block withholds only the drifted key; the rest of the composition is unaff
   assert.equal(result.base?.systemPrompt, APPROVED, "an overlay's drift cannot touch the base");
   assert.deepEqual(result.overlays, [], "the drifted overlay is the only part withheld");
   assert.ok(
-    result.diagnostics.some((d) => (d.message ?? "").includes("withheld from the composition by the block policy")),
+    result.diagnostics.some((d) => (d.message ?? "").includes("no verified snapshot")),
+    "and the reason is the absence of a verified snapshot, not a policy name",
+  );
+});
+
+test("block prefers the approved snapshot too, so no lane needs migrating off the old default", () => {
+  // The operator's rule is that a drifted cwd mode loads its pre-drift text under any policy. block
+  // used to withhold the key instead, which would have required migrating every recorded state; the
+  // policy now governs only the no-snapshot case.
+  const f = fixture();
+  writeMode(f.file, modeFile(APPROVED));
+  const approvedModes = load(f);
+  const selection = { baseKey: "leader", overlayKeys: [] as string[] };
+  const clean = resolveModeSelection(selection, approvedModes, {
+    fingerprints: fingerprintsForKeys(["leader"], approvedModes),
+    driftPolicy: "block",
+  });
+  assert.equal(clean.blocked, false, "the clean composition seeds the snapshot");
+
+  writeFileSync(f.file, modeFile(CHANGED));
+  const driftedModes = load(f);
+  const reused = resolveModeSelection(selection, driftedModes, {
+    fingerprints: fingerprintsForKeys(["leader"], approvedModes),
+    driftPolicy: "block",
+  });
+  assert.equal(reused.blocked, false);
+  assert.equal(reused.base?.systemPrompt, APPROVED, "block composes the approved text, not the edit");
+  assert.ok(
+    reused.diagnostics.some((d) => (d.message ?? "").includes("first seen at")),
+    "and the marker still names when it was first seen",
   );
 });
 
