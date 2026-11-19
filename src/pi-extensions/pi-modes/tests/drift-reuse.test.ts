@@ -212,3 +212,45 @@ test("an unconfirmed project overlay is withheld, not fatal to the whole composi
     "and the reason names the file",
   );
 });
+
+test("a restored snapshot is confirmed by construction, so a reload keeps the approved text", () => {
+  // Overlord's reload found this: PI_MODE_CONFIRM_PROJECT=1 approves the project half at launch only,
+  // and that approval does not survive a reload. The restored definition then failed the confirmation
+  // check, was withheld, and the composed base went with it -- the lane fell to `mode:native`. The
+  // digest-verified snapshot *is* the approval record, so a restored key cannot be unconfirmed.
+  const f = fixture();
+  writeMode(join(f.globalDir, "leader.json"), modeFile(APPROVED));
+  const projectFile = join(f.projectDir, "leader.json");
+  writeMode(projectFile, overlayFile("leader", PROJECT_V1));
+  const composed = load(f);
+  const projectMode = composed.find((mode) => mode.scope === "project");
+  assert.ok(projectMode, "the project half composes onto the global one");
+
+  const state = createModeState({ baseKey: "leader", overlayKeys: [] }, composed, "command", {
+    driftPolicy: "reuse",
+  });
+  // The clean composition seeds the snapshot, with the launch-time confirmation present.
+  const clean = resolveModeSelection({ baseKey: "leader", overlayKeys: [] }, composed, {
+    fingerprints: state.fingerprints,
+    driftPolicy: "reuse",
+    projectApprovals: new Map([[projectFile, projectApprovalDigest(projectMode)]]),
+  });
+  assert.equal(clean.blocked, false);
+
+  writeFileSync(projectFile, overlayFile("leader", PROJECT_V2));
+  const drifted = load(f);
+  const afterReload = resolveModeSelection({ baseKey: "leader", overlayKeys: [] }, drifted, {
+    fingerprints: state.fingerprints,
+    driftPolicy: "reuse",
+    projectApprovals: new Map(), // a reload has forgotten the runtime confirmation
+  });
+  assert.equal(afterReload.blocked, false, "the composition survives a reload without runtime approvals");
+  assert.ok(
+    afterReload.base?.systemPrompt?.includes(PROJECT_V1),
+    "and the approved text is still what composes",
+  );
+  assert.ok(
+    !afterReload.base?.systemPrompt?.includes(PROJECT_V2),
+    "never the unapproved edit",
+  );
+});

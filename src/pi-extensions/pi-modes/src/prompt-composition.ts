@@ -146,6 +146,11 @@ export function resolveModeSelection(
   // live proof caught a drifted cwd mode silently losing its project half that way.
   const components = [...(base ? [base] : []), ...overlays];
   const resolvedByDrift = new Set<string>();
+  // Keys served from their own approved snapshot. They are confirmed by construction: the snapshot
+  // is digest-verified against the fingerprint the state recorded, and that record is the approval.
+  // A runtime-only confirmation (`PI_MODE_CONFIRM_PROJECT=1`) does not survive a reload, so without
+  // this the restored definition failed the confirmation check and took the composed base with it.
+  const restoredKeys = new Set<string>();
   // `reuse` is the default: an edited definition file must not cost a lane the instructions it was
   // approved to run. `block` still exists, but it withholds the drifted key only.
   const driftPolicy = policy.driftPolicy ?? "reuse";
@@ -195,6 +200,7 @@ export function resolveModeSelection(
         } as ResolvedMode;
         replacements.set(key, restored);
         resolvedByDrift.add(key);
+        restoredKeys.add(key);
         diagnostics.push({
           key,
           message: `using the composition first seen at ${snapshot.firstSeenAt}; ${changedPath} changed since -- /mode-reapprove adopts the new text`,
@@ -238,7 +244,7 @@ export function resolveModeSelection(
   }
   components.splice(0, components.length, ...[...(base ? [base] : []), ...overlays]);
   const unconfirmed = approvals
-    ? components.filter((mode) => !isProjectModeApproved(mode, approvals))
+    ? components.filter((mode) => !restoredKeys.has(mode.key) && !isProjectModeApproved(mode, approvals))
     : [];
   if (unconfirmed.length > 0) {
     // One unapproved file may not take the role contract with it either. The security property is
