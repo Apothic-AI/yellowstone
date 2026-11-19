@@ -399,7 +399,15 @@ def _verify_composed(
     # Whatever happens next, the comparison's inputs are reported: a reader must see what the
     # lane recorded even when no verdict is rendered. `unknown` means cannot compute, never
     # will not judge.
-    inputs = {'key': key, 'recorded': digest, 'path': recorded.get('path')}
+    # Two halves of a composed digest: the recorded file and the shared base. Carrying both
+    # here is what keeps the age honest in the state where a reader most needs it -- an
+    # unverifiable verdict -- because the aggregate takes its age input from paths, and a
+    # lone recorded path degrades to the older project overlay.
+    covered_paths = sorted(
+        {p for p in (recorded.get('path'), mode_composed.base_mode_path(key)) if p}
+    )
+    inputs = {'key': key, 'recorded': digest, 'path': recorded.get('path'),
+              'paths': covered_paths}
     if runner is None:
         # A disabled runner is the more fundamental answer than a missing cwd: it says no
         # composition can be run at all, which is what a reader needs to know first.
