@@ -175,104 +175,12 @@ void describe("watchers preference file", () => {
     });
 });
 
-void describe("renderSidebar — collapsible watchers section", () => {
-    void it("starts collapsed: one summary line, and the monitor pill is hidden", () => {
+void describe("renderSidebar — watcher pills moved to the pinned widget", () => {
+    void it("does not render active watcher summary or pills above the editor", () => {
         const { reg } = makeRegistry();
         const { ctx, lines } = makeCtx();
         renderSidebar(reg, ctx);
-
-        const rendered = lines() ?? [];
-        assert.ok(
-            rendered.some((line) => /release build/.test(line)),
-            "non-monitor pills are always shown"
-        );
-        const summary = rendered.find((line) => /watcher/.test(line));
-        assert.ok(summary, "the watchers section has a summary line");
-        assert.match(summary, /▸/);
-        assert.match(summary, /1 watcher\b/);
-        assert.doesNotMatch(
-            rendered.join("\n"),
-            /neti-leader/,
-            "the collapsed section does not leak the monitor's pill"
-        );
-        assert.equal(rendered.length, 2, "one job pill + one collapsed watchers line");
-        stopSidebarTicker(reg);
-    });
-
-    void it("expands to the monitor pills and collapses back", () => {
-        const { reg } = makeRegistry();
-        const { ctx, lines } = makeCtx();
-        renderSidebar(reg, ctx);
-
-        setWatchersCollapsed(reg, ctx, false);
-        const expanded = lines() ?? [];
-        assert.ok(
-            expanded.some((line) => /Leader watcher/.test(line) && /neti-leader/.test(line)),
-            "the expanded section shows the monitor's pill"
-        );
-        assert.ok(
-            expanded.some((line) => /▾ 1 watcher/.test(line)),
-            "the expanded section has a header"
-        );
-
-        toggleWatchers(reg, ctx);
-        const collapsed = lines() ?? [];
-        assert.ok(!collapsed.some((line) => /neti-leader/.test(line)), "collapsed again");
-        stopSidebarTicker(reg);
-    });
-
-    void it("clicking the section toggles it; clicking a job pill does not", () => {
-        const { reg } = makeRegistry();
-        const { ctx, component } = makeCtx();
-        renderSidebar(reg, ctx);
-
-        const widget = component();
-        assert.ok(widget?.handleMouse, "fullscreen widget exposes a click handler");
-
-        const onJobPill = widget.handleMouse({ type: "click", button: "left", y: 0 });
-        assert.equal(onJobPill, undefined, "the job pill is not a toggle target");
-        assert.equal(reg.watchersCollapsed, true, "still collapsed");
-
-        const onSection = widget.handleMouse({ type: "click", button: "left", y: 1 });
-        assert.deepEqual(onSection, { handled: true });
-        assert.equal(reg.watchersCollapsed, false, "click expanded the section");
-
-        stopSidebarTicker(reg);
-    });
-
-    void it("writes the decision only while remembering is on", async () => {
-        const prev = process.env.PI_CODING_AGENT_DIR;
-        process.env.PI_CODING_AGENT_DIR = dir;
-        try {
-            const { reg } = makeRegistry();
-            const { ctx } = makeCtx();
-            renderSidebar(reg, ctx);
-
-            toggleWatchers(reg, ctx); // remember is off: session-only
-            await flushWatcherConfigWrites();
-            assert.throws(
-                () => readFileSync(join(dir, "bizzy-watchers.json"), "utf8"),
-                /ENOENT/,
-                "no preference is written without opting in"
-            );
-
-            reg.watchersRemember = true;
-            toggleWatchers(reg, ctx);
-            await flushWatcherConfigWrites();
-            const raw = JSON.parse(
-                readFileSync(join(dir, "bizzy-watchers.json"), "utf8")
-            ) as Record<string, unknown>;
-            assert.equal(
-                raw["watchers-collapsed"],
-                reg.watchersCollapsed,
-                "the on-screen decision is recorded"
-            );
-
-            stopSidebarTicker(reg);
-        } finally {
-            if (prev === undefined) delete process.env.PI_CODING_AGENT_DIR;
-            else process.env.PI_CODING_AGENT_DIR = prev;
-        }
+        assert.doesNotMatch((lines() ?? []).join("\n"), /watcher|neti-leader/i);
     });
 });
 

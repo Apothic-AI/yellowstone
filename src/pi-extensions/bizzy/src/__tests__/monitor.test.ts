@@ -86,7 +86,7 @@ void describe("monitor tool — validation", () => {
 });
 
 void describe("monitor tool — command lifecycle", () => {
-    void it("streams lines live, and sends one terminal <task-notification>", async () => {
+    void it("keeps stream lines out of chat, and sends one terminal <task-notification>", async () => {
         const { tool, ctx, messages } = makeHarness();
         const res = await tool.execute(
             "t4",
@@ -99,22 +99,14 @@ void describe("monitor tool — command lifecycle", () => {
 
         await sleep(300); // let the source exit + terminal notify
 
-        // Stream lines are delivered live as monitor events.
-        const monitorEvents = messages.filter((m) => m.customType === EVENT.monitorEvent);
-        const streamText = monitorEvents
+        // Streaming lines stay out of the transcript; the pinned widget is the
+        // only live representation, and chat receives the terminal notice only.
+        const streaming = messages.filter((m) => m.customType === EVENT.monitorEvent);
+        assert.equal(streaming.length, 0, "no per-batch transcript messages");
+        const chat = messages
             .map((m) => (m as unknown as { content: string }).content)
             .join("\n");
-        assert.ok(monitorEvents.length >= 1, "expected at least one live stream event");
-        assert.match(streamText, /line-A/);
-        assert.match(streamText, /line-B/);
-
-        // FT-03: the renderer reads structured lines, so the message must carry
-        // them (rather than making the transcript re-split the content).
-        const streamedLines = monitorEvents.flatMap(
-            (m) => ((m.details as { lines?: string[] } | undefined)?.lines ?? [])
-        );
-        assert.ok(streamedLines.some((line) => line.includes("line-A")));
-        assert.ok(streamedLines.some((line) => line.includes("line-B")));
+        assert.doesNotMatch(chat, /line-A|line-B/, "event text stays out of chat");
 
         // The terminal notice is its own task-notification, sent at exit.
         const terminals = messages.filter((m) => m.customType === EVENT.taskNotification);

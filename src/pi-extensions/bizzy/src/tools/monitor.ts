@@ -23,6 +23,7 @@ import {
     type MonitorSource,
 } from "../monitor-source.ts";
 import { startMonitorSession } from "../monitor-session.ts";
+import type { MonitorWidget } from "../monitor-widget.ts";
 import { textBlock } from "../format.ts";
 
 type MonitorCtx = UiContext & { cwd: string };
@@ -35,7 +36,12 @@ interface MonitorParams {
     timeout_ms?: number;
 }
 
-export function registerMonitorTool(pi: ExtensionAPI, reg: BackgroundRegistry): void {
+export function registerMonitorTool(
+    pi: ExtensionAPI,
+    reg: BackgroundRegistry,
+    /** FT-90: the pinned widget listing active watchers (never event lines; absent in headless runs). */
+    widget?: MonitorWidget
+): void {
     pi.registerTool({
         name: "monitor",
         label: "Monitor",
@@ -144,6 +150,7 @@ export function registerMonitorTool(pi: ExtensionAPI, reg: BackgroundRegistry): 
                 description,
                 persistent,
                 timeoutMs,
+                widget,
             });
 
             const sourceDesc = hasWs ? `WebSocket ${p.ws!.url}` : "command";

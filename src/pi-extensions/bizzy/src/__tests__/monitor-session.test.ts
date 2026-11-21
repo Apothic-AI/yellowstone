@@ -17,6 +17,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 interface Msg {
     customType: string;
     content: string;
+    display?: boolean;
     details?: { terminal?: boolean };
 }
 
@@ -75,7 +76,7 @@ function harness(logPath: string) {
 }
 
 void describe("monitor-session — lifecycle via a fake source", () => {
-    void it("streams lines and emits exactly one 'stream ended' terminal on clean exit", async () => {
+    void it("keeps streaming lines out of the transcript and emits one 'stream ended' terminal", async () => {
         const logPath = join(dir, "ok.log");
         writeFileSync(logPath, "");
         const h = harness(logPath);
@@ -85,8 +86,12 @@ void describe("monitor-session — lifecycle via a fake source", () => {
         h.resolveExit({ code: 0, signal: null });
         await sleep(60);
 
-        assert.match(h.allText(), /line-A/);
-        assert.match(h.allText(), /line-B/);
+        assert.deepEqual(
+            h.messages.filter((m) => m.customType !== EVENT.taskNotification),
+            [],
+            "streaming lines never become transcript messages"
+        );
+        assert.doesNotMatch(h.allText(), /line-A|line-B/, "event text stays out of chat");
         assert.equal(h.terminals().length, 1);
         const xml = h.terminals()[0].content;
         assert.ok(xml.includes("<status>completed</status>"));

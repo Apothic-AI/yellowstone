@@ -3,17 +3,17 @@
  * out of the tool action so its invariants are unit-testable through a fake
  * MonitorSource (no real spawning, no real sockets).
  *
- * Responsibilities: stream each batch of new log lines as a notification,
- * rate-limit a firehose, emit exactly one terminal event (on natural exit,
- * kill, timeout, or firehose), and tear the source down. The tool just
+ * Responsibilities: keep the live watcher registered in the pinned widget,
+ * rate-limit a firehose, emit exactly one terminal notification (on natural
+ * exit, kill, timeout, or firehose), and tear the source down. Streaming lines
+ * stay out of the transcript: the pinned `Monitors (N)` widget is the only live
+ * representation, and chat receives only the terminal notice. The tool just
  * validates, builds a source, and hands it here.
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { BackgroundRegistry } from "./state.ts";
 import {
-    DELIVER_FOLLOWUP,
-    EVENT,
     MONITOR_MAX_LINES_PER_WINDOW,
     MONITOR_RATE_WINDOW_MS,
     type Job,
@@ -21,6 +21,7 @@ import {
 } from "./types.ts";
 import { renderSidebar } from "./registry.ts";
 import { startBackgroundJob, terminateJobSilently } from "./lifecycle.ts";
+import type { MonitorWidget } from "./monitor-widget.ts";
 import { followLines, type MonitorFollower } from "./monitor-follow.ts";
 import type { MonitorSource } from "./monitor-source.ts";
 import { completionSummary, sendTaskNotification, type TerminalStatus } from "./notify.ts";
@@ -39,48 +40,27 @@ export function startMonitorSession(args: {
     description: string;
     persistent: boolean;
     timeoutMs: number;
+    /** FT-90: the pinned widget's live view (watcher summaries only). Absent when the monitor tool is
+     *  exercised without a UI (tests, non-interactive runs). */
+    widget?: MonitorWidget;
 }): void {
-    const { pi, reg, ctx, job, source, description, persistent, timeoutMs } = args;
+    const { pi, reg, ctx, job, source, description, persistent, timeoutMs, widget } = args;
     const { id, logPath } = job;
+
+    // FT-90: the monitor owns one block from its start time, not from its
+    // first event — registered here, before the follower can emit anything, so
+    // the widget's order is start order and the count is live monitors.
+    widget?.addMonitor(ctx, { id, description, startTime: job.startTime });
 
     let terminalEmitted = false;
     let finishing = false;
     let windowStart = Date.now();
     let windowLines = 0;
 
-    // Stream events stay live but passive (delivered as a follow-up, no wake) —
-    // they carry data the agent is actively watching and surface on the agent's
-    // next natural turn without spawning an unsolicited one. The terminal
-    // notice (stream ended / stopped / failed) is its own <task-notification>
-    // (see finishMonitor), sent the moment the source ends.
-    const emitEvent = (lines: string[]): void => {
-        if (lines.length === 0) return;
-        try {
-            pi.sendMessage(
-                {
-                    customType: EVENT.monitorEvent,
-                    content: `◉ ${description}\n${lines.join("\n")}`,
-                    display: true,
-                    // `lines` lets the FT-03 renderer draw the block without
-                    // re-splitting the persisted content; the description is
-                    // the block's title.
-                    details: { jobId: id, description, logPath, terminal: false, lines },
-                },
-                DELIVER_FOLLOWUP
-            );
-        } catch {
-            // The captured ctx went stale (session reload/fork/switch) — the
-            // throw would otherwise escape the follower's timer tick as an
-            // uncaughtException and kill the whole process. Tear down silently:
-            // nothing on this path may touch pi or ctx again, and
-            // terminateJobSilently's notified latch keeps the exit handler off
-            // the dead ctx too.
-            terminalEmitted = true;
-            finishing = true;
-            follower.stop(false);
-            terminateJobSilently(reg, job);
-        }
-    };
+    // Streaming lines stay out of the transcript entirely. The pinned
+    // `Monitors (N)` widget is the live representation of each watcher; the
+    // only chat-visible message a monitor produces is its terminal
+    // <task-notification> (see finishMonitor), sent when the source ends.
 
     const follower: MonitorFollower = followLines(logPath, (lines) => {
         if (terminalEmitted) return;
@@ -92,8 +72,6 @@ export function startMonitorSession(args: {
             windowLines = 0;
         }
         windowLines += lines.length;
-
-        emitEvent(lines);
 
         // Don't trip the firehose guard while draining the final flush.
         if (!finishing && windowLines > MONITOR_MAX_LINES_PER_WINDOW) {
@@ -122,6 +100,10 @@ export function startMonitorSession(args: {
         finishing = true;
         follower.stop(true);
         terminalEmitted = true;
+        // Drop the widget block *before* the notification: the monitor is
+        // terminal either way, and if the send throws on a stale ctx the widget
+        // must not be left advertising a live monitor.
+        widget?.endMonitor(ctx, id);
         sendTaskNotification({ reg, pi, job, status, summary, evict: false });
     };
 

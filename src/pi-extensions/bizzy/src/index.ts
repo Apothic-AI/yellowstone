@@ -38,6 +38,7 @@ import {
     readMonitorEventsConfig,
     registerMonitorEventRenderer,
 } from "./monitor-events.ts";
+import { MonitorWidget } from "./monitor-widget.ts";
 
 /** Extension entry point. */
 export default function (pi: ExtensionAPI): void {
@@ -77,6 +78,11 @@ export default function (pi: ExtensionAPI): void {
     // `collapse-monitor-events` setting and the per-monitor click decisions, so
     // the renderer and `/toggle-collapse-monitor-events` read the same state.
     const monitorEvents = createMonitorEventPresentation(readMonitorEventsConfig());
+    // FT-90: the pinned monitor surface — one `Monitors (N)` line above the
+    // editor, expanded to one pill per active watcher. Streaming event lines
+    // stay out of chat; the widget and the renderer share one presentation
+    // object, so remembered collapse decisions agree.
+    const monitorWidget = new MonitorWidget(monitorEvents);
 
     // ── Tool registration ─────────────────────────────────────────
     // Use the unwrapped tool *definition* so the override inherits Pi's native
@@ -89,11 +95,11 @@ export default function (pi: ExtensionAPI): void {
     if (gating.isEnabled("bash_bg")) registerBashBgTool(pi, reg);
     if (gating.isEnabled("jobs")) registerJobsTool(pi, reg);
     if (gating.isEnabled("agent_bg")) registerAgentBgTool(pi, reg);
-    if (gating.isEnabled("monitor")) registerMonitorTool(pi, reg);
+    if (gating.isEnabled("monitor")) registerMonitorTool(pi, reg, monitorWidget);
 
     // ── Shortcuts / commands ──────────────────────────────────────
     registerShortcuts(pi, reg);
-    registerCommands(pi, reg, monitorEvents);
+    registerCommands(pi, reg, monitorEvents, monitorWidget);
     registerInputHandlers(pi, reg);
 
     // ── Monitor events ────────────────────────────────────────────
@@ -154,6 +160,9 @@ export default function (pi: ExtensionAPI): void {
         // A watchers collapse right before exit is a fire-and-forget write; let
         // it land so the next session obeys it.
         await flushWatcherConfigWrites();
+        // The monitors widget is a session surface: clearing it here is what
+        // keeps a reload from inheriting a stale monitors line.
+        monitorWidget.dispose();
         // A monitor-events flip right before exit is the same fire-and-forget
         // write; let it land so the next session obeys it too.
         await flushMonitorEventsConfigWrites();

@@ -275,7 +275,7 @@ export function renderSidebar(reg: BackgroundRegistry, ctx: UiContext): void {
     const statusText = `▶ ${parts.join(", ")}`;
     // The collapse state is part of the key: toggling it re-registers the widget
     // with the new layout instead of waiting for the next tick.
-    const key = `${jobPills.join("\n")}|${watcherPills.join("\n")}|${reg.watchersCollapsed}|${statusText}`;
+    const key = `${jobPills.join("\n")}|${statusText}`;
 
     if (key !== reg.lastSidebarContent) {
         reg.lastSidebarContent = key;
@@ -288,19 +288,7 @@ export function renderSidebar(reg: BackgroundRegistry, ctx: UiContext): void {
                 reg.sidebarRequestRender = () => tui.requestRender();
                 return {
                     render: () => renderSidebarLines(reg, jobPills, watcherPills, theme, clickable),
-                    handleMouse: (event) => {
-                        if (!clickable || event.type !== "click" || event.button !== "left") {
-                            return undefined;
-                        }
-                        if (watcherPills.length === 0) return undefined;
-                        // Only the watchers section is a toggle target: its header
-                        // (and, expanded, its pills) follow the other job pills.
-                        const start = jobPills.length;
-                        const rows = reg.watchersCollapsed ? 1 : 1 + watcherPills.length;
-                        if (event.y < start || event.y >= start + rows) return undefined;
-                        setWatchersCollapsed(reg, ctx, !reg.watchersCollapsed);
-                        return { handled: true };
-                    },
+                    handleMouse: (_event) => undefined,
                     invalidate: () => {},
                 };
             },
@@ -315,31 +303,16 @@ export function renderSidebar(reg: BackgroundRegistry, ctx: UiContext): void {
     else stopSidebarTicker(reg);
 }
 
-/** The widget's lines: every non-monitor pill, then the watchers section. */
+/** Above-editor widget: non-monitor background jobs only. Active watcher pills
+ * are shown exclusively by the bottom monitors widget (FT-90). */
 function renderSidebarLines(
-    reg: BackgroundRegistry,
+    _reg: BackgroundRegistry,
     jobPills: readonly string[],
-    watcherPills: readonly string[],
-    theme: UiContext["ui"]["theme"],
-    clickable: boolean
+    _watcherPills: readonly string[],
+    _theme: UiContext["ui"]["theme"],
+    _clickable: boolean
 ): string[] {
-    const lines = [...jobPills];
-    if (watcherPills.length === 0) return lines;
-    const count = watcherPills.length;
-    const head = `${theme.fg("dim", reg.watchersCollapsed ? "▸" : "▾")} ${theme.fg(
-        "muted",
-        `${count} watcher${count === 1 ? "" : "s"}`
-    )}`;
-    const hint = clickable ? "click or /watchers" : "/watchers";
-    if (reg.watchersCollapsed) {
-        // One line, deliberately without a watcher label or latest event:
-        // collapsing is the point, and /watchers (or a click) expands it.
-        lines.push(`${head}${theme.fg("dim", ` · ${hint}`)}`);
-        return lines;
-    }
-    lines.push(`${head}${clickable ? theme.fg("dim", " · click to collapse") : ""}`);
-    lines.push(...watcherPills);
-    return lines;
+    return [...jobPills];
 }
 
 /**

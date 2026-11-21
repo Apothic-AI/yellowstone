@@ -25,6 +25,7 @@ import {
     type MonitorEventPresentation,
     writeMonitorEventsConfig,
 } from "./monitor-events.ts";
+import type { MonitorWidget } from "./monitor-widget.ts";
 import { openBgListPanel } from "./ui.ts";
 
 const packageJsonPath = fileURLToPath(new URL("../package.json", import.meta.url));
@@ -34,7 +35,10 @@ const packageRoot = dirname(packageJsonPath);
 export function registerCommands(
     pi: ExtensionAPI,
     reg: BackgroundRegistry,
-    monitorEvents: MonitorEventPresentation
+    monitorEvents: MonitorEventPresentation,
+    /** FT-90: the widget the /monitors command drives. Absent in a session
+     *  whose ui has no widget surface (tests, headless). */
+    monitorWidget?: MonitorWidget
 ): void {
     pi.registerCommand("bg", {
         description: "Background the current process and hand control to the agent",
@@ -76,9 +80,12 @@ export function registerCommands(
                 );
                 return;
             }
-            if (verb === "collapse") setWatchersCollapsed(reg, ctx, true);
-            else if (verb === "expand") setWatchersCollapsed(reg, ctx, false);
-            else toggleWatchers(reg, ctx);
+            const collapsed = verb === "collapse" ? true : verb === "expand" ? false : undefined;
+            if (monitorWidget) {
+                if (collapsed === undefined) monitorWidget.toggleCollapsed(ctx as never);
+                else monitorWidget.setCollapsed(collapsed, ctx as never);
+            } else if (collapsed === undefined) toggleWatchers(reg, ctx);
+            else setWatchersCollapsed(reg, ctx, collapsed);
         },
     });
 
@@ -112,6 +119,38 @@ export function registerCommands(
         },
     });
 
+    pi.registerCommand("monitors", {
+        description:
+            "Collapse or expand the monitors widget at the bottom: /monitors [collapse|expand|toggle]",
+        handler: async (args, ctx) => {
+            const verb = args.trim().toLowerCase();
+            if (verb && verb !== "collapse" && verb !== "expand" && verb !== "toggle") {
+                ctx.ui.notify(
+                    `Unknown value "${verb}". Use \`/monitors [collapse|expand|toggle]\`.`,
+                    "warning"
+                );
+                return;
+            }
+            const collapsed =
+                verb === "collapse"
+                    ? true
+                    : verb === "expand"
+                      ? false
+                      : !monitorEvents.widgetCollapsed;
+            if (monitorWidget) monitorWidget.setCollapsed(collapsed, ctx);
+            else {
+                monitorEvents.widgetCollapsed = collapsed;
+                await writeMonitorEventsConfig({ monitorsCollapsed: collapsed });
+            }
+            ctx.ui.notify(
+                collapsed
+                    ? "Monitors widget collapsed to one line."
+                    : "Monitors widget expanded: one pill per active watcher.",
+                "info"
+            );
+        },
+    });
+
     pi.registerCommand("toggle-collapse-monitor-events", {
         description:
             "Collapse or expand monitor event blocks in the transcript: /toggle-collapse-monitor-events [collapse|expand|toggle]",
@@ -129,9 +168,12 @@ export function registerCommands(
             monitorEvents.collapse = collapsed;
             // A click decision for one monitor outranks the setting. Flipping
             // the setting is a deliberate global choice, so it discards those
-            // decisions and is in force for every monitor from here on.
+            // decisions and is in force for every monitor from here on. The
+            // cleared decisions are written too: FT-90 remembers them, so
+            // clearing them only in memory would resurrect them on reload.
             monitorEvents.overrides.clear();
-            await writeMonitorEventsConfig({ collapse: collapsed });
+            await writeMonitorEventsConfig({ collapse: collapsed, overrides: {} });
+            monitorWidget?.update(ctx);
             ctx.ui.notify(
                 `Monitor event blocks will start ${collapsed ? "collapsed" : "expanded"}.`,
                 "info"

@@ -1,25 +1,31 @@
 /**
- * FT-03 — collapsible monitor events in the transcript.
+ * FT-03 — collapsible monitor events; FT-90 — the preference behind the
+ * bottom monitors widget.
  *
- * A monitor streams one custom message per batch of matched lines. Before this
- * module, pi drew each of those as a flat block: the humanised
- * `◇ Bg Monitor Event` title, the `◉ <description>` line, and every event line
- * — one full block per batch, so a chatty monitor (a dispatcher, a watcher)
- * fills the transcript with blocks that carry no more than the description the
- * user already knows.
+ * FT-03 first made a monitor's transcript block collapsible: a header plus the
+ * *newest* event line when collapsed, every event when expanded. The state a
+ * block is added in came from the operator's setting
+ * `collapse-monitor-events` (default true) in `bizzy-monitor-events.json`, and a
+ * click overrode it for that monitor for the rest of the session.
  *
- * Registering a message renderer is what makes the block collapsible: pi wraps
- * the renderer's component, and clicking it toggles this module's session-local
- * decision. Collapsed, the block is a header plus the *newest* event line, so
- * the common case ("what just fired?") needs no expansion at all. The header
- * names the monitor instead of repeating a generic title — FT-03 asked for a
- * title the user is less likely to have to expand.
+ * FT-90 moved the ambient surface out of the transcript: the live watchers
+ * appear as one `Monitors (N)` line in a fixed widget above the editor, one
+ * pill per active watcher, and streaming event lines are no longer sent to
+ * chat at all — only the terminal `<task-notification>` is. This module keeps
+ * the shared pieces: the preference file, the per-monitor collapse decision,
+ * and the FT-03 block renderer, still registered so a session that already
+ * recorded event blocks continues to draw them.
  *
- * The state a block is *added* in comes from the operator's setting
- * `collapse-monitor-events` (default true) in `bizzy-monitor-events.json`. A
- * click overrides it for that monitor for the rest of the session; unlike the
- * sidebar's watchers section (FT-02), nothing is remembered across sessions,
- * because FT-03 asked for a setting, not a memory.
+ * The preference file now carries two FT-90 keys as well:
+ *   - `monitors-collapsed`: the *global* decision whether the widget is the
+ *     single `Monitors (N)` line. Deliberately global — "does ambient monitor
+ *     state occupy screen space" is a view preference, not a fact about one
+ *     monitor — and remembered unconditionally (FT-90 requires a reload to keep
+ *     the choice; apothic-todo's opt-in `persistCollapsed` gate is not enough).
+ *   - `monitor-collapse`: per-monitor decisions keyed by the monitor's
+ *     *description*, because a job id is random per process and cannot name a
+ *     watch across a reload. A new monitor block still starts from
+ *     `collapse-monitor-events`.
  */
 
 import { readFileSync } from "node:fs";
@@ -39,9 +45,20 @@ export const MONITOR_EVENTS_CONFIG_FILENAME = "bizzy-monitor-events.json";
 export const COLLAPSE_MONITOR_EVENTS_KEY = "collapse-monitor-events";
 /** New blocks are collapsed unless the operator opted out. */
 export const DEFAULT_COLLAPSE_MONITOR_EVENTS = true;
+/** FT-90: whether the whole monitors widget is its one `Monitors (N)` line. */
+export const MONITORS_COLLAPSED_KEY = "monitors-collapsed";
+/** The one-line widget is the layout FT-90 asked for, so it is the default. */
+export const DEFAULT_MONITORS_COLLAPSED = true;
+/** FT-90: per-monitor decisions, keyed by the monitor's description. */
+export const MONITOR_COLLAPSE_KEY = "monitor-collapse";
 
 export interface MonitorEventsConfig {
+    /** FT-03: the state a monitor's block is added in. */
     collapse: boolean;
+    /** FT-90: the widget's own collapse state (remembered, global). */
+    monitorsCollapsed: boolean;
+    /** FT-90: description → expanded? Remembered per monitor. */
+    overrides: Record<string, boolean>;
 }
 
 /** Resolved per call so `PI_CODING_AGENT_DIR` and tests apply to the process. */
@@ -64,13 +81,31 @@ function readRecord(path: string): Record<string, unknown> {
 /**
  * Tolerant read: a missing, unreadable or malformed file degrades to the
  * default, never an error. Only an explicit boolean opts out — a stray string
- * or number cannot turn the transcript into a wall of expanded blocks.
+ * or number cannot turn the transcript into a wall of expanded blocks. The
+ * same rule applies per monitor, so one bad entry cannot reinterpret every
+ * remembered decision.
  */
 export function readMonitorEventsConfig(path = monitorEventsConfigPath()): MonitorEventsConfig {
-    const value = readRecord(path)[COLLAPSE_MONITOR_EVENTS_KEY];
+    const record = readRecord(path);
+    const collapse = record[COLLAPSE_MONITOR_EVENTS_KEY];
+    const monitorsCollapsed = record[MONITORS_COLLAPSED_KEY];
     return {
-        collapse: typeof value === "boolean" ? value : DEFAULT_COLLAPSE_MONITOR_EVENTS,
+        collapse: typeof collapse === "boolean" ? collapse : DEFAULT_COLLAPSE_MONITOR_EVENTS,
+        monitorsCollapsed:
+            typeof monitorsCollapsed === "boolean"
+                ? monitorsCollapsed
+                : DEFAULT_MONITORS_COLLAPSED,
+        overrides: readOverrides(record[MONITOR_COLLAPSE_KEY]),
     };
+}
+
+function readOverrides(raw: unknown): Record<string, boolean> {
+    if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return {};
+    const overrides: Record<string, boolean> = {};
+    for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+        if (key.length > 0 && typeof value === "boolean") overrides[key] = value;
+    }
+    return overrides;
 }
 
 let writeQueue: Promise<unknown> = Promise.resolve();
@@ -101,8 +136,12 @@ export function writeMonitorEventsConfig(
     patch: Partial<MonitorEventsConfig>,
     path = monitorEventsConfigPath()
 ): Promise<void> {
-    const filePatch: Record<string, boolean> = {};
+    const filePatch: Record<string, unknown> = {};
     if (patch.collapse !== undefined) filePatch[COLLAPSE_MONITOR_EVENTS_KEY] = patch.collapse;
+    if (patch.monitorsCollapsed !== undefined) {
+        filePatch[MONITORS_COLLAPSED_KEY] = patch.monitorsCollapsed;
+    }
+    if (patch.overrides !== undefined) filePatch[MONITOR_COLLAPSE_KEY] = patch.overrides;
     const write = writeQueue.then(async () => {
         await writeAtomic(path, `${JSON.stringify({ ...readRecord(path), ...filePatch }, null, 2)}\n`);
     });
@@ -121,15 +160,30 @@ export function flushMonitorEventsConfigWrites(): Promise<void> {
 export interface MonitorEventPresentation {
     /** The setting in force for blocks added from now on. */
     collapse: boolean;
-    /** Click decisions, keyed by monitor. Deliberately session-local: FT-03
-     *  says the last per-block decision is not remembered. */
+    /** FT-90: whether the widget is the single `Monitors (N)` line. */
+    widgetCollapsed: boolean;
+    /** Click decisions, keyed by the monitor's description. FT-90 loads these
+     *  from the preference file and writes them back, so a reload keeps the
+     *  decision; FT-03 kept them session-local because it asked for a setting,
+     *  not a memory. */
     overrides: Map<string, boolean>;
 }
 
 export function createMonitorEventPresentation(
-    config: MonitorEventsConfig
+    config: Pick<MonitorEventsConfig, "collapse"> & Partial<MonitorEventsConfig>
 ): MonitorEventPresentation {
-    return { collapse: config.collapse, overrides: new Map() };
+    return {
+        collapse: config.collapse,
+        widgetCollapsed: config.monitorsCollapsed ?? DEFAULT_MONITORS_COLLAPSED,
+        overrides: new Map(Object.entries(config.overrides ?? {})),
+    };
+}
+
+/** The override map in the shape the preference file stores. */
+export function monitorEventOverrides(
+    presentation: MonitorEventPresentation
+): Record<string, boolean> {
+    return Object.fromEntries(presentation.overrides);
 }
 
 /**
@@ -314,12 +368,32 @@ export function wrapLine(text: string, width: number): string[] {
     return out.length > 0 ? out : [""];
 }
 
+export interface MonitorEventHints {
+    collapsed: string;
+    expanded: string;
+}
+
+/** What a click does, when a click can reach the block at all. */
+export const MONITOR_EVENT_HINTS: MonitorEventHints = {
+    collapsed: "click to expand",
+    expanded: "click to collapse",
+};
+
 export interface MonitorEventLinesArgs {
     description: string;
     lines: readonly string[];
+    /** Every event seen, when `lines` is a bounded tail of them. A count that
+     *  said `lines.length` after a trim would understate the monitor. */
+    total?: number;
+    /** Cap for the whole block, header included. The widget owns the viewport,
+     *  so it has to be able to bound one block; pi does not bound a component
+     *  widget's lines for it. */
+    maxLines?: number;
     collapsed: boolean;
     width: number;
     theme: MonitorEventTheme;
+    /** What a click does here; non-clickable surfaces must not advertise one. */
+    hints?: MonitorEventHints;
 }
 
 /**
@@ -328,24 +402,44 @@ export interface MonitorEventLinesArgs {
  */
 export function renderMonitorEventLines(args: MonitorEventLinesArgs): string[] {
     const { description, lines, collapsed, width, theme } = args;
-    if (width <= 0) return [];
-    const count = lines.length === 0 ? "" : ` · ${lines.length} event${lines.length === 1 ? "" : "s"}`;
+    const total = args.total ?? lines.length;
+    const maxLines = args.maxLines ?? Number.POSITIVE_INFINITY;
+    if (width <= 0 || maxLines <= 0) return [];
+    const count = total === 0 ? "" : ` · ${total} event${total === 1 ? "" : "s"}`;
     const marker = collapsed ? "▸" : "▾";
-    const hint = collapsed ? "click to expand" : "click to collapse";
+    const hint = collapsed
+        ? (args.hints?.collapsed ?? MONITOR_EVENT_HINTS.collapsed)
+        : (args.hints?.expanded ?? MONITOR_EVENT_HINTS.expanded);
     // The monitor's own description is the title: it is the one piece of
     // context the user needs and the old generic title did not carry.
     const header = `${marker} Monitor · ${description}${count} · ${hint}`;
     const out = [theme.fg("customMessageLabel", fitLine(header, width))];
     if (collapsed) {
         const newest = lines[lines.length - 1];
-        if (newest) out.push(theme.fg("dim", fitLine(`  ${newest}`, width)));
+        if (newest && maxLines > 1) out.push(theme.fg("dim", fitLine(`  ${newest}`, width)));
         return out;
     }
+    const body: string[] = [];
     for (const line of lines) {
-        for (const part of wrapLine(line, Math.max(1, width - 2))) {
-            out.push(theme.fg("dim", `  ${part}`));
-        }
+        for (const part of wrapLine(line, Math.max(1, width - 2))) body.push(`  ${part}`);
     }
+    // An uncapped block draws every event (FT-03). A capped one keeps the
+    // newest rows — the live end is what the user is watching — and spends a
+    // row saying how many earlier rows it is not drawing, rather than
+    // truncating silently.
+    const room = maxLines - 1;
+    if (body.length > room) {
+        const kept = Math.max(0, room - 1);
+        const hidden = body.length - kept;
+        const notice = `  … ${hidden} earlier line${hidden === 1 ? "" : "s"} hidden`;
+        const tail = kept > 0 ? body.slice(body.length - kept) : [];
+        return [
+            ...out,
+            theme.fg("dim", fitLine(notice, width)),
+            ...tail.map((line) => theme.fg("dim", line)),
+        ];
+    }
+    for (const line of body) out.push(theme.fg("dim", line));
     return out;
 }
 

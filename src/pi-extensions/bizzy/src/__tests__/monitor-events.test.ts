@@ -18,6 +18,8 @@ import { registerCommands } from "../commands.ts";
 import {
     COLLAPSE_MONITOR_EVENTS_KEY,
     DEFAULT_COLLAPSE_MONITOR_EVENTS,
+    MONITOR_COLLAPSE_KEY,
+    MONITORS_COLLAPSED_KEY,
     createMonitorEventPresentation,
     flushMonitorEventsConfigWrites,
     monitorEventCollapsed,
@@ -62,10 +64,14 @@ function eventMessage(overrides: Record<string, unknown> = {}) {
 void describe("monitor events — preference file", () => {
     void it("defaults to collapsed when the file is missing or unreadable", () => {
         assert.equal(DEFAULT_COLLAPSE_MONITOR_EVENTS, true);
-        assert.deepEqual(readMonitorEventsConfig(join(dir, "absent.json")), { collapse: true });
+        assert.deepEqual(readMonitorEventsConfig(join(dir, "absent.json")), {
+            collapse: true,
+            monitorsCollapsed: true,
+            overrides: {},
+        });
         assert.deepEqual(
             readMonitorEventsConfig(tmpConfig("broken.json", "{not json")),
-            { collapse: true }
+            { collapse: true, monitorsCollapsed: true, overrides: {} }
         );
     });
 
@@ -74,7 +80,27 @@ void describe("monitor events — preference file", () => {
             "explicit.json",
             JSON.stringify({ [COLLAPSE_MONITOR_EVENTS_KEY]: false })
         );
-        assert.deepEqual(readMonitorEventsConfig(path), { collapse: false });
+        assert.deepEqual(readMonitorEventsConfig(path), {
+            collapse: false,
+            monitorsCollapsed: true,
+            overrides: {},
+        });
+    });
+
+    void it("reads the FT-90 keys and drops entries that are not booleans", () => {
+        const path = tmpConfig(
+            "ft90.json",
+            JSON.stringify({
+                [COLLAPSE_MONITOR_EVENTS_KEY]: true,
+                [MONITORS_COLLAPSED_KEY]: false,
+                [MONITOR_COLLAPSE_KEY]: { "deploy watcher": true, "bad entry": "yes", "": true },
+            })
+        );
+        assert.deepEqual(readMonitorEventsConfig(path), {
+            collapse: true,
+            monitorsCollapsed: false,
+            overrides: { "deploy watcher": true },
+        });
     });
 
     void it("ignores a non-boolean value instead of guessing", () => {
@@ -82,7 +108,11 @@ void describe("monitor events — preference file", () => {
             "stray.json",
             JSON.stringify({ [COLLAPSE_MONITOR_EVENTS_KEY]: "off" })
         );
-        assert.deepEqual(readMonitorEventsConfig(path), { collapse: true });
+        assert.deepEqual(readMonitorEventsConfig(path), {
+            collapse: true,
+            monitorsCollapsed: true,
+            overrides: {},
+        });
     });
 
     void it("writes merge-preservingly, leaving other keys alone", async () => {
@@ -95,6 +125,20 @@ void describe("monitor events — preference file", () => {
         const raw = JSON.parse(readFileSync(path, "utf8"));
         assert.equal(raw[COLLAPSE_MONITOR_EVENTS_KEY], false);
         assert.equal(raw["some-other-key"], 7);
+    });
+
+    void it("writes the FT-90 widget and per-monitor decisions", async () => {
+        const path = tmpConfig("ft90-write.json", JSON.stringify({ "some-other-key": 7 }));
+        await writeMonitorEventsConfig(
+            { monitorsCollapsed: false, overrides: { "deploy watcher": true } },
+            path
+        );
+        await flushMonitorEventsConfigWrites();
+        assert.deepEqual(JSON.parse(readFileSync(path, "utf8")), {
+            "some-other-key": 7,
+            [MONITORS_COLLAPSED_KEY]: false,
+            [MONITOR_COLLAPSE_KEY]: { "deploy watcher": true },
+        });
     });
 });
 
@@ -294,6 +338,9 @@ void describe("monitor events — /toggle-collapse-monitor-events", () => {
         const path = join(process.env.PI_CODING_AGENT_DIR, "bizzy-monitor-events.json");
         assert.deepEqual(JSON.parse(readFileSync(path, "utf8")), {
             [COLLAPSE_MONITOR_EVENTS_KEY]: false,
+            // FT-90 remembers per-monitor decisions, so the deliberate global
+            // flip clears them on disk as well as in memory.
+            [MONITOR_COLLAPSE_KEY]: {},
         });
 
         await command!.handler("toggle", ctx);
