@@ -80,7 +80,13 @@ const oneLine = (value) => String(value || '').replace(/\s+/g, ' ').trim()
 function meta(ask) {
   const origin = ask.origin || {}
   const parts = [origin.workspace_name || 'workspace']
-  if (origin.pane_id) parts.push(`pane ${origin.pane_id}`)
+  // Tab and pane go by their names when herdr could see them; the raw ids are
+  // the fallback so a line still names its place on a stock build, an old ask
+  // filed before names were collected, or a pane herdr could not resolve.
+  const tab = origin.tab_name || origin.tab_id
+  if (tab) parts.push(tab)
+  if (origin.pane_name) parts.push(origin.pane_name)
+  else if (origin.pane_id) parts.push(`pane ${origin.pane_id}`)
   parts.push(age(ask.created_at))
   // Parked on the weekly decide-or-drop list. The row is still dealt here (an
   // ask nobody can answer must not disappear), but it is not today's work and

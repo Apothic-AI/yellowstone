@@ -176,6 +176,16 @@ function Details({ ask, answered, herdrHref, topLinks, voiceDetails, onVoiceDeta
           <span className="property-label">Asked by</span>
           <span className="property-value">
             {ask.origin.agent || 'agent'}{' '}
+            {ask.origin.workspace_name && (
+              <>
+                <span className="muted">·</span> {ask.origin.workspace_name}{' '}
+              </>
+            )}
+            {(ask.origin.tab_name || ask.origin.tab_id) && (
+              <>
+                <span className="muted">·</span> {ask.origin.tab_name || ask.origin.tab_id}{' '}
+              </>
+            )}
             {herdrHref && (
               <>
                 <span className="muted">·</span>{' '}
@@ -184,7 +194,7 @@ function Details({ ask, answered, herdrHref, topLinks, voiceDetails, onVoiceDeta
                   className="mono pane-link"
                   onClick={(event) => { event.preventDefault(); openPane(herdrHref) }}
                 >
-                  {ask.origin.pane_id}
+                  {ask.origin.pane_name || ask.origin.pane_id}
                 </a>
               </>
             )}{' '}

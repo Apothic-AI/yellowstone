@@ -16,8 +16,12 @@ import { bootFixtureDaemon } from './tui-fixture.mjs'
 const cols = Number(process.argv[2] || 60)
 const rows = Number(process.argv[3] || 40)
 const expand = !process.argv.includes('--no-expand')
+// --origin='{"tab_name":...}' files the ask with that origin, for tests that
+// need the names a real paneOrigin collection would have attached.
+const originArg = process.argv.find((arg) => arg.startsWith('--origin='))
+const origin = originArg ? JSON.parse(originArg.slice('--origin='.length)) : undefined
 
-const fixture = await bootFixtureDaemon()
+const fixture = await bootFixtureDaemon(origin ? { origin } : {})
 const child = spawn('script', ['-qec', `stty cols ${cols} rows ${rows} 2>/dev/null; exec node plugin/tui.js`, '/dev/null'], {
   cwd: new URL('../..', import.meta.url).pathname,
   env: { ...fixture.env, COLUMNS: String(cols), LINES: String(rows) },

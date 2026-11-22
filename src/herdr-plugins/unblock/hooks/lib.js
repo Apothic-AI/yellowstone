@@ -52,6 +52,8 @@ export async function origin() {
     cwd: process.cwd(),
     kind: process.env.UNBLOCK_ORIGIN_KIND,
     workspace_name: extra.workspace_name,
+    tab_name: extra.tab_name,
+    pane_name: extra.pane_name,
     profiles: extra.profiles,
   }
 }

@@ -760,6 +760,10 @@ export function normalizeOrigin(raw = {}) {
     tab_id: optionalStr(raw.tab_id, 'origin.tab_id', { max: 200 }),
     workspace_id: optionalStr(raw.workspace_id, 'origin.workspace_id', { max: 200 }),
     workspace_name: optionalStr(raw.workspace_name, 'origin.workspace_name', { max: 200 }),
+    // What herdr calls things, collected by paneOrigin so the queue can label
+    // an ask with names instead of raw ids (FT-09).
+    tab_name: optionalStr(raw.tab_name, 'origin.tab_name', { max: 200 }),
+    pane_name: optionalStr(raw.pane_name, 'origin.pane_name', { max: 200 }),
     // A named herdr session is a SEPARATE server with its own state — hard
     // isolation, not a filter. The daemon is machine-global and therefore sees
     // asks from all of them, so record which one an ask came from rather than

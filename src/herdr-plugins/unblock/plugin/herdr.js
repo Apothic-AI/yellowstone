@@ -88,6 +88,22 @@ export async function listProfiles() {
 }
 
 /**
+ * The name a pane goes by, resolved once at collection so the queue can label
+ * the ask without another herdr round-trip. Order matches what a person would
+ * call the pane: the name they gave it in herdr, then the agent running in it,
+ * then whatever that agent titled its terminal. All three are optional on the
+ * wire, so an unnamed shell pane resolves to undefined and the TUI falls back
+ * to the raw pane id.
+ */
+function paneName(pane) {
+  for (const key of ['label', 'display_agent', 'agent', 'terminal_title_stripped', 'terminal_title']) {
+    const value = typeof pane?.[key] === 'string' ? pane[key].replace(/\s+/g, ' ').trim() : ''
+    if (value) return value
+  }
+  return undefined
+}
+
+/**
  * Everything the queue needs to label and filter an ask: which workspace a pane
  * lives in, and the profile tags that apply to it. A pane's own tags override
  * its workspace's, matching herdr's sidebar behaviour.
@@ -101,6 +117,7 @@ export async function paneOrigin(paneId) {
     origin.tab_id = pane.tab_id
     origin.workspace_id = pane.workspace_id
     origin.cwd = pane.foreground_cwd || pane.cwd
+    origin.pane_name = paneName(pane)
     const paneProfiles = pane.profiles ?? []
 
     const workspaces = (await call('workspace.list'))?.workspaces ?? []
@@ -111,6 +128,13 @@ export async function paneOrigin(paneId) {
     } else {
       origin.profiles = paneProfiles
     }
+
+    // The tab's label is what herdr shows in its tab bar; a build without
+    // tab.list (or an unknown tab) just leaves tab_name off, and the TUI
+    // falls back to the tab id.
+    const tabs = (await call('tab.list'))?.tabs ?? []
+    const tab = tabs.find((t) => t.tab_id === origin.tab_id)
+    if (tab) origin.tab_name = tab.label ?? (Number.isFinite(tab.number) ? `tab ${tab.number}` : undefined)
   } catch {
     // A stock build, or herdr is down. The ask still lands, just less labelled.
   }

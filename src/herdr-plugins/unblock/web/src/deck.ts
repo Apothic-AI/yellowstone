@@ -81,6 +81,8 @@ export interface Ask {
     agent?: string
     session_id?: string
     workspace_name?: string
+    tab_name?: string
+    pane_name?: string
     pane_id?: string
     tab_id?: string
     workspace_id?: string

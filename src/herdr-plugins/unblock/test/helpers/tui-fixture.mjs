@@ -26,7 +26,13 @@ export const LONG_ASK = {
   }],
 }
 
-export async function bootFixtureDaemon({ ask = LONG_ASK } = {}) {
+export async function bootFixtureDaemon({
+  ask = LONG_ASK,
+  // What the daemon would have collected from herdr (plugin/herdr.js paneOrigin).
+  // Defaults to the sparse shape an old ask or a stock build carries, so the
+  // fallback rendering is what an existing test sees.
+  origin = { agent: 'codex', workspace_name: 'wrap-test', pane_id: '1' },
+} = {}) {
   const stateDir = mkdtempSync(join(tmpdir(), 'unblock-frame-'))
   process.env.UNBLOCK_STATE_DIR = stateDir
   process.env.UNBLOCK_CONFIG_DIR = join(stateDir, 'config')
@@ -42,7 +48,7 @@ export async function bootFixtureDaemon({ ask = LONG_ASK } = {}) {
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth}` },
     body: JSON.stringify({
       ask: { tried: ['Checked the CLI and the API; neither can make this call.'], ...ask },
-      origin: { agent: 'codex', workspace_name: 'wrap-test', pane_id: '1' },
+      origin,
     }),
   })
   if (!filed.ok) throw new Error(await filed.text())
