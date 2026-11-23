@@ -6,7 +6,7 @@
 [subrepo]
 	remote = https://github.com/Apothic-AI/pi-persist
 	branch = main
-	commit = 194b7ece8bd5fb372c26c724c3dc477d4e12366f
-	parent = ec335b5cbec3830ced75a917e274b6effe4f3ff2
+	commit = 41bceef258bc24a82383ea39a60d27d0c34e247e
+	parent = 285153edb80b689879329be26d9c5504de2ba934
 	method = merge
 	cmdver = 0.4.9

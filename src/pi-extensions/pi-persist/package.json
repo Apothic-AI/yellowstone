@@ -1,6 +1,6 @@
 {
 	"name": "@apothic-ai/pi-persist",
-	"version": "0.2.0",
+	"version": "0.3.0",
 	"type": "module",
 	"description": "pi extension: a cached prompt section and a per-request trailing message that other extensions append to, plus declarative items stored on disk.",
 	"license": "MIT",

@@ -4,7 +4,16 @@ import { ensureItemsFile, itemsFilePath, loadLayeredItems, readItemsFile } from 
 import { appendTrailingMessage, type MessageContext, registerEnvMessage } from "./messages.ts";
 import { type ContributionContext, collectContributions, registerEnvContribution } from "./registry.ts";
 import { expandTemplate } from "./template.ts";
-import { isEnabled, parseToggleArgument, resetEnabled, TOGGLE_COMMAND, toggleEnabled } from "./toggle.ts";
+import {
+	isEnabled,
+	parseToggleArgument,
+	readToggleState,
+	resetGlobalDefault,
+	TOGGLE_COMMAND,
+	type ToggleResult,
+	type ToggleState,
+	toggleEnabled,
+} from "./toggle.ts";
 
 /** Prompt section name. Pi renders it as `<environment_context>…</environment_context>`. */
 export const SECTION_NAME = "environment_context";
@@ -144,6 +153,52 @@ function report(ctx: Pick<ExtensionContext, "hasUI" | "ui">, message: string, ty
 }
 
 /**
+ * The session this context belongs to, or `undefined` for a host that has none.
+ *
+ * The session id is what keys the on/off switch: the slash command changes this session only. A
+ * host that reports no id (the CLI, an older pi) falls into a single anonymous bucket, which is
+ * still session-shaped — it follows the global default and is forgotten at restart.
+ */
+function sessionIdOf(ctx: ExtensionContext): string | undefined {
+	const manager = ctx.sessionManager as { getSessionId?: () => string } | undefined;
+	return manager?.getSessionId?.();
+}
+
+/**
+ * The status line names both states on purpose.
+ *
+ * "off" on its own cannot say whether the whole machine is off or only this session, and that
+ * distinction is the reason the switch is session-scoped at all.
+ */
+function describeToggleState(state: ToggleState): string {
+	if (!state.globalEnabled) {
+		return "is off — piPersist.enabled is false in the global settings, so no session can turn it on";
+	}
+	if (!state.enabled) {
+		return "is off for this session (global: on) — nothing is injected here. Run /pi-persist-toggle on to turn it back on here.";
+	}
+	return "is on (global: on)";
+}
+
+/** What the toggle reports back: the resulting state, and why nothing happened when nothing did. */
+function describeToggleResult(result: ToggleResult): string {
+	if (result.refused === "global-disabled") {
+		return "cannot turn on — piPersist.enabled is false in the global settings, and a session cannot override the operator's global off";
+	}
+	if (!result.globalEnabled) {
+		return "is off — piPersist.enabled is false in the global settings, so no session can turn it on";
+	}
+	if (!result.enabled) {
+		return result.changed
+			? "is off for this session (global: on) — nothing is injected here; other sessions are unchanged"
+			: "is already off for this session (global: on)";
+	}
+	return result.changed
+		? "is on for this session (global: on) — the section and the trailing message are injected again"
+		: "is already on (global: on)";
+}
+
+/**
  * Rebuild the declarative set when the trust answer or the working directory changes.
  *
  * Pi resolves project trust *after* extensions load, so this cannot happen in the factory: the
@@ -175,9 +230,10 @@ function syncDeclarativeItems(ctx: Pick<ExtensionContext, "cwd" | "isProjectTrus
 }
 
 export default function envContext(pi: ExtensionAPI) {
-	// The switch lives in pi's settings file. Re-read it on every load, so a `/reload` picks up an
-	// edit — or the state the last session left behind.
-	resetEnabled();
+	// The *global default* is re-read on every load, so a `/reload` picks up an edit of pi's settings
+	// file. The session's own state is deliberately left alone here: a reload keeps the same process
+	// and the same session id, so the switch stays where the operator put it in this session.
+	resetGlobalDefault();
 	// Seed the preset on a first run. `/reload` re-runs this and picks up edits.
 	ensureItemsFile();
 	// Drop the previous run's items, then register the global layer straight away: it is user-owned
@@ -189,9 +245,10 @@ export default function envContext(pi: ExtensionAPI) {
 
 	pi.on("session_start", (_event, ctx) => {
 		syncDeclarativeItems(ctx);
-		if (!isEnabled()) {
+		const state = readToggleState(sessionIdOf(ctx));
+		if (!state.enabled) {
 			// Say so once per session: a missing clock is otherwise indistinguishable from a bug.
-			report(ctx, "is off — no context is injected. Run /pi-persist-toggle to turn it back on.", "info");
+			report(ctx, describeToggleState(state), "info");
 		}
 	});
 
@@ -199,7 +256,7 @@ export default function envContext(pi: ExtensionAPI) {
 		// Also here, not only on session_start: the section is built from the registry, so the
 		// items have to be in place before the first render even if the event order ever changes.
 		syncDeclarativeItems(ctx);
-		if (!isEnabled()) {
+		if (!isEnabled(sessionIdOf(ctx))) {
 			// Off: the extension contributes nothing, so there is no section to render. Removing the
 			// key rather than leaving it empty also drops a section a previous run left behind.
 			delete event.systemPromptOptions.sections[SECTION_NAME];
@@ -220,39 +277,28 @@ export default function envContext(pi: ExtensionAPI) {
 	// Per request, not per run: a tool-using run issues several requests, and a trailing message
 	// injected in `before_agent_start` would be missing from all but the first.
 	pi.on("before_provider_request", (event, ctx) => {
-		if (!isEnabled()) return;
+		if (!isEnabled(sessionIdOf(ctx))) return;
 		const options = { activeTools: pi.getActiveTools(), cwd: ctx.cwd, mode: ctx.mode };
 		return appendTrailingMessage(event.payload, options, ctx.model?.provider);
 	});
 
 	pi.registerCommand(TOGGLE_COMMAND, {
-		description: "Turn pi-persist context injection on or off",
+		description: "Turn pi-persist context injection on or off for this session",
 		handler: async (args, ctx) => {
 			const requested = parseToggleArgument(args);
 			if (!requested) {
 				report(ctx, `usage: /${TOGGLE_COMMAND} [on|off|status]`, "warning");
 				return;
 			}
+			const sessionId = sessionIdOf(ctx);
 			if (requested === "status") {
-				report(ctx, `is ${isEnabled() ? "on" : "off"}`, "info");
+				report(ctx, describeToggleState(readToggleState(sessionId)), "info");
 				return;
 			}
-			const result = await toggleEnabled(requested === "toggle" ? undefined : requested === "on");
-			if (!result.persisted) {
-				report(
-					ctx,
-					`is ${result.enabled ? "on" : "off"} for this session only — not saved: ${result.error ?? "unknown error"}`,
-					"warning",
-				);
-				return;
-			}
-			report(
-				ctx,
-				result.enabled
-					? "is on — the section and the trailing message are injected again"
-					: "is off — nothing is injected until it is turned back on",
-				"info",
-			);
+			// The state is session-local and nothing is written: piPersist.enabled is the operator's
+			// global default, and this command is not allowed to change it for every other session.
+			const result = toggleEnabled({ sessionId, target: requested === "toggle" ? undefined : requested === "on" });
+			report(ctx, describeToggleResult(result), result.refused ? "warning" : "info");
 		},
 	});
 }
@@ -302,5 +348,15 @@ export {
 	setPersistEnabled,
 	settingsFilePath,
 } from "./settings.ts";
-export type { ToggleArgument, ToggleResult } from "./toggle.ts";
-export { isEnabled, parseToggleArgument, resetEnabled, TOGGLE_COMMAND, toggleEnabled } from "./toggle.ts";
+export type { ToggleArgument, ToggleRequest, ToggleResult, ToggleState } from "./toggle.ts";
+export {
+	forgetSession,
+	globalEnabled,
+	isEnabled,
+	parseToggleArgument,
+	readToggleState,
+	resetEnabled,
+	resetGlobalDefault,
+	TOGGLE_COMMAND,
+	toggleEnabled,
+} from "./toggle.ts";

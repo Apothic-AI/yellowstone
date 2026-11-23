@@ -174,28 +174,45 @@ back. `pi-persist preset` writes it again on demand.
 
 ## Turning it off
 
-`/pi-persist-toggle` switches the whole extension on and off. Off means nothing is injected: no
-`<environment_context>` section, no trailing `<pi_context>` message, and no `{{exec:…}}` command
-running on the request path. The items stay in the file, so turning it back on restores exactly
-what was there before.
+`/pi-persist-toggle` switches the whole extension on and off **for the session it is typed in**.
+Off means nothing is injected: no `<environment_context>` section, no trailing `<pi_context>`
+message, and no `{{exec:…}}` command running on the request path. The items stay in the file, so
+turning it back on restores exactly what was there before.
 
 ```console
 $ /pi-persist-toggle
-pi-persist: is off — nothing is injected until it is turned back on
+pi-persist: is off for this session (global: on) — nothing is injected here; other sessions are unchanged
 
 $ /pi-persist-toggle on
-pi-persist: is on — the section and the trailing message are injected again
+pi-persist: is on for this session (global: on) — the section and the trailing message are injected again
 ```
 
-`/pi-persist-toggle status` reports the state without changing it, and `on` / `off` set it
-explicitly instead of flipping it.
+`/pi-persist-toggle status` reports the session's state and the global default side by side, and
+`on` / `off` set the session's state explicitly instead of flipping it:
 
-The switch is written to `piPersist.enabled` in `~/.pi/agent/settings.json`, so it survives a
-`/reload` and the next session. It is global: a project cannot turn the operator's context on or
-off. A settings file that cannot be written — one that is locked, or one that is not valid JSON —
-leaves the switch on for the session only, and says so.
+```console
+$ /pi-persist-toggle status
+pi-persist: is off for this session (global: on) — nothing is injected here. Run /pi-persist-toggle on to turn it back on here.
+```
 
-`pi-persist list` prints the state as well, so a missing clock is easy to explain.
+Two things are called "the switch", and they have different owners:
+
+| | Where | Owner | Lifetime |
+| --- | --- | --- | --- |
+| The global default | `piPersist.enabled` in `~/.pi/agent/settings.json` | the operator | on disk, until edited |
+| This session's state | memory, keyed by session id | the session | the process, kept across `/reload` |
+
+- The slash command **never writes** `piPersist.enabled`. Turning it off in one lane cannot turn
+  every other lane off.
+- `/reload` keeps the session's state: same process, same session id. A **process restart** resets
+  it to the global default, because the state is memory.
+- Attenuation: a session may turn itself **off** while the global default is on, and may **not**
+  turn itself on while the global default is off. Turning it on from a global off is refused with a
+  reason rather than obeyed and silently lost.
+- The global default belongs to the operator: edit `settings.json` (or call `setPersistEnabled`) to
+  change it for every session. A hand edit takes effect on the next `/reload` or session start.
+
+`pi-persist list` prints the global default as well, so a missing clock is easy to explain.
 
 ---
 
@@ -372,8 +389,8 @@ in bash — reporting zsh would be wrong in a way the model cannot detect.
 | Declarative items | `~/.pi/agent/pi-persist.json` | on disk |
 | Project items | `<cwd>/.pi/pi-persist.json` | on disk, read only when the project is trusted |
 | Injected output | never written — built per request | one request |
-| Settings (`piPersist.enabled`) | `~/.pi/agent/settings.json` | on disk |
-| The on/off switch in this session | a slot on `globalThis` | the pi process |
+| Settings (`piPersist.enabled`) — the global default | `~/.pi/agent/settings.json` | on disk, until the operator edits it |
+| This session's switch | the off-marks of session ids, in a `Set` on `globalThis` | the pi process, kept across `/reload` |
 
 Nothing accumulates in the session or transcript: contributions are registered once (the global
 items at load, the merged set at session start) and rendered per request, never persisted as messages
@@ -402,16 +419,19 @@ The extension adopts a pre-existing registry when it loads and reads it at rende
 does not matter. It declines to write into a value that occupies the symbol with a different
 `protocol` or `version`.
 
-The on/off switch lives on `globalThis` for the same reason, under
-`Symbol.for("pi-persist/enabled/v1")`: a session can load this package twice, and two copies that
-disagreed about whether the extension is on would inject half of what was asked for.
+The session's on/off state lives on `globalThis` for the same reason, under
+`Symbol.for("pi-persist/toggle/v2")`: the set of session ids that turned themselves off. A session
+can load this package twice, and two copies that disagreed about whether the extension is on in that
+session would inject half of what was asked for. The symbol moved from `enabled/v1` to `toggle/v2`
+with the payload: the state is no longer one boolean for the whole process, and an older copy that
+still keeps a process-wide boolean must not be mistaken for this one.
 
 ---
 
 ## Develop
 
 ```sh
-bun test          # 126 tests
+bun test          # 141 tests
 npx tsc --noEmit
 biome check .
 ```
