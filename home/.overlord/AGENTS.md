@@ -82,8 +82,58 @@ These stand even when the space half is missing.
   that forbids verification is the one shape no operator message takes; say why you are asking.
 
 ## Where things live
+- **`/reload` re-imports extension code (verified 2026-11-13).** `ResourceLoader.reload()` calls
+  `clearExtensionCache()`, bumping the extension-cache generation, so every cached factory is
+  discarded and each extension module is re-imported from disk (`jiti.import(path, {moduleCache:
+  false})`). A changed extension therefore reaches a running lane on reload — do not order relaunches
+  to pick up extension bytes. A fresh process is required only for identity, the environment, the
+  package set, a `PI_MODE`/`PI_PROFILE` value, or a changed **mode file**. Evidence:
+  `dist/core/resource-loader.js:370-374`, `dist/core/extensions/loader.js:93-97,460-489`.
 
 - `~/AGENTS.md` applies here too; its room rules and room-creation gate stand unchanged.
+- **Fleet state is read with `behold roster`** — read-only, derive-on-demand, one process. Use it
+  instead of hand-joining `herdr agent list` against session files when you need lane status, model,
+  context usage or identity in one view. The **`behold-roster`** skill carries the invocation and, as
+  importantly, the vocabulary for fields it refuses to guess (`unknown`, `divergent`, stale) — a
+  missing measurement must not be reported as a zero. `behold roster --markdown` for the fleet,
+  `--lane`, `--filter`, `--sort`, `--full` to narrow it.
+- **Keeping lanes up is a timer, not a job of this lane** (changed 2026-11-15). `lane-supervise.timer`
+  runs every minute and resumes any **leader** lane whose process disappeared, so the board no longer
+  implies a restart round. Discovery is by role record (`~/.local/state/pil/roles/<lane>.env` with
+  `PI_MODE=leader`), which is why a new space's leader is covered without editing the unit, and why a
+  lane is discoverable **while it is down** — the only moment it matters. A lane is supervised only
+  once *observed* alive (or added explicitly), so retired spaces with stale role records
+  (`herdr-leader`, `mycord-leader`, `palette-probe`) are not resurrected.
+  - Guards, inherited from the watchdog this replaced: never resume over a live lane (two writers on
+    one session is a second outage), never start fresh (a blank session is an outage with a healthy
+    pid), record the session **UUID** not the path (instance sweeps delete paths), backoff 60s
+    doubling to 30 min so an unstartable bundle cannot become a loop, and a shared flock with the old
+    watchdog path.
+  - It **tells the resumed lane** it was resumed by a machine and when, so the lane can reason about
+    the gap instead of continuing with a hole in its memory. Do not suppress that notice.
+  - Keep a lane down deliberately with `lane-supervise --exclude <lane>` — supervision resumes what it
+    supervises, so a lane you closed on purpose will come back otherwise. Current holds:
+    `gemini-accts-leader` (w2 workspace hold) and `yellowstone-leader` (human gate).
+  - `lane-supervise --list` shows discovered lanes, their pane, whether they are live, their session
+    id and any backoff; `journalctl --user -u lane-supervise` shows the passes. State lives in
+    `~/.local/state/pil/supervise/`.
+  - **Pause it before restarting panes by hand.** `keepalive-hold start --reason "<what>"` before,
+    `keepalive-hold end` after — or `keepalive-hold run --reason "<what>" -- <command>` for a single
+    command. **Name the lane** (`--lane <lane>`, or `set-lane <lane>` per target): a named hold pauses
+    supervision for that lane only, so a real death elsewhere is still caught; an unnamed hold pauses
+    everything. Otherwise the timer can resume a lane in the window between your stop and your start,
+    which is two writers on one session: the exact failure the "never resume over a live lane" rule
+    exists to prevent. The pane-restarting helpers already do this (`restart-fleet`,
+    `relaunch-lane.sh`, `migrate-lane.sh`, `migrate-unnamed-lane.sh`, `relaunch-lane-monorepo.sh`,
+    `self-restart.sh`), so an ad-hoc sequence is the only case left to remember.
+    State lives in `~/.local/state/pil/supervise/_hold` (`0` or absent = running); the hold records
+    the owner pid, so a crashed helper auto-releases and the journal says so; `keepalive-hold status`
+    reports PAUSED with the reason and age. Never leave a hold set as a way to stop a lane coming
+    back — use `--exclude` for that, which is honest and permanent, instead of a pause that expires.
+  - What it does **not** do: workers (add one with `--add`), lanes with no recorded session id
+    (`comms-leader`, `starla-leader`, `subtoken-leader` report "needs a human"), or anything under
+    an exclude. The retired `overlord-watchdog.timer/.service` is gone; `overlord-watchdog.sh`
+    remains on disk for its `--record` behaviour and as the documented ancestor.
 - Procedure is in the **`overlord-operations`** skill: leader board, watchers and re-arming,
   taking control of leaders, handled-versus-escalated, the portfolio and derived stores,
   joining a space to the beads database, comms and outbound channels, topology, directing
