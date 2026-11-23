@@ -9,10 +9,16 @@
  * turn every other lane off:
  *
  * - `piPersist.enabled` in pi's own global settings file is the **operator-global default and
- *   permission**. It is global on purpose: a project must not be able to turn the operator's
- *   context on or off. Nothing in this file writes it — not the slash command, not an event hook.
- *   The explicit operator-level writer is `setPersistEnabled` in `settings.ts`, which the CLI (or
- *   a hand edit of the file) uses.
+ *   authority ceiling**. It decides whether context injection is allowed at all; a project must
+ *   not be able to raise it, which is why it is global and why nothing in this file writes it —
+ *   not the slash command, not an event hook. The explicit operator-level writer is
+ *   `setPersistEnabled` in `settings.ts`, which the CLI (or a hand edit of the file) uses.
+ *
+ *   Attenuation is separate from that authority and is voluntary per session: a session may turn
+ *   itself OFF while the global default is ON (it declines context it was allowed), but it can
+ *   never turn itself ON while the global default is OFF (it cannot grant itself what the
+ *   operator withheld). So the global value is a default and a ceiling, not a permission a
+ *   session can hand itself.
  * - This session's state is **session-local**: the set of sessions that turned themselves off,
  *   keyed by the session id `ctx.sessionManager.getSessionId()` reports. `/reload` keeps it,
  *   because the process and the session id are unchanged. A process restart drops it, because the
