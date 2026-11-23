@@ -82,6 +82,7 @@ export const harmonyStripCounters = {
   duplicate: 0,
   stale: 0,
   fragment: 0,
+  aborted_edit_args: 0,
 };
 
 export function resetHarmonyStripCounters(): void {
@@ -91,6 +92,7 @@ export function resetHarmonyStripCounters(): void {
   harmonyStripCounters.duplicate = 0;
   harmonyStripCounters.stale = 0;
   harmonyStripCounters.fragment = 0;
+  harmonyStripCounters.aborted_edit_args = 0;
 }
 
 function record(result: HarmonyStripResult, debug: boolean): void {
@@ -100,12 +102,14 @@ function record(result: HarmonyStripResult, debug: boolean): void {
   harmonyStripCounters.duplicate += result.counts.duplicate;
   harmonyStripCounters.stale += result.counts.stale;
   harmonyStripCounters.fragment += result.counts.fragment;
+  harmonyStripCounters.aborted_edit_args += result.counts.aborted_edit_args;
   if (debug) {
     const tools = result.removed.map((leak) => leak.tool ?? "?").join(",");
     hostProcess().stderr?.write(
       `[harmony] removed=${result.removed.length} chars=${result.removedChars} ` +
         `duplicate=${result.counts.duplicate} stale=${result.counts.stale} ` +
-        `fragment=${result.counts.fragment} tools=${tools}\n`,
+        `fragment=${result.counts.fragment} ` +
+        `aborted_edit_args=${result.counts.aborted_edit_args} tools=${tools}\n`,
     );
   }
 }
@@ -128,7 +132,8 @@ export function countersLine(): string {
   const c = harmonyStripCounters;
   return (
     `harmony stripper: strips=${c.messages} blocks=${c.blocks} chars=${c.chars} ` +
-    `duplicate=${c.duplicate} stale=${c.stale} fragment=${c.fragment}`
+    `duplicate=${c.duplicate} stale=${c.stale} fragment=${c.fragment} ` +
+    `aborted_edit_args=${c.aborted_edit_args}`
   );
 }
 
@@ -148,9 +153,14 @@ export default function (host: HarmonyHost): void {
   });
 
   host.on("message_end", (event) => {
-    const replacement = stripAssistantMessage(event.message, debug);
-    if (!replacement) return;
-    return { message: replacement };
+    if (!event.message || typeof event.message !== "object") return;
+    const message = event.message as AssistantMessageLike;
+    const result = stripHarmonyToolCalls(message, {
+      aborted: message.stopReason === "aborted",
+    });
+    if (!result.changed) return;
+    record(result, debug);
+    return { message: result.message };
   });
 
   if (env.PI_HARMONY_HISTORY === "off") return;

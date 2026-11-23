@@ -38,7 +38,7 @@ export interface AssistantMessageLike {
   [key: string]: unknown;
 }
 
-export type HarmonyLeakKind = "duplicate" | "stale" | "fragment";
+export type HarmonyLeakKind = "duplicate" | "stale" | "fragment" | "aborted_edit_args";
 
 export interface HarmonyLeak {
   /** Index of the offending text block in `message.content`. */
@@ -248,17 +248,41 @@ export function classifyHarmonyBlock(
   return { kind: "stale", tool };
 }
 
-/** Drop every text block in an assistant message that is a leaked call. Non-assistant messages,
- *  and any block the classifier will not commit to, are returned untouched. */
-export function stripHarmonyToolCalls(message: AssistantMessageLike): HarmonyStripResult {
-  const empty: Record<HarmonyLeakKind, number> = { duplicate: 0, stale: 0, fragment: 0 };
+/** Drop text that is an interrupted edit-argument JSON prefix. This deliberately recognizes only
+ *  the observed path-then-edits-array shape; complete JSON and unrelated JSON are not candidates. */
+export function isAbortedEditArgsPrefix(text: string): boolean {
+  try {
+    JSON.parse(text);
+    return false;
+  } catch {
+    return /^\s*\{\s*"path"\s*:\s*"(?:\\.|[^"\\])*"\s*,\s*"edits"\s*:\s*\[/.test(text);
+  }
+}
+
+/** Drop every text block in an assistant message that is a leaked call. `aborted` additionally
+ *  enables the narrowly-scoped edit-argument prefix cleanup; history repair never enables it. */
+export function stripHarmonyToolCalls(
+  message: AssistantMessageLike,
+  options: { aborted?: boolean } = {},
+): HarmonyStripResult {
+  const empty: Record<HarmonyLeakKind, number> = {
+    duplicate: 0,
+    stale: 0,
+    fragment: 0,
+    aborted_edit_args: 0,
+  };
   if (message.role !== "assistant" || !Array.isArray(message.content)) {
     return { changed: false, message, removed: [], removedChars: 0, counts: empty };
   }
 
   const natives = nativeCalls(message);
   const removed: HarmonyLeak[] = [];
-  const counts: Record<HarmonyLeakKind, number> = { duplicate: 0, stale: 0, fragment: 0 };
+  const counts: Record<HarmonyLeakKind, number> = {
+    duplicate: 0,
+    stale: 0,
+    fragment: 0,
+    aborted_edit_args: 0,
+  };
   let removedChars = 0;
   const content: unknown[] = [];
 
@@ -271,7 +295,10 @@ export function stripHarmonyToolCalls(message: AssistantMessageLike): HarmonyStr
       content.push(block);
       return;
     }
-    const verdict = classifyHarmonyBlock(text, natives);
+    const abortedEditArgs = options.aborted === true && isAbortedEditArgsPrefix(text);
+    const verdict = abortedEditArgs
+      ? { kind: "aborted_edit_args" as const, tool: null }
+      : classifyHarmonyBlock(text, natives);
     if (!verdict) {
       content.push(block);
       return;

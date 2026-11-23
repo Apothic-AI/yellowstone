@@ -1,6 +1,8 @@
 /**
  * FT-92 — leaked harmony tool-call text: classifier, stripper, and hook wiring.
  *
+ * The aborted edit-argument recurrence is based on the prefix supplied by SI (`{"path":...,"edits":[...`);
+ * the exact session entry has not been independently located, so these tests use synthetic bytes.
  * Every fixture below except the synthetic large one is copied verbatim from the session record
  * where the defect was found (yellowstone-leader, 2026-11-20, `gpt-6.2-sol` band). The large
  * fixture is modelled on record line 12216, whose single text block held 99,395 characters of a
@@ -18,6 +20,7 @@ import assert from "node:assert/strict";
 import {
   MAX_RESIDUE,
   classifyHarmonyBlock,
+  isAbortedEditArgsPrefix,
   jsonObjectSpans,
   residualLength,
   stripHarmonyToolCalls,
@@ -229,6 +232,49 @@ void test("message_end returns a replacement with the leak gone", async () => {
   assert.equal(harmonyStripCounters.blocks, 1);
   assert.equal(harmonyStripCounters.duplicate, 1);
   assert.equal(harmonyStripCounters.chars, FIXTURE_12236.length);
+});
+
+void test("aborted message_end removes only a partial edit-argument JSON prefix", async () => {
+  resetHarmonyStripCounters();
+  const { pi, fire } = host();
+  harmonyDuplicates(pi as never);
+  const partial = '{"path":"/tmp/file.ts","edits":[{"oldText":"before","newText":"after"}';
+
+  const out = await fire("message_end", {
+    message: { ...message([text(partial)]), stopReason: "aborted" },
+  });
+
+  assert.deepEqual(out?.message?.content, []);
+  assert.equal(harmonyStripCounters.aborted_edit_args, 1);
+  assert.equal(harmonyStripCounters.duplicate, 0);
+  assert.equal(harmonyStripCounters.stale, 0);
+  assert.equal(harmonyStripCounters.fragment, 0);
+});
+
+void test("non-aborted message_end retains the same partial edit-argument JSON", async () => {
+  resetHarmonyStripCounters();
+  const { pi, fire } = host();
+  harmonyDuplicates(pi as never);
+  const partial = '{"path":"/tmp/file.ts","edits":[{"oldText":"before","newText":"after"}';
+  const candidate = message([text(partial)]);
+
+  const out = await fire("message_end", {
+    message: { ...candidate, stopReason: "stop" },
+    // The reason belongs to the assistant message; an event-level lookalike must not activate it.
+    stopReason: "aborted",
+  });
+
+  assert.equal(out, undefined);
+  assert.equal(harmonyStripCounters.aborted_edit_args, 0);
+  assert.equal((candidate.content[0] as { text: string }).text, partial);
+});
+
+void test("aborted-only prefix classifier retains complete and unrelated plain JSON prose", () => {
+  const complete = '{"path":"/tmp/file.ts","edits":[{"oldText":"before","newText":"after"}]}';
+  const unrelated = '{"operation":"edit","path":"/tmp/file.ts","changes":[]}';
+
+  assert.equal(isAbortedEditArgsPrefix(complete), false);
+  assert.equal(isAbortedEditArgsPrefix(unrelated), false);
 });
 
 void test("message_end stays silent when the message is clean", async () => {
