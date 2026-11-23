@@ -24,7 +24,13 @@ import * as path from "node:path";
 import { homedir } from "node:os";
 import { createHash, randomUUID } from "node:crypto";
 
-/** Longest message accepted. Longer text is truncated with a marker, not rejected. */
+/**
+ * Longest message accepted when the operator turns truncation on.
+ *
+ * Truncation is **off** unless `maxMessageChars` in `config.json` says
+ * otherwise, so this is the historical default and the value to copy when
+ * migrating a config — not a limit that applies on its own.
+ */
 export const MAX_MESSAGE_CHARS = 4000;
 
 /** Delivered messages kept per agent for reply_all lookup, oldest pruned first. */
@@ -196,11 +202,24 @@ export function slugify(value: string): string {
   return slug.length > 0 ? slug : "agent";
 }
 
-/** Replace control characters so a message cannot drive the receiving terminal. */
-export function sanitize(text: string): string {
+/**
+ * Replace control characters so a message cannot drive the receiving terminal.
+ *
+ * Sanitisation is unconditional: it runs whether or not truncation is enabled,
+ * because the control characters are the injection risk and the length is not.
+ *
+ * `maxChars` is the operator's truncation threshold. A positive integer cuts the
+ * cleaned text at that many characters and appends the marker; `null` — the
+ * default, and what a disabled setting resolves to — keeps the whole message.
+ * Disabling truncation therefore means the full text is stored and delivered,
+ * never that the cleaning is skipped.
+ */
+export function sanitize(text: string, maxChars: number | null = null): string {
   const cleaned = text.replace(/\r\n/g, "\n").replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "");
-  if (cleaned.length <= MAX_MESSAGE_CHARS) return cleaned;
-  return `${cleaned.slice(0, MAX_MESSAGE_CHARS)}\n… [truncated ${cleaned.length - MAX_MESSAGE_CHARS} chars]`;
+  if (maxChars == null || !Number.isFinite(maxChars)) return cleaned;
+  const limit = Math.floor(maxChars);
+  if (limit <= 0 || cleaned.length <= limit) return cleaned;
+  return `${cleaned.slice(0, limit)}\n… [truncated ${cleaned.length - limit} chars]`;
 }
 
 export function isAlive(pid: number): boolean {

@@ -330,6 +330,7 @@ the room instead, so the answer lands in the history.
 {
   "autoJoin": true,
   "maxSendsPerSession": null,
+  "maxMessageChars": null,
   "dmDelivery": "steer",
   "roomDelivery": "followUp",
   "pollMs": 2000,
@@ -342,6 +343,7 @@ the room instead, so the answer lands in the history.
 |---|---|---|
 | `autoJoin` | `true` | Register presence on session start |
 | `maxSendsPerSession` | `null` | **Unbounded.** Set a positive number to cap outbound messages per session |
+| `maxMessageChars` | `null` | **No truncation.** A positive integer cuts every outbound body at that many characters; `0` and `-1` also mean disabled. See [Message truncation](#message-truncation) |
 | `dmDelivery` | `"steer"` | A DM interrupts the receiver now |
 | `roomDelivery` | `"followUp"` | A room post is delivered when the receiver is idle |
 | `pollMs` | `2000` | Inbox fallback poll, for filesystems where `watch` is unreliable |
@@ -351,7 +353,38 @@ the room instead, so the answer lands in the history.
 There is no summary mode: every queued message is handed over in full. A digest
 would have to archive a body nothing can fetch back — `rooms_read` covers rooms
 only, and there is no tool that reads a direct message — so bounding is the only
-mechanism here, and the age prefix is the only compression.
+delivery-time mechanism here, and the age prefix the only delivery-time
+compression. A truncation threshold, below, cuts on the way in instead.
+
+### Message truncation
+
+Message bodies are **not truncated by default**. `maxMessageChars: null` — and
+`0` and `-1`, which are the explicit spellings of "disabled" — store and deliver
+the whole text. Set a positive integer to cut every outbound body at that many
+characters, keeping the marker the hard-coded limit used to append:
+
+```text
+… [truncated 4880 chars]
+```
+
+```json
+{ "maxMessageChars": 4000 }
+```
+
+That reproduces the old behaviour, now opt-in rather than hard-coded. A value
+that is not a positive integer — missing, `0`, `-1`, a string, or junk out of a
+malformed file — means disabled, so an existing config keeps working and a
+typo cannot silently start cutting messages.
+
+The threshold applies to `rooms_dm`, `rooms_post` and `rooms_reply_all` alike:
+all three write their body through the same `sanitize()` call, so no send path
+escapes it.
+
+Truncation and sanitisation are separate settings. Control characters
+(`\u0000`–`\u001f`, `\u007f`) are stripped unconditionally, whether or not a
+threshold is set, and the threshold counts characters *after* that stripping.
+Disabling truncation must never be a way to put an escape sequence into another
+agent's terminal.
 
 ### Message presentation
 

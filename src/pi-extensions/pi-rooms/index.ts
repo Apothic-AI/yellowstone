@@ -883,7 +883,7 @@ export default function (pi: ExtensionAPI): void {
       if (recipients.length === 0) return fail("No valid recipient names given.");
       const over = spendBudget(active);
       if (over != null) return fail(over);
-      const body = sanitize(params.message);
+      const body = sanitize(params.message, active.config.maxMessageChars);
       const message: Delivery = {
         id: randomUUID(),
         from: active.name,
@@ -937,7 +937,7 @@ export default function (pi: ExtensionAPI): void {
       }
       const over = spendBudget(active);
       if (over != null) return fail(over);
-      const body = sanitize(params.message);
+      const body = sanitize(params.message, active.config.maxMessageChars);
       // The sender is not in `to`, so a reply-all that used `to` alone would silently
       // leave out the one agent who asked. Both sets minus yourself is the answer set.
       const recipients = uniqueMembers([original.from, ...original.to]).filter(
@@ -1123,7 +1123,7 @@ export default function (pi: ExtensionAPI): void {
       }
       const over = spendBudget(active);
       if (over != null) return fail(over);
-      const body = sanitize(params.message);
+      const body = sanitize(params.message, active.config.maxMessageChars);
       const recipients = room.members.filter((m) => m !== active.name);
       const seq = appendPost(active.paths, name, {
         from: active.name,

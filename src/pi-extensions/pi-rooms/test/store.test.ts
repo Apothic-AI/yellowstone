@@ -71,11 +71,27 @@ test("slugify collapses punctuation", () => {
   assert.equal(slugify("!!!"), "agent");
 });
 
-test("sanitize strips control characters and caps length", () => {
+test("sanitize strips control characters and truncates nothing by default", () => {
   assert.equal(sanitize("a\u0000b\u001bc"), "abc");
   const long = sanitize("x".repeat(5000));
-  assert.ok(long.length < 5000 + 200);
-  assert.match(long, /truncated/);
+  assert.equal(long.length, 5000, "no threshold means the whole message is kept");
+  assert.doesNotMatch(long, /truncated/);
+});
+
+test("sanitize truncates at a positive threshold and appends the marker", () => {
+  assert.equal(sanitize("y".repeat(50), 10), `${"y".repeat(10)}\n… [truncated 40 chars]`);
+  assert.equal(sanitize("short", 10), "short", "a body under the threshold is untouched");
+  // The threshold counts cleaned characters, so control characters cannot spend
+  // budget on characters that are stripped a line earlier.
+  assert.equal(sanitize("\u0000a".repeat(5), 3), `aaa\n… [truncated 2 chars]`);
+});
+
+test("sanitize with 0 or -1 stores the whole message and still strips control characters", () => {
+  for (const disabled of [0, -1]) {
+    const out = sanitize(`${"z".repeat(4500)}\u0000`, disabled);
+    assert.equal(out.length, 4500, `threshold ${disabled} keeps the whole message`);
+    assert.ok(!out.includes("\u0000"), `threshold ${disabled} still sanitises`);
+  }
 });
 
 test("defaultName prefers the operator's name, else is stable per directory", () => {

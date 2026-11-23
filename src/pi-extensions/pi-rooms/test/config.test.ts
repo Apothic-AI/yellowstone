@@ -54,6 +54,44 @@ test("zero, negative, null and junk all mean unbounded", () => {
   }
 });
 
+test("truncation is off by default, with or without a config file", () => {
+  const paths = tempPaths();
+  assert.equal(loadConfig(paths).maxMessageChars, null);
+  write(paths, {});
+  assert.equal(loadConfig(paths).maxMessageChars, null);
+});
+
+test("a positive truncation threshold is honoured", () => {
+  const paths = tempPaths();
+  write(paths, { maxMessageChars: 4000 });
+  assert.equal(loadConfig(paths).maxMessageChars, 4000);
+});
+
+test("0, -1 and junk all mean truncation is disabled", () => {
+  const paths = tempPaths();
+  for (const value of [0, -1, 0.5, null, "4000", {}, NaN, true]) {
+    write(paths, { maxMessageChars: value });
+    assert.equal(
+      loadConfig(paths).maxMessageChars,
+      null,
+      `${JSON.stringify(value)} is disabled`,
+    );
+  }
+});
+
+test("the truncation threshold and the send cap are independent", () => {
+  const paths = tempPaths();
+  write(paths, { maxMessageChars: 500 });
+  const truncOnly = loadConfig(paths);
+  assert.equal(truncOnly.maxMessageChars, 500);
+  assert.equal(truncOnly.maxSendsPerSession, null, "setting a threshold does not cap sends");
+
+  write(paths, { maxSendsPerSession: 3 });
+  const capOnly = loadConfig(paths);
+  assert.equal(capOnly.maxSendsPerSession, 3);
+  assert.equal(capOnly.maxMessageChars, null, "setting a cap does not start truncating");
+});
+
 test("delivery modes default to steer for DMs and followUp for rooms", () => {
   const paths = tempPaths();
   const config = loadConfig(paths);

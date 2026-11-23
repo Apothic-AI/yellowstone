@@ -24,6 +24,16 @@ export interface RoomsConfig {
    * edit. Set it per fleet, not per agent.
    */
   maxSendsPerSession: number | null;
+  /**
+   * Longest message stored and delivered, in characters.
+   *
+   * `null` — the default — disables truncation: the whole message is kept.
+   * A positive integer truncates at that many characters with the existing
+   * marker. `0` and `-1` both mean disabled, as does any value that is not a
+   * positive integer, so an existing config file keeps its current behaviour
+   * and a broken one cannot silently start cutting messages.
+   */
+  maxMessageChars: number | null;
   /** How a direct message interrupts the receiver. */
   dmDelivery: DeliveryMode;
   /** How a room post interrupts the receiver. */
@@ -48,6 +58,7 @@ export interface RoomsConfig {
 export const DEFAULTS: RoomsConfig = {
   autoJoin: true,
   maxSendsPerSession: null,
+  maxMessageChars: null,
   dmDelivery: "steer",
   roomDelivery: "followUp",
   pollMs: 2000,
@@ -78,13 +89,23 @@ export function loadConfig(paths: Paths): RoomsConfig {
     value === "steer" || value === "followUp" ? value : fallback;
   const number = (value: unknown, fallback: number): number =>
     typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
-  // A missing, zero, negative or non-numeric cap means unbounded. Only an
-  // explicit positive number turns the limiter on.
-  const cap = (value: unknown): number | null =>
-    typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.floor(value) : null;
+  // Both settings are off unless an explicit positive number turns them on, and
+  // the mapping is deliberately the same for each: for the send cap that means
+  // unbounded, for the truncation threshold it means "store the whole message".
+  // `0` and `-1` are the documented ways to spell "disabled", so they fall into
+  // the same branch as missing, negative and non-numeric values.
+  const positiveOrNull = (value: unknown): number | null => {
+    if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return null;
+    // A fraction that floors to 0 is not a usable threshold: for the send cap it
+    // would read as "refuse every send", and for truncation as "disabled". Both
+    // are surprises, so an unusable value falls back to the documented default.
+    const whole = Math.floor(value);
+    return whole > 0 ? whole : null;
+  };
   return {
     autoJoin: input.autoJoin === false ? false : DEFAULTS.autoJoin,
-    maxSendsPerSession: cap(input.maxSendsPerSession),
+    maxSendsPerSession: positiveOrNull(input.maxSendsPerSession),
+    maxMessageChars: positiveOrNull(input.maxMessageChars),
     dmDelivery: delivery(input.dmDelivery, DEFAULTS.dmDelivery),
     roomDelivery: delivery(input.roomDelivery, DEFAULTS.roomDelivery),
     pollMs: number(input.pollMs, DEFAULTS.pollMs),
