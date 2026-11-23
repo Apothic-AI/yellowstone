@@ -10,6 +10,7 @@ import {
   dropLastGoal as dropLastQueuedGoal,
   goalQueueIdentity,
   prioritizeGoal as prioritizeQueuedGoal,
+  nextGoal as rotateQueuedGoal,
   skipGoal as skipQueuedGoal,
 } from "./queue.js";
 import {
@@ -266,6 +267,38 @@ export class GoalCommandController {
     }
   }
 
+  async nextGoal(ctx: StatusContext) {
+    const currentGoal = this.runtime.activeGoal;
+    if (!currentGoal) {
+      notifyTerminal(ctx.ui, "No active goal to rotate.", "info");
+      return;
+    }
+    if (this.runtime.queuedGoals.length === 0) {
+      notifyTerminal(ctx.ui, "No queued goal to promote; the active goal is unchanged.", "info");
+      return;
+    }
+    if (currentGoal.status === "complete") {
+      notifyTerminal(ctx.ui, "The active goal is already complete; use /goal skip only to discard it.", "warning");
+      return;
+    }
+    if (currentGoal.status === "active") this.runtime.recordGoalUsage(currentGoal, ctx);
+    this.runtime.cancelContinuationWork();
+    this.runtime.clearGoalRecovery();
+    this.runtime.clearBudgetWrapUp();
+    this.runtime.clearStaleGoalToolCallBlock();
+    this.runtime.pendingQueueAction = {
+      kind: "advance",
+      goalId: currentGoal.id,
+      reason: "next",
+      completedText: currentGoal.text,
+    };
+    this.runtime.persistGoal(currentGoal);
+    notifyTerminal(ctx.ui, `Goal rotation queued until Pi settles: ${currentGoal.text}`, "info");
+    if (ctx.isIdle?.() === true && !hasPendingMessages(ctx)) {
+      await this.dispatchPendingQueueActionIfSettled(ctx);
+    }
+  }
+
   async resumeQueueAfterUnfreeze(ctx: StatusContext) {
     if (this.runtime.queueFreezeAwaitingSettle) return false;
     this.runtime.queueFrozen = false;
@@ -309,7 +342,8 @@ export class GoalCommandController {
     if (
       !this.runtime.activeGoal ||
       this.runtime.activeGoal.id !== pending.goalId ||
-      (this.runtime.activeGoal.status !== "complete" && pending.reason === "complete")
+      (this.runtime.activeGoal.status !== "complete" && pending.reason === "complete") ||
+      (this.runtime.activeGoal.status === "complete" && pending.reason === "next")
     ) {
       this.runtime.pendingQueueAction = undefined;
       if (this.runtime.activeGoal) this.runtime.persistGoal(this.runtime.activeGoal);
@@ -318,12 +352,15 @@ export class GoalCommandController {
 
     const previousText = pending.completedText;
     const reason = pending.reason;
+    const rotatingGoal = reason === "next";
     this.runtime.pendingQueueAction = undefined;
     this.runtime.cancelContinuationWork();
     this.runtime.clearGoalRecovery();
     this.runtime.clearBudgetWrapUp();
     this.runtime.clearStaleGoalToolCallBlock();
-    const next = skipQueuedGoal(this.runtime.queuedGoals);
+    const next = rotatingGoal
+      ? rotateQueuedGoal(this.runtime.activeGoal, this.runtime.queuedGoals)
+      : skipQueuedGoal(this.runtime.queuedGoals);
     this.runtime.queuedGoals = next.queue;
     this.runtime.activeGoal = next.goal ? activateQueuedGoal(next.goal, currentTokenTotal(ctx)) : undefined;
     if (!this.runtime.activeGoal) {
@@ -332,7 +369,9 @@ export class GoalCommandController {
         ctx.ui,
         reason === "complete"
           ? `Goal complete: ${previousText}. No goals remain.`
-          : `Goal skipped: ${previousText}. No goals remain.`,
+          : reason === "next"
+            ? `Goal rotated: ${previousText}. No goals remain.`
+            : `Goal skipped: ${previousText}. No goals remain.`,
         "info",
       );
       return true;
@@ -347,7 +386,7 @@ export class GoalCommandController {
       this.runtime.scheduleGoalWaitWake(ctx);
       notifyTerminal(
         ctx.ui,
-        `${reason === "complete" ? "Goal complete" : "Goal skipped"}: ${previousText}. Next goal remains ${this.runtime.activeGoal.status}: ${this.runtime.activeGoal.text}`,
+        `${reason === "complete" ? "Goal complete" : reason === "next" ? "Goal rotated" : "Goal skipped"}: ${previousText}. Next goal remains ${this.runtime.activeGoal.status}: ${this.runtime.activeGoal.text}`,
         "info",
       );
       return true;

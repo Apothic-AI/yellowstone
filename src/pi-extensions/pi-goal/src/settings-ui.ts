@@ -78,7 +78,7 @@ export async function showGoalSettings(
           {
             id: "experimentalGoals",
             label: "Ordered goal queue",
-            description: "Enable experimental add, prioritize, skip, and drop-last workflows.",
+            description: "Enable experimental add, prioritize, skip, next, and drop-last workflows.",
             currentValue: runtime.settings.experimental.goals ? "Experimental" : "Off",
             values: ["Off", "Experimental"],
             action: "set-queue",

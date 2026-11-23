@@ -148,7 +148,7 @@ export function registerGoalTools(pi: ExtensionAPI, runtime: GoalRuntime) {
         runtime.persistGoal(completedGoal);
         runtime.updateStatus(ctx, completedGoal);
         runtime.clearBudgetWrapUp();
-        const rejection = "Goal completion rejected: goal is queued to be skipped.";
+        const rejection = `Goal completion rejected: ${pendingAdvanceMessage(runtime)}`;
         notifyTerminal(ctx.ui, rejection, "warning");
         return {
           content: toolContent(rejection),
@@ -311,7 +311,7 @@ export function registerGoalTools(pi: ExtensionAPI, runtime: GoalRuntime) {
         runtime.persistGoal(blockedGoal);
         runtime.updateStatus(ctx, blockedGoal);
         runtime.clearBudgetWrapUp();
-        return reject("goal is queued to be skipped", true);
+        return reject(pendingAdvanceMessage(runtime), true);
       }
       const staleGoalRejection = goalIdRejectionReason(blockedGoal, requestedGoalId);
       if (staleGoalRejection) return reject(staleGoalRejection);
@@ -407,7 +407,7 @@ export function registerGoalTools(pi: ExtensionAPI, runtime: GoalRuntime) {
         runtime.persistGoal(goal);
         runtime.updateStatus(ctx, goal);
         runtime.clearBudgetWrapUp();
-        return reject("goal is queued to be skipped", true);
+        return reject(pendingAdvanceMessage(runtime), true);
       }
       const staleGoalRejection = goalIdRejectionReason(goal, requestedGoalId);
       if (staleGoalRejection) return reject(staleGoalRejection);
@@ -539,7 +539,7 @@ export function registerGoalTools(pi: ExtensionAPI, runtime: GoalRuntime) {
           runtime.persistGoal(active);
           runtime.updateStatus(ctx, active);
           runtime.clearBudgetWrapUp();
-          return reject("goal is queued to be skipped", true);
+          return reject(pendingAdvanceMessage(runtime), true);
         }
         const staleGoalRejection = goalIdRejectionReason(active, requestedGoalId);
         if (staleGoalRejection) return reject(staleGoalRejection);
@@ -657,10 +657,16 @@ function blockerDetails(
   };
 }
 
+function pendingAdvanceMessage(runtime: GoalRuntime) {
+  return runtime.pendingQueueAction?.kind === "advance" && runtime.pendingQueueAction.reason === "next"
+    ? "goal is queued to be rotated"
+    : "goal is queued to be skipped";
+}
+
 function hasPendingSkipForGoal(runtime: GoalRuntime, goalId: string) {
   return (
     runtime.pendingQueueAction?.kind === "advance" &&
-    runtime.pendingQueueAction.reason === "skip" &&
+    (runtime.pendingQueueAction.reason === "skip" || runtime.pendingQueueAction.reason === "next") &&
     runtime.pendingQueueAction.goalId === goalId
   );
 }

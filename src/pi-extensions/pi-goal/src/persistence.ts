@@ -46,7 +46,7 @@ export type PendingQueueAction =
   | {
       kind: "advance";
       goalId: string;
-      reason: "complete" | "skip";
+      reason: "complete" | "skip" | "next";
       completedText: string;
     };
 
@@ -180,7 +180,7 @@ function normalizePendingQueueAction(value: unknown): PendingQueueAction | undef
       typeof value.goalId !== "string" ||
       !value.goalId ||
       value.goalId !== value.goalId.trim() ||
-      (value.reason !== "complete" && value.reason !== "skip") ||
+      (value.reason !== "complete" && value.reason !== "skip" && value.reason !== "next") ||
       !validObjective(value.completedText)
     ) {
       return undefined;

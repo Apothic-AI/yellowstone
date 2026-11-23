@@ -15,8 +15,9 @@
 // Everything here answers from the runtime. Nothing reads a session file, and
 // nothing starts a turn: a read costs the worker nothing.
 
-import type { GoalRuntime, ActiveGoal } from "./runtime.js";
+import type { GoalRuntime } from "./runtime.js";
 import { createGoal } from "./runtime.js";
+import type { ActiveGoal } from "./persistence.js";
 import { createLaneLookup, type LaneLookup, type LaneRecord } from "./lane-lookup.js";
 import { createDeferralStore, type DeferralStore } from "./write-deferrals.js";
 import { createWriteAuthorizer } from "./write-authorization.js";
