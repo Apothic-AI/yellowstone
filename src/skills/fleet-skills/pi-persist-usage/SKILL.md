@@ -33,16 +33,22 @@ pi-persist preset               # restore the shipped current_datetime item
 
 ## The switch
 
-`/pi-persist-toggle` turns the extension on and off. Off injects **nothing**: no section, no
-trailing message, no `exec:` command on the request path. The items stay in the file, so turning
-it back on restores exactly what was there before.
+`/pi-persist-toggle` turns the extension on and off **for the session it is typed in**. Off injects
+**nothing**: no section, no trailing message, no `exec:` command on the request path. The items stay
+in the file, so turning it back on restores exactly what was there before.
 
-- The state is `piPersist.enabled` in `~/.pi/agent/settings.json`. It is **global**, so a project
-  cannot turn the operator's context on or off.
-- **Check `pi-persist list` first when a lane's context looks missing.** It prints the state.
-- `/pi-persist-toggle` flips it, `on` and `off` set it, `status` reports it.
-- The command applies immediately; a hand edit of `settings.json` takes effect on the next
-  `/reload` or session start.
+- Two states, two owners. `piPersist.enabled` in `~/.pi/agent/settings.json` is the **global
+default**, the operator's; `/pi-persist-toggle` changes **this session only** and never writes that
+file. Turning it off in one lane cannot turn the fleet off.
+- A session may turn itself **off** while the global default is on, and may **not** turn itself on
+while the global default is off — that request is refused with a reason instead of silently lost.
+- `/reload` keeps the session's state (same process, same session id); a process restart resets it to
+  the global default.
+- **Check `pi-persist list` first when a lane's context looks missing.** It prints the global default;
+  `/pi-persist-toggle status` prints this session's state next to it.
+- `/pi-persist-toggle` flips this session's state, `on` and `off` set it, `status` reports both.
+- The command applies immediately; a hand edit of `settings.json` (the global default) takes effect
+  on the next `/reload` or session start.
 - A session that starts with the switch off says so once, so a missing clock is not a mystery.
 
 ## Templates

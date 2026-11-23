@@ -58,7 +58,7 @@ Files:
   project   ${projectItemsFilePath(process.cwd())}
             written with --project, read when the project is trusted
   settings  ${settingsFilePath()}
-            holds the on/off switch; /pi-persist-toggle flips it
+            holds the global on/off default; /pi-persist-toggle changes one session only
 `;
 
 class UsageError extends Error {}
@@ -189,11 +189,13 @@ function list(argv: readonly string[]): void {
 	const projectKeys = new Set(readItemsFile(projectPath).items.map(itemKey));
 	console.log(`items file: ${path}`);
 	// The switch decides whether any of this is injected at all, so it belongs next to the list.
+	// The global default, not a session's state: the CLI has no session, and what it reports is what
+	// every session starts from. A session can turn itself off from here, never on.
 	const enabled = readSettingsFromDisk().enabled;
 	console.log(
 		enabled
-			? "state: on — the items below are injected"
-			: "state: off — nothing is injected; run /pi-persist-toggle to turn it back on",
+			? "state: on — the global default; a session can turn itself off"
+			: "state: off — the global default; no session can turn it on",
 	);
 	if (existsSync(projectPath)) {
 		console.log(`project file: ${projectPath}`);
