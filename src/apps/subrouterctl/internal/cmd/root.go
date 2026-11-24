@@ -97,7 +97,7 @@ token. No browser is needed after the one time device authorization.`,
 	pf.BoolVar(&flagNoColor, "no-color", false, "disable coloured output")
 	pf.IntVar(&flagTimeout, "timeout", 60, "request timeout in seconds")
 	pf.Float64Var(&flagQuotaPerUnit, "quota-per-unit", 0, "quota units per 1 USD (default 500000)")
-	pf.BoolVar(&flagShowSecrets, "show-secrets", false, "print secret values in full instead of masking them")
+	pf.BoolVar(&flagShowSecrets, "show-secrets", false, "DANGEROUS: reveal full API key values in command output")
 	pf.BoolVarP(&flagYes, "yes", "y", false, "assume yes for confirmation prompts")
 	pf.DurationVar(&flagCacheTTL, "cache-ttl", 0, "serve cached responses when they are younger than this (0 always reads live, except for cached log ranges)")
 	pf.StringVar(&flagCacheDir, "cache-dir", defaultCacheDir(), "directory for the on-disk cache")

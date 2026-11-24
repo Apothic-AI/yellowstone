@@ -198,6 +198,19 @@ that is not given keeps the value of the stored key.
 
 ---
 
+## Listing and revealing API keys
+
+`token list` masks every key by default, in table, JSON, and YAML output. This
+keeps ordinary listings safe to print, pipe, or save. To deliberately retrieve
+the usable key values for an agent or script, pass the global `--show-secrets`
+flag. The command emits a warning to stderr when this flag is set; handle the
+result as a credential and do not send it to logs, chat, or evidence files.
+
+```bash
+subrouterctl -o json token list                 # keys are masked
+subrouterctl -o json token list --show-secrets  # explicit unmasked keys + stderr warning
+```
+
 ## Searching and sorting
 
 Every directory, log feed and task list takes the same three flags.
@@ -544,12 +557,22 @@ megabytes instead of hundreds.
 The platform hands out the full relay key of every key on the account, so a
 cached response would be a file full of live credentials. The cache is
 scrubbed on the way in: every secret value it holds is replaced by a
-placeholder of the same length, and the cached copy still decodes. The
-command itself is unaffected and still hands you the real key.
+placeholder of the same length, and the cached copy still decodes. Token
+listings also mask keys by default in table, JSON, and YAML output.
 
 ```console
-$ subrouterctl token list --limit 1          # prints the key, masked
-$ subrouterctl -o json token list --limit 1  # prints the key in full
+$ subrouterctl token list --limit 1          # key is masked
+$ subrouterctl -o json token list --limit 1  # key is masked in JSON too
+```
+
+To deliberately emit full keys for an agent or script that must use them, pass
+`--show-secrets`. This opt-in writes a warning to stderr; treat the resulting
+output as a credential and never send it to logs, chat, or an evidence bundle
+without an explicit need.
+
+```console
+$ subrouterctl -o json token list --show-secrets --limit 1
+! --show-secrets is enabled: token list output contains unmasked API keys; handle this output as a secret
 ```
 
 `--cache-clear` empties the cache, which is the way to drop the keys that a
@@ -674,7 +697,7 @@ make test-bindings # the Python and TypeScript tests
 
 ## Safety
 
-- Secrets are masked in every table by default. `--show-secrets` reveals them.
+- `token list` masks secrets by default in every output format. `--show-secrets` is an explicit, noisy opt-in that reveals full key values.
 - The on-disk cache never holds a secret. The values it scrubs are replaced by
   a placeholder, so a cached response cannot be read back as a live key.
 - Deleting a key, unsubscribing a provider and changing billing settings ask
