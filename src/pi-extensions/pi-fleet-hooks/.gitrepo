@@ -5,8 +5,8 @@
 ;
 [subrepo]
 	remote = https://github.com/Apothic-AI/pi-fleet-hooks
-	branch = master
-	commit = 419a3bf545ff8fcb5394de3fe092ba31ad5fed7d
+	branch = ft94/http2-stream-retry
+	commit = 6c07f81c2a3e2375d26d3d90eb16d93838ebeded
 	parent = a7477874500483eba859b92d083ba64b1e41e537
 	method = merge
 	cmdver = 0.4.9
