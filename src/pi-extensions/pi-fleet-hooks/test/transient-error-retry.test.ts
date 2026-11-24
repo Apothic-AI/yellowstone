@@ -74,10 +74,12 @@ const { isRetryableAssistantError } = (await import(pathToFileURL(retryJs!).href
   isRetryableAssistantError: (message: Record<string, unknown>) => boolean;
 };
 
-const { rewriteTransientError, default: transientErrorRetry } = (await import(
+const { rewriteTransientError, extractRequestId, diagnosticLogPath, default: transientErrorRetry } = (await import(
   "../src/transient-error-retry.ts"
 )) as {
   rewriteTransientError: (message: Record<string, unknown>) => string | undefined;
+  extractRequestId: (errorMessage: string) => string | undefined;
+  diagnosticLogPath: () => string;
   default: (pi: unknown) => void;
 };
 
@@ -85,10 +87,142 @@ function errorMessage(errorMessage: string, overrides: Record<string, unknown> =
   return { role: "assistant", stopReason: "error", errorMessage, content: [], ...overrides };
 }
 
+// The FT-94 handler now writes diagnostics on promoted failures. Every test that drives the
+// handler therefore points the durable log at a throwaway file: nothing may reach the fleet's
+// real state path from a test process.
+const DIAGNOSTICS_TMP = fs.mkdtempSync(path.join(process.env.TMPDIR ?? "/tmp", "ft94-diag-"));
+process.env.PI_FLEET_RETRY_LOG = path.join(DIAGNOSTICS_TMP, "retry-events.jsonl");
+
 const GATEWAY_BODY =
   '"message":"openai_error","type":"bad_response_status_code","param":"","code":"bad_response_status_code"';
 const RECORDED_403 = `403: {${GATEWAY_BODY}}`;
 const RECORDED_502 = `502: {${GATEWAY_BODY}}`;
+
+// ---------------------------------------------------------------------------------------------
+// FT-94 — the router families recorded in fleet session records
+// ---------------------------------------------------------------------------------------------
+
+const FLEET_FAMILIES: Array<[string, string]> = [
+  // The recorded shapes from fleet session records — bare router text with the request id, no
+  // HTTP status prefix (the `✕ Error ·` in the transcript is the TUI, not the message):
+  [
+    "routing retry budget expired (recorded, bare)",
+    "routing retry budget expired before first protocol event (request id: 20261119095112854781304HZXFss7T)",
+  ],
+  [
+    "shared upstream overload (recorded, bare)",
+    "shared upstream overload retry stopped: context deadline exceeded (request id: 20261118153109485512669m6aRMLUA)",
+  ],
+  // The same families as relayed by the openai-completions adapter, which prefixes the status:
+  [
+    "routing retry budget expired (403-wrapped)",
+    '403: {"message":"routing retry budget expired before first protocol event (request id: 20261119095112854781304HZXFss7T)"}',
+  ],
+  // "upstream first stream event timeout" — already accepted by pi-ai 1.5.0 ("timeout");
+  // the hint stays as a fallback in case a later pi narrows the list.
+  ["upstream first stream event timeout", "upstream first stream event timeout"],
+];
+
+for (const [name, text] of FLEET_FAMILIES) {
+  test(`FT-94 router family is retried after the rewrite: ${name}`, () => {
+    const message = errorMessage(text);
+    const rewritten = rewriteTransientError(message as never);
+    if (isRetryableAssistantError(message)) {
+      // pi already retries this one; the hook must not touch its transcript entry.
+      assert.equal(rewritten, undefined, `${name}: pi retries it already, no rewrite`);
+    } else {
+      assert.ok(rewritten, `${name}: must be rewritten, not left to end the turn`);
+      assert.equal(
+        isRetryableAssistantError(errorMessage(rewritten)),
+        true,
+        `${name}: the rewrite must be accepted by pi's own classifier`,
+      );
+      assert.ok(rewritten.includes("request id: "), "the request id survives verbatim");
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------------------------
+// FT-94 — permanent failures must fail fast: malformed, config, cancellation
+// ---------------------------------------------------------------------------------------------
+
+const PERMANENT: Array<[string, string]> = [
+  [
+    "malformed request 400",
+    '400: {"error":{"message":"invalid_request_error: the request body is malformed","type":"invalid_request_error"}}',
+  ],
+  ["malformed json", '400: {"error":{"message":"malformed request: unexpected token in JSON"}}'],
+  ["validation failure", '422: {"error":{"message":"validation failed for field temperature"}}'],
+  ["unknown model", '404: {"error":{"message":"model not found: gpt-nonexistent"}}'],
+  [
+    "invalid model id",
+    '400: {"error":{"message":"\'not-a-model\' is not a valid model id for this provider"}}',
+  ],
+  ["invalid configuration", '400: {"error":{"message":"invalid configuration: api key and oauth are mutually exclusive"}}'],
+  ["context overflow", '400: {"error":{"message":"context length exceeded: 210000 tokens > 200000"}}'],
+  ["user cancellation", "aborted by user"],
+  ["user cancellation (provider wording)", '400: {"error":{"message":"operation was cancelled by the user"}}'],
+];
+
+for (const [name, text] of PERMANENT) {
+  test(`permanent failure stays unretryable: ${name}`, () => {
+    const message = errorMessage(text);
+    assert.equal(rewriteTransientError(message as never), undefined, `${name} must not be rewritten`);
+    assert.equal(isRetryableAssistantError(message), false, `${name} must not be retried by pi either`);
+  });
+}
+
+test("a malformed-request status wins even when the body carries transient vocabulary", () => {
+  // A 400 that quotes a transient phrase is still a client bug; the permanent guard must win.
+  const text =
+    '400: {"error":{"message":"routing retry budget expired while the request was malformed"}}';
+  assert.equal(rewriteTransientError(errorMessage(text) as never), undefined);
+});
+
+test("a 5xx-wrapped user cancellation is retried by pi's status rule; the hook neither promotes nor alters it", () => {
+  // Known upstream limitation, recorded here rather than papered over: pi's classifier matches
+  // the 500 status digit before any wording, so a gateway that wraps an upstream-side user
+  // cancellation in a 500 is retried by pi whatever this hook does. Suppressing that would
+  // require falsifying the error text (the only lever a message replacement has), which is
+  // worse than the retry. Real user cancellations surface as stopReason "aborted" and never
+  // reach the rewriter at all.
+  const text = '500: {"error":{"message":"operation was cancelled by the user"}}';
+  const message = errorMessage(text);
+  assert.equal(isRetryableAssistantError(message), true, "pi's status-digit rule retries the 500");
+  assert.equal(rewriteTransientError(message as never), undefined, "the hook leaves it untouched");
+});
+
+test("the request-id extractor handles the recorded gateway shapes", () => {
+  assert.equal(
+    extractRequestId(
+      '403: {"message":"routing retry budget expired before first protocol event (request id: 20261119095112854781304HZXFss7T)"}',
+    ),
+    "20261119095112854781304HZXFss7T",
+  );
+  assert.equal(
+    extractRequestId(
+      "unknown: The upstream response stream ended unexpectedly before completion. Retry the request; (request id: 3f9c-abc123)",
+    ),
+    "3f9c-abc123",
+  );
+  assert.equal(extractRequestId("503: overloaded"), undefined);
+});
+
+test("the diagnostics path honours PI_FLEET_RETRY_LOG and defaults to fleet state", () => {
+  assert.equal(diagnosticLogPath(), path.join(DIAGNOSTICS_TMP, "retry-events.jsonl"));
+  const saved = process.env.PI_FLEET_RETRY_LOG;
+  delete process.env.PI_FLEET_RETRY_LOG;
+  try {
+    assert.match(
+      diagnosticLogPath(),
+      /[\\/]\.local[\\/]state[\\/]pi-fleet-retry[\\/]retry-events\.jsonl$/,
+      "default path is the durable state directory",
+    );
+  } finally {
+    if (saved === undefined) delete process.env.PI_FLEET_RETRY_LOG;
+    else process.env.PI_FLEET_RETRY_LOG = saved;
+  }
+});
 
 // ---------------------------------------------------------------------------------------------
 // Requirement 1 — the gateway 403 retries
@@ -215,15 +349,22 @@ test("eligibility lives in the handler, and the handler applies it", () => {
 // The extension entry: one registration, and it returns a replacement only when it should
 // ---------------------------------------------------------------------------------------------
 
-test("extension entry registers message_end and rewrites only the gateway 403", () => {
+test("extension entry registers the durable hooks and rewrites only the gateway 403", () => {
   const handlers: Record<string, (event: unknown) => unknown> = {};
   const pi = {
     on(event: string, handler: (event: unknown) => unknown) {
       handlers[event] = handler;
     },
+    // The diagnostics reader: one settings read per failed attempt, one name per record.
+    getSettings: () => ({ retry: { enabled: true, maxRetries: 1_000_000_000, baseDelayMs: 10, maxAgentDelayMs: 40 } }),
+    getSessionName: () => "test-session",
   };
   transientErrorRetry(pi as never);
-  assert.deepEqual(Object.keys(handlers), ["message_end"], "one durable registration, no timers");
+  assert.deepEqual(
+    Object.keys(handlers),
+    ["session_start", "message_end", "agent_settled"],
+    "three durable registrations, no timers",
+  );
 
   const handler = handlers.message_end!;
   const promoted = handler({ message: errorMessage(RECORDED_403) }) as

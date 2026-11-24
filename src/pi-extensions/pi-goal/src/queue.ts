@@ -74,6 +74,12 @@ export function skipGoal(queue: readonly ActiveGoal[]): GoalQueueResult {
   return { goal: queue[0], queue: queue.slice(1) };
 }
 
+/** Rotate the current goal to the queue tail without changing its identity or cumulative state. */
+export function nextGoal(currentGoal: ActiveGoal, queue: readonly ActiveGoal[], now = Date.now()): GoalQueueResult {
+  const shelved = shelveGoal(currentGoal, now);
+  return { goal: queue[0], queue: [...queue.slice(1), shelved] };
+}
+
 export function shelveGoal(goal: ActiveGoal, now = Date.now()): ActiveGoal {
   if (goal.status !== "active") return { ...goal, activeStartedAt: undefined, updatedAt: now };
   const shelved = { ...goal, status: "queued" as const, updatedAt: now };

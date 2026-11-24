@@ -6,7 +6,7 @@
 [subrepo]
 	remote = https://github.com/Apothic-AI/pi-goal
 	branch = main
-	commit = 7cdca8a06f444daf762420c476e6bec4ba7090cb
-	parent = dcf0f1c04edd3d4055bb5f8f3bfdbb6c9d9efe27
+	commit = 085e139adcce84876489dda17b6da5bfaee6ba48
+	parent = 0cd368c15be563576100cf7c69737279cff182f6
 	method = merge
 	cmdver = 0.4.9

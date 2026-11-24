@@ -1413,7 +1413,7 @@ export function goalSummary(
   }
   if (pendingAction?.kind === "advance") {
     summary.push(
-      `Pending queue action: ${pendingAction.reason === "complete" ? "complete" : "skip"} current goal when Pi settles.`,
+      `Pending queue action: ${pendingAction.reason === "complete" ? "complete" : pendingAction.reason === "next" ? "rotate" : "skip"} current goal when Pi settles.`,
     );
   }
   if (queueFrozen) {
@@ -1482,7 +1482,7 @@ async function sendPrompt(pi: ExtensionAPI, ctx: StatusContext, prompt: string, 
 
 function goalCommandHint(status: GoalStatus, experimentalGoals = false) {
   const queueCommands = experimentalGoals
-    ? ", /goal add <objective>, /goal prioritize <objective>, /goal drop-last, /goal skip"
+    ? ", /goal add <objective>, /goal prioritize <objective>, /goal drop-last, /goal skip, /goal next"
     : "";
   if (status === "active") {
     return `/goal edit <objective>, /goal pause, /goal clear${queueCommands}`;

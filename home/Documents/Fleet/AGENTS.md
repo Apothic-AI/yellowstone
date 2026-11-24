@@ -39,12 +39,20 @@ sentences:
 If your prompt lacks the sentence for your role, the space half was dropped: you are running on
 the **native** prompt with no role contract at all, not on the fleet half alone. The footer is not
 evidence — it still reads `profile: leader` when the composition was dropped, and a rejected
-composition prints nothing in the pane. Confirm from artifacts: the launch's stderr, and the
-session's **system record**, whose `sections` object (`preamble`, `addendum`, `project_context`,
-`skills`, `cwd`) either carries the sentence or does not. **Do not grep the session file for it:**
-that matches your own brief, your own greps and any summary, so it reports hits even when the
-composition dropped. The recorded digest is stronger and needs no reading at all —
-`pi-modes state <session> --json` → `verdict: match`. Then say so in
+Confirm from artifacts, not from the screen. The check that works is
+`~/.overlord/tools/reconcile-mode.py --inspect`, which prints a per-lane verdict: `match` means
+the composition is current; `drift` means it will be **dropped** under `driftPolicy: block`, and the
+lane then runs the **native** prompt with no role contract at all while its footer still reads
+`profile: leader`. For a single lane, compare the digest its session recorded
+(`pi-mode-state.v3` custom records, `fingerprints.<key>.digest`) against
+`REAL_AGENT_DIR=~/.pi/agent node --experimental-strip-types ~/.overlord/tools/mode-composed-digest.mjs <cwd> <key>`.
+
+Three traps this check has already sprung (2026-11-18, FT-91): **do not grep the session for the role
+sentence** - it appears verbatim in this document, so a grep reports a hit even when the composition was
+dropped; `sections` does not carry a `replace_base` mode's prompt, so its absence there proves nothing
+either way; and `pi-modes state` is not available here (no binary on PATH). The remedy is a re-approval
+inside the lane (`~/.overlord/tools/defer-mode-reapprove.py --pane <pane>`, deferred to idle) or a relaunch
+carrying `PI_MODE_CONFIRM_PROJECT=1`. Then say so in your first turn and ask for one.
 your first turn and ask for a relaunch carrying `PI_MODE_CONFIRM_PROJECT=1`.
 
 ## What is here
@@ -73,7 +81,7 @@ your first turn and ask for a relaunch carrying `PI_MODE_CONFIRM_PROJECT=1`.
   or a changed mode file. Do not measure extension currency by process start time alone.
 - **Roles are artifacts, not prose.** `PI_MODE=leader|worker` carries a role's contract; `PI_PROFILE` scopes its resources. A lane started with bare `pil` gets resources but no role duties, because `~/AGENTS.md` is deliberately role-neutral.
 - **Pause supervision before you restart panes by hand.** A helper that stops a lane and starts it again creates a window where `lane-supervise.timer` sees the lane down and resumes it — two processes on one session, which is the failure its own rules exist to prevent. Wrap the work: `keepalive-hold start --reason "<what>"` … `keepalive-hold end`, or one-shot `keepalive-hold run --reason "<what>" -- <command>`. **Name the lane you are replacing** (`--lane <lane>`, or `keepalive-hold set-lane <lane>` as you move through targets): a hold that names a lane pauses supervision for *that lane only*, and the timer keeps watching everything else; a hold with no lane is a blanket pause. The hold file is `~/.local/state/pil/supervise/_hold`; content `0` (or absent) means supervision runs, and `keepalive-hold status` reports `PAUSED [lane <name>]` or `PAUSED [all lanes]`. Every pane-restarting tool in `~/.overlord/tools` already does this (`restart-fleet`, `relaunch-lane.sh`, `migrate-lane.sh`, `migrate-unnamed-lane.sh`, `relaunch-lane-monorepo.sh`, `self-restart.sh`). A hold carries the owner pid, so a helper that crashes cannot pause supervision forever — the timer releases it and says so in the journal. Check with `keepalive-hold status`.
-- **Leader lanes stay up on their own — do not restart a dead one by hand.** `lane-supervise.timer` runs every minute, finds leader lanes whose process disappeared, and relaunches each into its previous session with `pil --role leader --session <uuid>`; the resumed lane is told it was resumed by a machine, with the timestamp, so it can reason about the gap. Discovery is by role record (`~/.local/state/pil/roles/<lane>.env`, `PI_MODE=leader`), so a new space is covered without editing any unit — but a lane is only supervised once it has been *observed* alive, which keeps retired spaces from being resurrected. It refuses to start a lane with no recorded session (that is an outage with a healthy pid), never resumes over a live lane, and backs off 60s→30min. Read it with `lane-supervise --list`; keep a lane **down** with `lane-supervise --exclude <lane>` (current holds: `gemini-accts-leader`, `yellowstone-leader`). Worker lanes are not supervised unless added with `--add`.
+- **Leader lanes stay up on their own — do not restart a dead one by hand.** `lane-supervise.timer` runs every minute, finds leader lanes whose process disappeared, and relaunches each into its previous session with `pil --role leader --session <uuid>`; the resumed lane is told it was resumed by a machine, with the timestamp, so it can reason about the gap. Discovery is by role record (`~/.local/state/pil/roles/<lane>.env`, `PI_MODE=leader`), so a new space is covered without editing any unit — but a lane is only supervised once it has been *observed* alive, which keeps retired spaces from being resurrected. It refuses to start a lane with no recorded session (that is an outage with a healthy pid), never resumes over a live lane, and backs off 60s→30min. Read it with `lane-supervise --list`; keep a lane **down** with `lane-supervise --exclude <lane>` (current holds: `gemini-accts-leader`, `yellowstone-leader`). Worker lanes are not supervised unless added with `--add` — resuming every worker would resurrect finished work (measured 2026-11-17: 39 leader role records, 189 worker, 168 inactive) — and `--add` seeds the lane's pane, session and role from `~/.local/state/pil/sessions/<lane>.json` + its role record, so it still works after the lane is already down. `lane-supervise --list` names the live lanes it does not cover; read that, not the length of the supervised list (FT-78: a worker named `experiment` was Ctrl-C'd and silently never came back).
 - **Compose before you author.** `pi-modes` separates three layers: a **mode** (`<cwd>/.pi/modes/<key>.json`) carries prompt text and is drift-gated; a **preset** (`<cwd>/.pi/mode-presets/<key>.json`) is a saved *selection* — one base plus up to 64 ordered overlays, carrying no text at all; and `AGENTS.md` carries what every lane in a directory needs. `/mode presets` lists them, `/mode use <key>` applies one, `/mode save <key>` captures the current selection. Reach for a preset before writing a new mode, and `AGENTS.md` before either. Full write-up: `pi-fleet-model/MODE-PRESETS.md`.
 - **Cross-space work is delegated leader-to-leader as intent and requirements** — never a method, and never a worker of this space seated in another space's panes. Verify a handoff by the receiver's receipt and its own disposition, never by reading its screen. The fleet-progress lane may reach into any space to repair fleet machinery, not to take a leadership or worker role in that space's work. Protocol, routing cases, bead rule and the receipt ladder: `pi-fleet-model/DELEGATION-PROTOCOL.md`.
 - **Keep these docs current.** They are the record the next lane inherits; a stale claim here costs someone a session.
@@ -158,3 +166,25 @@ known-good ref and note why — never accept an unreviewed update to unblock you
 
 Never report unverified success. A lane's report is `reported`; only a file, a commit, a test
 count or a live read makes it `verified`.
+
+## Incident response: ask the space owner before investigating
+
+When a lane of this space exits unexpectedly, or the box shows a symptom that could be
+infrastructure-wide, **DM `sysops-leader` first** and ask whether they already know the cause — then
+investigate. On 2026-11-17 four mid-turn exits of the self-improvement lane cost four hours and
+produced a confident wrong answer ("no userspace reaper") while sysops already knew the cause was
+`earlyoom`. The cost of asking is one message; the cost of not asking was a wrong finding that had to
+be corrected in three documents. Investigating first is only right when sysops cannot be reached, and
+then say so in the record.
+
+## Context pressure is a measurement, not a feeling
+
+A lane's context usage comes from the record, not from the session file: `behold roster --lane <lane>
+--json` field **`P-11`** (`observed.context_percent`, `context_tokens`, `context_window`), or
+`~/.overlord/tools/lane-fields <lane> ctx-used ctx-max ctx`. **Session-file size is not a proxy for
+it.** On 2026-11-17 this lane's session was 118.6 MB on disk while the measured window was 22.9% of
+1,000,000 tokens; reasoning from the file size made the lane defer work it had ample room to do, and it
+took the operator challenging the claim to surface it. A large session file means a long history on
+disk — the window is what is in the request. Same rule as everywhere else here: a read from the wrong
+record is not a measurement, and a proxy that moves in the same direction as the quantity is the most
+dangerous kind, because it looks like evidence.

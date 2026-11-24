@@ -40,7 +40,7 @@ test("experimental mode keeps singular registration and exposes canonical queue 
     (harness.mock.commands.get("goal")?.getArgumentCompletions?.("") as Array<{ label: string }> | undefined)?.map(
       ({ label }) => label,
     ),
-    ["pause", "resume", "clear", "edit", "status", "add", "prioritize", "drop-last", "skip", "--tokens"],
+    ["pause", "resume", "clear", "edit", "status", "add", "prioritize", "drop-last", "skip", "next", "--tokens"],
   );
   assert.ok(
     harness.notifications.some(({ message, level }) => level === "warning" && /experimental.*goals/i.test(message)),
@@ -964,6 +964,112 @@ test("pending busy skip survives reload without reactivating the old head", asyn
     stateGoals(restored.mock).map(({ text, status }) => ({ text, status })),
     [{ text: "next head", status: "active" }],
   );
+});
+
+test("next rotates the active goal to the tail without changing identity, text, budget, usage, or counters", async () => {
+  const original = {
+    ...storedGoal("original goal", "active"),
+    tokenBudget: 9_000,
+    tokensUsed: 321,
+    automaticModelTurns: 7,
+    toolFreeRepeatCount: 2,
+    lastToolFreeOutputFingerprint: "c".repeat(64),
+  };
+  const branch = [{ type: "custom", customType: "goal-state", data: {
+    goal: original,
+    queue: [storedGoal("second goal", "queued"), storedGoal("third goal", "queued")],
+  } }];
+  const seeded = await createHarness({ sessionManager: { getBranch: () => branch, getEntries: () => branch } });
+  await seeded.command("next");
+
+  const goals = stateGoals(seeded.mock);
+  assert.equal(goals[0]?.text, "second goal");
+  assert.deepEqual(goals.slice(1).map(({ text }) => text), ["third goal", "original goal"]);
+  const rotated = goals.at(-1);
+  assert.ok(rotated);
+  assert.equal(rotated.id, original.id);
+  assert.equal(rotated.text, original.text);
+  assert.equal(rotated.tokenBudget, 9_000);
+  assert.equal(rotated.tokensUsed, 321);
+  assert.equal(rotated.automaticModelTurns, 7);
+  assert.equal(rotated.toolFreeRepeatCount, 2);
+  assert.equal(rotated.lastToolFreeOutputFingerprint, "c".repeat(64));
+  assert.equal(rotated.status, "queued");
+});
+
+test("busy next action persists and rotates only after reload reaches settled boundary", async () => {
+  const interrupted = await createHarness({ isIdle: () => false });
+  await interrupted.command("old head");
+  await interrupted.command("add next head");
+  const original = stateGoals(interrupted.mock)[0];
+  assert.ok(original);
+  await interrupted.command("next");
+  const persisted = lastState(interrupted.mock);
+  assert.deepEqual(persisted?.pendingAction, {
+    kind: "advance",
+    goalId: original.id,
+    reason: "next",
+    completedText: original.text,
+  });
+
+  let idle = false;
+  const branch = [{ type: "custom", customType: "goal-state", data: persisted }];
+  const restored = await createHarness({
+    isIdle: () => idle,
+    sessionManager: { getBranch: () => branch, getEntries: () => branch },
+  });
+  assert.deepEqual(stateGoals(restored.mock).map(({ text }) => text), ["old head", "next head"]);
+  idle = true;
+  await settled(restored);
+  assert.deepEqual(stateGoals(restored.mock).map(({ text }) => text), ["next head", "old head"]);
+  assert.equal(stateGoals(restored.mock).at(-1)?.id, original.id);
+});
+
+test("next with an empty queue is a no-op and skip remains discarding", async () => {
+  const empty = await createHarness();
+  await empty.command("keep this goal");
+  const before = lastState(empty.mock)?.goal;
+  await empty.command("next");
+  assert.equal(lastState(empty.mock)?.goal?.id, before?.id);
+  assert.equal(lastState(empty.mock)?.goal?.text, before?.text);
+  assert.equal(lastState(empty.mock)?.pendingAction, undefined);
+
+  const skip = await createHarness();
+  await skip.command("discard this goal");
+  await skip.command("add promoted goal");
+  const discardedId = stateGoals(skip.mock)[0]?.id;
+  await skip.command("skip");
+  assert.deepEqual(stateGoals(skip.mock).map(({ text }) => text), ["promoted goal"]);
+  assert.notEqual(stateGoals(skip.mock)[0]?.id, discardedId);
+});
+
+test("next promotes a budget-limited queued successor without resuming it", async () => {
+  const current = storedGoal("current goal", "active");
+  const queued = { ...storedGoal("next goal", "budget_limited"), tokenBudget: 100, tokensUsed: 100 };
+  const branch = [{ type: "custom", customType: "goal-state", data: { goal: current, queue: [queued] } }];
+  const harness = await createHarness({ sessionManager: { getBranch: () => branch, getEntries: () => branch } });
+  await harness.command("next");
+  assert.equal(lastState(harness.mock)?.goal?.text, "next goal");
+  assert.equal(lastState(harness.mock)?.goal?.status, "budget_limited");
+});
+
+test("pending next rejects stale completion and keeps its rotation intent", async () => {
+  const harness = await createHarness({ isIdle: () => false });
+  await harness.command("old head");
+  await harness.command("add next head");
+  const oldHead = stateGoals(harness.mock)[0];
+  assert.ok(oldHead);
+  await harness.command("next");
+  const result = await completionTool(harness.mock).execute(
+    "complete-after-next",
+    { goal_id: oldHead.id, summary: "Unexpected stale completion." },
+    new AbortController().signal,
+    () => undefined,
+    harness.ctx,
+  );
+  assert.equal(result.terminate, true);
+  assert.match(result.content?.[0]?.text ?? "", /queued to be rotated/i);
+  assert.equal(lastState(harness.mock)?.pendingAction?.reason, "next");
 });
 
 test("restored skip dispatches before the skipped head is budget-limited", async () => {

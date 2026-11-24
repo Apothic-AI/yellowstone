@@ -14,7 +14,7 @@ Goal mode uses Codex-like persistence instructions and sends guarded continuatio
   observable status notifications.
 - Keeps direct goal management available through `/goal` subcommands: `status`, `pause`, `resume`, `clear`, and `edit`.
 - Exposes only one top-level command: `/goal`, including when ordered goals are enabled.
-- Optionally adds ordered-goal operations through `/goal add`, `prioritize`, `drop-last`, and `skip`, while accepting `push`, `unshift`, `pop`, and `shift` as hidden compatibility aliases.
+- Optionally adds ordered-goal operations through `/goal add`, `prioritize`, `drop-last`, `skip`, and `next`, while accepting `push`, `unshift`, `pop`, and `shift` as hidden compatibility aliases.
 - Pauses automatic work after 25 Goal-owned model responses by default, preserves progress, and provides a guided review-and-continue flow; custom finite limits and confirmed Unlimited mode remain available.
 - Pauses after three consecutive empty or normalized-identical tool-free automatic runs, while distinct short output and tool activity reset the repeat detector.
 - Supports optional token budgets such as `/goal --tokens 100k <goal>`, using provider-reported total-token accounting with a cache-inclusive compatibility fallback.
@@ -129,6 +129,7 @@ Tool visibility is a baseline, not ownership of Pi's global active-tool list. Pl
 /goal prioritize fix the urgent production regression
 /goal drop-last
 /goal skip
+/goal next
 ```
 - In the TUI, `/goal` opens a standard state-aware manager. Its first action follows the current
   state: start when empty, pause when active, review a reached automatic-work limit, resume for other
@@ -157,7 +158,8 @@ With `experimental.goals: true`:
 - `/goal add [--tokens <budget>] <goal>` appends an objective without interrupting the active head. If no goal exists, it starts immediately.
 - `/goal prioritize [--tokens <budget>] <goal>` inserts an urgent objective at the front. When Pi is busy, the intent is persisted and activation waits until the old run, retries, and pending messages settle, so old usage cannot be charged to the urgent goal.
 - `/goal drop-last` removes the tail. If only the active head remains, it clears that goal.
-- `/goal skip` removes the active head and starts the next eligible item only from an idle settled boundary. A stopped next item remains stopped.
+- `/goal skip` discards the active head and promotes the next eligible item only at a settled boundary. A stopped next item remains stopped; the active goal is not retained.
+- `/goal next` rotates the active goal to the queue tail without changing its identity, objective, token budget, cumulative usage, or safety counters, then promotes the next eligible item at the settled boundary. With no queued successor it is a no-op. A stopped active goal stays stopped in the queue; a stopped promoted goal remains stopped. Its pending action survives reload. Use `/goal skip` when the current goal should be discarded instead.
 - `push`, `unshift`, `pop`, and `shift` are accepted as aliases for `add`, `prioritize`, `drop-last`, and `skip`, respectively. Autocomplete shows only the intent-oriented names.
 - `/goal <goal>` still starts or replaces the whole queue; `edit`, `pause`, and `resume` operate on the active head.
 

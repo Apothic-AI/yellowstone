@@ -38,6 +38,7 @@ function commands() {
       prioritizeGoal: record("prioritizeGoal"),
       dropLastGoal: record("dropLastGoal"),
       skipGoal: record("skipGoal"),
+      nextGoal: record("nextGoal"),
     },
   };
 }
@@ -741,6 +742,11 @@ test("queue menu previews prioritize, skip, and drop-last before delegation", as
       preview: /current objective.*queued objective/is,
     },
     {
+      action: "Rotate current goal to end…",
+      method: "nextGoal",
+      preview: /queued objective.*current objective/is,
+    },
+    {
       action: "Drop last goal…",
       method: "dropLastGoal",
       preview: /queued objective/is,
@@ -801,6 +807,13 @@ test("queue confirmations do not mutate a changed active head or queue selection
     {
       action: "Skip current goal…",
       expectedMethod: "skipGoal",
+      mutate(state: ReturnType<typeof runtime>) {
+        state.activeGoal = createGoal("replacement head", undefined, 0);
+      },
+    },
+    {
+      action: "Rotate current goal to end…",
+      expectedMethod: "nextGoal",
       mutate(state: ReturnType<typeof runtime>) {
         state.activeGoal = createGoal("replacement head", undefined, 0);
       },

@@ -33,6 +33,7 @@ const QUEUE_ACTIONS = {
   add: "Add goal…",
   prioritize: "Prioritize goal…",
   skip: "Skip current goal…",
+  next: "Rotate current goal to end…",
   dropLast: "Drop last goal…",
   back: "Back",
 } as const;
@@ -79,6 +80,7 @@ type GoalMenuAction =
   | "queue-add"
   | "queue-prioritize"
   | "queue-skip"
+  | "queue-next"
   | "queue-drop"
   | "back";
 
@@ -328,6 +330,7 @@ export async function showGoalManager(
             ...(runtime.queuedGoals.length > 0
               ? [
                   { id: "skip", label: QUEUE_ACTIONS.skip, action: "queue-skip" as const },
+                  { id: "next", label: QUEUE_ACTIONS.next, action: "queue-next" as const },
                   {
                     id: "drop-last",
                     label: QUEUE_ACTIONS.dropLast,
@@ -543,6 +546,20 @@ export async function showGoalManager(
         );
         if (confirmed && requireCurrentQueueSelection(runtime, goal, next, "first", ctx)) {
           await commands.skipGoal(ctx);
+        }
+        return { kind: "close" };
+      },
+      "queue-next": async () => {
+        const goal = displayedQueueHead;
+        const next = displayedQueueFirst;
+        const last = displayedQueueLast;
+        if (!goal || !next || !last || next.id === goal.id) return { kind: "stay" };
+        const confirmed = await ctx.ui.confirm(
+          "Rotate current goal?",
+          `Promote next goal:\n${safeGoalMenuText(next.text, 4_000)}\n\nKeep and move current goal to the end:\n${safeGoalMenuText(goal.text, 4_000)}`,
+        );
+        if (confirmed && requireCurrentQueueSelection(runtime, goal, next, "first", ctx)) {
+          await commands.nextGoal(ctx);
         }
         return { kind: "close" };
       },

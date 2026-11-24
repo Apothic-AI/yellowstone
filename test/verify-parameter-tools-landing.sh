@@ -15,20 +15,20 @@ fail=0
 ok()  { printf 'ok   %s\n' "$1"; }
 bad() { printf 'FAIL %s\n' "$1"; fail=$((fail + 1)); }
 
-# Accepted source: pi-extensions fork, branch feat/ft55-parameter-tools, commit 421b1901.
-# The two files that carry the behaviour are pinned by digest; package.json is pinned by
+# Accepted source: FT-89 resolved parameter-tools source, commits 0d8ab3c6b and 8348c0552
+# on top of the accepted landing bcd33c755. The two files that carry the behavior are pinned by
 # the invariant that matters (its declared entry point), so a version bump alone is not a
 # red gate but a moved or missing entry point is.
 declare -A PINS=(
-  ["src/index.ts"]="3d19b63486af305d23d13df7b9e2e863f034dc88ab73dc5f59b466524bb4ff84"
-  ["src/receiver.ts"]="bfae6feafc97143e4ea1d8f53fe63be43d464b2fc0e94097997416486a6073d8"
+  ["src/index.ts"]="e8e96de0f7f358ce771efe66fbf030fea06f0addfb83cecccb3a4869211cd112"
+  ["src/receiver.ts"]="11ff6ca771b6db967d9883128c9c1f0952a8a80c813eb29582e9ba73d9ffd7ea"
 )
 for rel in "${!PINS[@]}"; do
   f="$PKG/$rel"
   if [ ! -f "$f" ]; then bad "missing $rel"; continue; fi
   actual="$(sha256sum "$f" | cut -d' ' -f1)"
   if [ "$actual" != "${PINS[$rel]}" ]; then
-    bad "$rel differs from the accepted commit 421b1901"
+    bad "$rel differs from the accepted FT-89 final source"
   fi
 done
 [ "$fail" -eq 0 ] && ok "landed source matches the accepted commit (2 pinned files)"

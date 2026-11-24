@@ -5,7 +5,7 @@ export interface GoalCommandFeatures {
 }
 
 export interface CommandResult {
-  kind: "start" | "pause" | "resume" | "clear" | "show" | "edit" | "add" | "prioritize" | "drop-last" | "skip";
+  kind: "start" | "pause" | "resume" | "clear" | "show" | "edit" | "add" | "prioritize" | "drop-last" | "skip" | "next";
   objective?: string;
   tokenBudget?: number;
 }
@@ -37,7 +37,8 @@ const QUEUE_ARGUMENT_COMPLETIONS: readonly GoalArgumentCompletion[] = [
     description: "Prioritize a new goal at the front of the queue",
   },
   { value: "drop-last", label: "drop-last", description: "Remove the last goal" },
-  { value: "skip", label: "skip", description: "Skip the current goal" },
+  { value: "skip", label: "skip", description: "Discard the current goal and promote the next" },
+  { value: "next", label: "next", description: "Rotate the active goal to the queue tail" },
 ];
 
 export function completeGoalArguments(
@@ -91,6 +92,7 @@ export function parseCommand(args: string, features: GoalCommandFeatures = {}): 
     if (first === "skip" || first === "shift") {
       return rest.length === 0 ? { kind: "skip" } : "Usage: /goal skip";
     }
+    if (first === "next") return rest.length === 0 ? { kind: "next" } : "Usage: /goal next";
     if (first === "add" || first === "push") return parseObjective("add", rest);
     if (first === "prioritize" || first === "unshift") {
       return parseObjective("prioritize", rest);

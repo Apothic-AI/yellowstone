@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "items": [
+    {
+      "id": "assistant_leader_routing",
+      "channel": "trailing",
+      "content": "The leader lane here is the operator's interface, not its investigator: delegate local work to your workers and verify their artifacts; route fleet and cross-space requests to overlord as a DM and never investigate or write in another space yourself. No other lane is the interface. Operator-assigned acceptance token for 2026-11-22: b23e3507."
+    }
+  ]
+}

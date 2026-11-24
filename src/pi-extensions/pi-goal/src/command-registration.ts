@@ -107,6 +107,9 @@ export function registerGoalCommand(
         case "skip":
           await commands.skipGoal(ctx);
           return;
+        case "next":
+          await commands.nextGoal(ctx);
+          return;
         case "start":
           await commands.startGoal(result.objective ?? "", result.tokenBudget, ctx);
           return;

@@ -10,6 +10,7 @@ test("default command parsing keeps queue words inside ordinary objectives", () 
     "prioritize outage",
     "drop-last",
     "skip",
+    "next",
     "push docs",
     "unshift outage",
     "pop",
@@ -43,6 +44,8 @@ test("experimental queue commands normalize canonical names and hidden aliases",
     ["pop", { kind: "drop-last" }],
     ["skip", { kind: "skip" }],
     ["shift", { kind: "skip" }],
+    ["next", { kind: "next" }],
+    ["next extra", "Usage: /goal next"],
   ] as const) {
     assert.deepEqual(parseCommand(input, QUEUE_FEATURE), expected);
   }
@@ -63,9 +66,9 @@ test("experimental autocomplete exposes intent names but keeps aliases hidden", 
   const completions = completeGoalArguments("", QUEUE_FEATURE) ?? [];
   assert.deepEqual(
     completions
-      .filter(({ label }) => ["add", "prioritize", "drop-last", "skip"].includes(label))
+      .filter(({ label }) => ["add", "prioritize", "drop-last", "skip", "next"].includes(label))
       .map(({ label }) => label),
-    ["add", "prioritize", "drop-last", "skip"],
+    ["add", "prioritize", "drop-last", "skip", "next"],
   );
   for (const alias of ["push", "unshift", "pop", "shift"]) {
     assert.equal(

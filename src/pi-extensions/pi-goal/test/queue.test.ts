@@ -7,6 +7,7 @@ import {
   createQueuedGoal,
   dropLastGoal,
   prioritizeGoal,
+  nextGoal,
   skipGoal,
 } from "../src/queue.js";
 
@@ -43,6 +44,19 @@ test("queue structural operations preserve array order", () => {
     dropped.queue.map(({ text }) => text),
     ["second"],
   );
+
+  const rotated = nextGoal(head, [second, third], 2_000);
+  assert.equal(rotated.goal?.id, second.id);
+  assert.deepEqual(rotated.queue.map(({ id }) => id), [third.id, head.id]);
+  const rotatedHead = rotated.queue.at(-1);
+  assert.equal(rotatedHead?.id, head.id);
+  assert.equal(rotatedHead?.text, head.text);
+  assert.equal(rotatedHead?.tokenBudget, head.tokenBudget);
+  assert.equal(rotatedHead?.tokensUsed, head.tokensUsed);
+  assert.equal(rotatedHead?.automaticModelTurns, head.automaticModelTurns);
+  assert.equal(rotatedHead?.toolFreeRepeatCount, head.toolFreeRepeatCount);
+  assert.equal(rotatedHead?.lastToolFreeOutputFingerprint, head.lastToolFreeOutputFingerprint);
+  assert.equal(rotatedHead?.status, "queued");
 
   const skipped = skipGoal([second, third]);
   assert.equal(skipped.goal?.text, "second");
