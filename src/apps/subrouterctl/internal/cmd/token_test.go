@@ -9,8 +9,10 @@ import (
 	"github.com/Apothic-AI/subrouterctl/pkg/api"
 )
 
+const tokenListTestSecret = "sk-SentinelKeyThatMustNeverAppear"
+
 func TestTokenListMasksKeysByDefaultInEveryOutputFormat(t *testing.T) {
-	const secret = "sk-SentinelKeyThatMustNeverAppear-0123456789abcdef"
+	secret := tokenListTestSecret
 	tokens := []api.Token{{ID: 7, Name: "test", Key: secret}}
 
 	for _, format := range []render.Format{render.FormatTable, render.FormatJSON, render.FormatYAML} {
@@ -43,7 +45,7 @@ func TestTokenListMasksKeysByDefaultInEveryOutputFormat(t *testing.T) {
 }
 
 func TestTokenListShowSecretsOptInReturnsUnmaskedKey(t *testing.T) {
-	const secret = "sk-SentinelKeyThatMustNeverAppear-0123456789abcdef"
+	secret := tokenListTestSecret
 	tokens := []api.Token{{ID: 7, Name: "test", Key: secret}}
 
 	for _, format := range []render.Format{render.FormatTable, render.FormatJSON, render.FormatYAML} {
@@ -72,7 +74,7 @@ func TestTokenListShowSecretsOptInReturnsUnmaskedKey(t *testing.T) {
 }
 
 func TestTokenListOutputDoesNotMutateAPITokens(t *testing.T) {
-	const secret = "sk-SentinelKeyThatMustNeverAppear-0123456789abcdef"
+	secret := tokenListTestSecret
 	tokens := []api.Token{{Key: secret}}
 	got := tokenListOutput(tokens, false)
 	if tokens[0].Key != secret {
