@@ -32,6 +32,10 @@
 #                          the lane's role file, else the profile the footer shows before we stop
 #                          it, else any profile token)
 #   --json                 machine-readable summary on stdout
+#   --path-prefix DIR      prepend DIR to PATH inside the pane before launching pil, so the lane
+#                          runs a lane-local pi binary (a rollout artifact) instead of the global
+#                          one. Code-only: HOME, the agent dir and the session are untouched. The
+#                          rollback is the same relaunch WITHOUT this option.
 #   --help                 this text
 #
 # Gates: registered · status idle/done · footer present · mode token has no `!` · `profile:` token
@@ -59,6 +63,7 @@ dry=0
 verify_only=0
 as_json=0
 expect_profile=""
+path_prefix=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -68,6 +73,8 @@ while [ $# -gt 0 ]; do
     --json) as_json=1 ;;
     --expect-profile) shift; expect_profile="${1:-}"; [ -n "$expect_profile" ] || { echo "REFUSE: --expect-profile needs a value"; exit 2; } ;;
     --expect-profile=*) expect_profile="${1#*=}" ;;
+    --path-prefix) shift; path_prefix="${1:-}"; [ -n "$path_prefix" ] || { echo "REFUSE: --path-prefix needs a value"; exit 2; } ;;
+    --path-prefix=*) path_prefix="${1#*=}" ;;
     -*) echo "REFUSE: unknown option $1 (try --help)"; exit 2 ;;
     *) if [ -z "$lane" ]; then lane="$1"; else echo "REFUSE: unexpected argument $1"; exit 2; fi ;;
   esac
@@ -198,7 +205,8 @@ if [ "$verify_only" = 1 ]; then
   exit "$rc"
 fi
 
-[ "$dry" = 1 ] && { echo "dry-run: would stop $lane (ctrl+c twice) then 'pil --session <path>' in $pane"; exit 0; }
+[ "$dry" = 1 ] && { echo "dry-run: would stop $lane (ctrl+c twice) then '${path_prefix:+PATH=$path_prefix:\$PATH }pil --session <path>' in $pane"; exit 0; }
+[ -n "$path_prefix" ] && [ ! -d "$path_prefix" ] && { echo "REFUSE: --path-prefix '$path_prefix' is not a directory"; exit 2; }
 [ -z "$session" ] && echo "WARN: $lane has no recorded session; a relaunch would start it EMPTY"
 
 # 1. Quit. Double ctrl+c; the agent vanishing from the roster is the only reliable "it is gone".
@@ -212,10 +220,14 @@ herdr agent get "$lane" >/dev/null 2>&1 && { echo "FAIL: $lane still present aft
 # 2. Relaunch through the launcher, inside the target pane, resuming the same session. pil restores
 #    PI_MODE / PI_PROFILE / PI_MODE_CONFIRM_PROJECT from the role record and derives PI_ROOMS_NAME
 #    from the tab label, so a bare `pil` is the whole command.
+# Optional lane-local binary: prepend the rollout artifact's bin dir for this launch only. The
+# pane shell expands $PATH, so the prefix is scoped to the pil command and nothing persists.
+prefix=""
+[ -n "$path_prefix" ] && prefix="PATH='$path_prefix':\$PATH "
 if [ -n "$session" ]; then
-  herdr pane run "$pane" "pil --session '$session'" >/dev/null 2>&1
+  herdr pane run "$pane" "${prefix}pil --session '$session'" >/dev/null 2>&1
 else
-  herdr pane run "$pane" 'pil' >/dev/null 2>&1
+  herdr pane run "$pane" "${prefix}pil" >/dev/null 2>&1
 fi
 for _ in $(seq 1 90); do
   s=$(herdr_get "$lane" | jq_field agent_status)

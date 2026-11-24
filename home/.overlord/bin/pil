@@ -413,7 +413,45 @@ fi
 # meant to be reachable as `pi` from an interactive shell, and bash inherits
 # exported functions through BASH_FUNC_* — resolving by PATH only (`type -P`)
 # keeps that from ever turning into self-recursion.
-PI_BIN="$(type -P pi 2>/dev/null)"
+#
+# FLEET BINARY PIN (added 2026-11-24). A lane-local PATH prefix only lasts for the
+# relaunch that carried it: any later bare `pil` reverts the lane to whatever PATH
+# resolves, which silently undoes a rollout. So the fleet's build is pinned in ONE
+# file, `~/.pi/pi-bin` (or $PI_BIN_FILE), holding an absolute path to the `pi` to run.
+#
+#   present + executable : every lane this launcher starts runs that build
+#   absent               : fall back to PATH, i.e. previous behaviour, unchanged
+#   present + not exec   : warn loudly and fall back rather than refusing to start
+#
+# Rollback is deleting the file — that is why it is a file and not an edit to this
+# script or to ~/.pi/agent/npm.
+PI_BIN_PIN_FILE="${PI_BIN_FILE:-$HOME/.pi/pi-bin}"
+PI_BIN=""
+if [ -z "${PI_BIN_PATH:-}" ] && [ -f "$PI_BIN_PIN_FILE" ]; then
+  PI_BIN_PATH="$(tr -d '\n' < "$PI_BIN_PIN_FILE" 2>/dev/null)"
+fi
+if [ -n "${PI_BIN_PATH:-}" ]; then
+  if [ -x "$PI_BIN_PATH" ]; then
+    PI_BIN="$PI_BIN_PATH"
+    # The pin must reach the CHILD, not just this exec: with pi-profile present, this
+    # script execs pi-profile, which spawns `pi` from PATH (pi-profile's spawn.ts). So
+    # exporting the pinned binary's directory is what makes the pin effective for the
+    # path lanes actually take. Without it the pin is silently ignored - measured, not
+    # assumed: a probe wrapper at the pin path was never executed until this line existed.
+    _pin_dir="$(dirname "$PI_BIN_PATH")"
+    case ":$PATH:" in
+      ":$_pin_dir:"*) : ;;
+      *) PATH="$_pin_dir:$PATH"; export PATH ;;
+    esac
+    unset _pin_dir
+  else
+    printf 'pil: PI_BIN_PATH=%s (from %s) is not executable; falling back to PATH\n' \
+      "$PI_BIN_PATH" "$PI_BIN_PIN_FILE" >&2
+  fi
+fi
+if [ -z "$PI_BIN" ]; then
+  PI_BIN="$(type -P pi 2>/dev/null)"
+fi
 if [ -z "$PI_BIN" ]; then
   PI_BIN="$(command -v pi 2>/dev/null)"
   case "$PI_BIN" in
