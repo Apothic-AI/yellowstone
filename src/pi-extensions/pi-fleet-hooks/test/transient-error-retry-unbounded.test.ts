@@ -171,13 +171,10 @@ async function createHarness(
     fetchTimes.push(Date.now());
     const entry = script[Math.min(turn, script.length - 1)];
     turn++;
-    return new Response(
-      typeof entry.body === "string" ? entry.body : entry.body,
-      {
-        status: entry.status,
-        headers: { "content-type": entry.contentType ?? "text/event-stream" },
-      },
-    );
+    return new Response(entry.body, {
+      status: entry.status,
+      headers: { "content-type": entry.contentType ?? "text/event-stream" },
+    });
   };
 
   const provider = {
@@ -296,7 +293,7 @@ test("a real session retries the recorded HTTP/2 stream drop and recovers the sa
           start(controller) {
             controller.enqueue(
               new TextEncoder().encode(
-                `data: ${JSON.stringify({ id: "partial", model: "test-model", choices: [{ index: 0, delta: { content: "partial" } }] })}\\n\\n`,
+                `data: ${JSON.stringify({ id: "partial", model: "test-model", choices: [{ index: 0, delta: { content: "partial" } }] })}\n\n`,
               ),
             );
             controller.error(new Error(HTTP2_STREAM_DROP));
