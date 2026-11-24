@@ -1,0 +1,12 @@
+; DO NOT EDIT (unless you know what you are doing)
+;
+; This subdirectory is a git "subrepo", and this file is maintained by the
+; git-subrepo command. See https://github.com/ingydotnet/git-subrepo#readme
+;
+[subrepo]
+	remote = https://github.com/Apothic-AI/pi.git
+	branch = ft94/jitter-source
+	commit = 98492da5499d6a969040dc97660e2580b07373a6
+	parent = 218e58ac468c087325ff8b7e8961d2b578cb99ef
+	method = merge
+	cmdver = 0.4.9
