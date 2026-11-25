@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -70,6 +71,32 @@ func TestTokenListShowSecretsOptInReturnsUnmaskedKey(t *testing.T) {
 				t.Fatalf("explicit show-secrets %s output did not warn on stderr: %s", format, errOut.String())
 			}
 		})
+	}
+}
+
+func TestTokenListShowSecretsWarningDoesNotCorruptJSON(t *testing.T) {
+	secret := tokenListTestSecret
+	tokens := tokenListOutput([]api.Token{{ID: 7, Name: "test", Key: secret}}, true)
+	var out, errOut bytes.Buffer
+	w := render.New(render.Options{Format: render.FormatJSON, Out: &out, Err: &errOut})
+
+	writeTokenListWarning(w, true)
+	if err := w.Structured(tokens); err != nil {
+		t.Fatal(err)
+	}
+
+	var parsed []api.Token
+	if err := json.Unmarshal(out.Bytes(), &parsed); err != nil {
+		t.Fatalf("--show-secrets JSON output is not parseable: %v; stdout: %s", err, out.String())
+	}
+	if len(parsed) != 1 || parsed[0].Key != secret {
+		t.Fatalf("--show-secrets JSON did not preserve the unmasked key: %#v", parsed)
+	}
+	if strings.Contains(out.String(), "--show-secrets is enabled") {
+		t.Fatalf("warning contaminated JSON stdout: %s", out.String())
+	}
+	if !strings.Contains(errOut.String(), "--show-secrets is enabled") {
+		t.Fatalf("warning was not written to stderr: %s", errOut.String())
 	}
 }
 

@@ -236,9 +236,7 @@ func newTokenListCommand() *cobra.Command {
 			}
 			tokens = api.FilterTokens(tokens, lf.search)
 			api.SortTokens(tokens, lf.sort, lf.desc())
-			if warning := tokenListWarning(flagShowSecrets); warning != "" {
-				w.Warn("%s", warning)
-			}
+			writeTokenListWarning(w, flagShowSecrets)
 			if w.IsStructured() {
 				return w.Structured(tokenListOutput(tokens, flagShowSecrets))
 			}
@@ -284,6 +282,12 @@ func tokenListWarning(showSecrets bool) string {
 		return ""
 	}
 	return "--show-secrets is enabled: token list output contains unmasked API keys; handle this output as a secret"
+}
+
+func writeTokenListWarning(w *render.Writer, showSecrets bool) {
+	if warning := tokenListWarning(showSecrets); warning != "" {
+		w.Warn("%s", warning)
+	}
 }
 
 // tokenListOutput copies tokens and masks their serialized key field unless
