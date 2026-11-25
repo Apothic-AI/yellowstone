@@ -20,7 +20,8 @@
       "./src/transient-error-retry.ts",
       "./src/reasoning-recovery.ts",
       "./src/tool-markup-inert.ts",
-      "./src/harmony-duplicates.ts"
+      "./src/harmony-duplicates.ts",
+      "./src/verified-pass-steering.ts"
     ]
   },
   "peerDependencies": {
@@ -34,6 +35,7 @@
     "test:reasoning": "node --test test/reasoning-tags.test.ts test/reasoning-replay.test.ts test/chat-completions-payload.test.ts test/persist-replay.test.ts",
     "typecheck": "tsc --noEmit --strict --target es2022 --module nodenext --moduleResolution nodenext --allowImportingTsExtensions src/reasoning-tags.ts src/reasoning-replay.ts src/inert-tool-markup.ts src/tool-markup-inert.ts src/harmony-duplicate-calls.ts src/harmony-duplicates.ts",
     "test:session": "node --test test/session-integration.test.ts",
-    "test:inert": "node --test test/tool-markup-inert.test.ts test/tool-markup-render.test.ts"
+    "test:inert": "node --test test/tool-markup-inert.test.ts test/tool-markup-render.test.ts",
+    "test:steering": "node --test test/verified-pass-steering.test.ts"
   }
 }
