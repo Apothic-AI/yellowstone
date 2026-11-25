@@ -2,15 +2,24 @@
   "version": 1,
   "items": [
     {
-      "id": "current_datetime",
+      "id": "todo_reminder",
       "channel": "trailing",
-      "content": "{{datetime}}",
-      "priority": -100
+      "content": "Update your TODOs before starting new tasks and immediately after completing each one. Nested TODOs are supported. Clear completed TODOs between tranches."
     },
     {
-       	"id": "todo_reminder",
-       	"channel": "trailing",
-       	"content": "Update your TODOs before starting new tasks and immediately after completing each one."
+      "id": "codemode_reminder",
+      "channel": "trailing",
+      "content": "Always use codemode."
+    },
+    {
+      "id": "english_to_operator",
+      "channel": "trailing",
+      "content": "Always write messages intended for the user or operator \u2014 Assistant replies and chat messages \u2014 in English, even when the material you are working with is in another language."
+    },
+    {
+      "id": "negate_caveman",
+      "channel": "trailing",
+      "content": "You do not use caveman-style responses."
     }
   ]
 }
