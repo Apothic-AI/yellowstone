@@ -41,6 +41,15 @@ VERIFIED = "verified"
 PIN_MISSING_USED_PIL = "reporter_pin_missing_used_pil_record"
 PIN_STALE_USED_PIL = "session_pin_stale_used_pil_record"
 PIN_STALE_NO_FALLBACK = "session_pin_stale_no_fallback"
+# The pin file exists and is readable, but its header id disagrees with the uuid in its own
+# filename: the file was written under a name it does not claim. Measured 2026-11-25 on
+# comms-leader, starla-leader and subtoken-leader: pi was handed an explicit --session path that
+# did not exist, minted a fresh session id, and kept the old path, so the first (lazy) write
+# materialised <old-name>.jsonl with a different header id. That is not a *stale* pin -- the pin
+# may be the live session, only unverifiable -- and reporting it as stale_no_fallback hid the one
+# fact that makes the file unusable. Hence a state of its own, with and without a fallback.
+PIN_HEADER_FILENAME_MISMATCH = "session_header_filename_mismatch"
+PIN_HEADER_FILENAME_MISMATCH_USED_PIL = "session_header_filename_mismatch_used_pil_record"
 PIN_ONLY_UNVERIFIED = "pin_only_unverified"
 NO_SESSION = "no_session_source"
 PID_DISAGREEMENT = "pid_disagreement"
@@ -471,6 +480,27 @@ def resolve(
         identity.state = PIN_ONLY_UNVERIFIED
         identity.note = ("pin file is self-consistent but nothing else witnesses it "
                          f"({record_problem or 'no lane record'}); not trusted for joins")
+    elif "header_filename_mismatch" in pin_problems:
+        # Name the defect instead of folding it into "stale pin". A mismatch means the pin file
+        # contradicts itself, so no id inside it can be trusted, and a reader told only "stale"
+        # would look for a newer session instead of the rewrite that actually happened.
+        detail = (f"pin file {pin_path} carries header id {pin_id} but its filename names "
+                  f"{pin_uuid}")
+        if record_valid:
+            identity.session = record_view
+            identity.session_source = ("lane record (validated); pin invalid "
+                                       "(header id does not match its own filename)")
+            identity.state = PIN_HEADER_FILENAME_MISMATCH_USED_PIL
+            identity.note = (
+                f"{detail}; the lane record names {record_id} and is used instead. The pin file "
+                "was rewritten under a name it does not claim — most often pi was given an "
+                "explicit --session path that did not exist (pil now drops such a path).")
+        else:
+            identity.state = PIN_HEADER_FILENAME_MISMATCH
+            identity.note = (
+                f"{detail}; no usable lane record "
+                f"({record_problem or ', '.join(record_problems) or 'absent'}). Refusing to "
+                "guess another session.")
     elif record_valid:
         identity.session = record_view
         identity.session_source = "lane record (validated); pin missing or invalid"
