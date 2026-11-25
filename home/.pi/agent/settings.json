@@ -26,7 +26,7 @@
       ]
     },
     "npm:pi-web-access",
-    "npm:pi-auto-compact",
+    "git:github.com/Apothic-AI/pi-auto-compact@v1.4.0-apothic.1",
     "npm:@spences10/pi-themes",
     "npm:pi-nested-skills",
     "npm:@narumitw/pi-btw",
@@ -71,6 +71,19 @@
   },
   "steeringMode": "all",
   "transport": "auto",
+  "compaction": {
+    "modelOverrides": {
+      "subrouter-gpt/gpt-6.2-sol": {
+        "reserveTokens": 550000
+      },
+      "relayfast/gemini-4-neon": {
+        "reserveTokens": 548576
+      },
+      "relayfast/deepseek-v4.1-flash-1017": {
+        "reserveTokens": 500000
+      }
+    }
+  },
   "retry": {
     "enabled": true,
     "maxRetries": 1000000000,

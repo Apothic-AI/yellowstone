@@ -1,5 +1,10 @@
 {
   "threshold": 78,
   "alignPiThreshold": false,
-  "alignedReserveTokens": {}
+  "alignedReserveTokens": {},
+  "modelThresholds": {
+    "*/gpt-*": 47.62,
+    "relayfast/gemini-4-neon": 47.68,
+    "relayfast/deepseek-v4.1-flash-1017": 50
+  }
 }
