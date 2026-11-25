@@ -347,6 +347,43 @@
           }
         },
         {
+          "id": "deepseek-v4.1-flash-1017",
+          "name": "deepseek-v4.1-flash-1017",
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": null,
+            "minimal": null,
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "xhigh",
+            "max": "max"
+          },
+          "input": [
+            "text",
+            "image"
+          ],
+          "contextWindow": 1000000,
+          "maxTokens": 128000,
+          "samplingParamsByThinkingLevel": {
+            "low": {
+              "reasoningEffort": "low"
+            },
+            "medium": {
+              "reasoningEffort": "medium"
+            },
+            "high": {
+              "reasoningEffort": "high"
+            },
+            "xhigh": {
+              "reasoningEffort": "xhigh"
+            },
+            "max": {
+              "reasoningEffort": "max"
+            }
+          }
+        },
+        {
           "id": "deepseek-v4-pro",
           "name": "deepseek-v4-pro",
           "reasoning": true,
@@ -589,6 +626,32 @@
             "input": 0.09375,
             "output": 0.46875,
             "cacheRead": 0.009375,
+            "cacheWrite": 0
+          }
+        },
+        {
+          "id": "gemini-4-neon",
+          "name": "gemini-4-neon",
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": null,
+            "minimal": null,
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "xhigh",
+            "max": null
+          },
+          "input": [
+            "text",
+            "image"
+          ],
+          "contextWindow": 1048576,
+          "maxTokens": 65536,
+          "cost": {
+            "input": 0.12,
+            "output": 0.6,
+            "cacheRead": 0.006,
             "cacheWrite": 0
           }
         },
