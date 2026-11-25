@@ -92,6 +92,20 @@ func TestRangeStoreMergesOverlappingWindows(t *testing.T) {
 	}
 }
 
+func TestRangeStoreKeepsABilledRowThatSharesItsSecondWithAnError(t *testing.T) {
+	s := NewRangeStore(newTestDB(t))
+	billed := Row{CreatedAt: 1500, Data: json.RawMessage(`{"created_at":1500,"type":2,"request_id":"req-pair","quota":5005}`)}
+	errored := Row{CreatedAt: 1500, Data: json.RawMessage(`{"created_at":1500,"type":5,"request_id":"req-pair"}`)}
+
+	if err := s.Put("sig", Window{Span: Span{From: 1000, To: 2000}, Rows: []Row{billed, errored}}); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	rows := s.Rows("sig", 1000, 2000)
+	if len(rows) != 2 {
+		t.Fatalf("Rows = %d, want both the billed and the error row", len(rows))
+	}
+}
+
 func TestRangeStoreDropsDuplicateRows(t *testing.T) {
 	s := NewRangeStore(newTestDB(t))
 	if err := s.Put("sig", Window{Span: Span{From: 0, To: 100}, Rows: []Row{row(50, "a")}}); err != nil {

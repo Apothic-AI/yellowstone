@@ -119,7 +119,12 @@ func (d *DB) lockDown() {
 // schemaVersion is the layout of the cache tables. A database that holds a
 // different version is rebuilt from scratch: the cache is a copy of data the
 // platform still serves, so throwing it away costs nothing but a fetch.
-const schemaVersion = 3
+//
+// Version 4 changed the log row identity to include the log type. A version 3
+// cache dropped the billed row of a billed+error pair that shared a request
+// id and a second, and still marked the window as covered, so it has to be
+// rebuilt for those rows to be fetched again.
+const schemaVersion = 4
 
 // migrate brings the database up to the current schema.
 func (d *DB) migrate(db *sql.DB, schema string) error {
@@ -291,14 +296,17 @@ func (s *Store) Clear() error {
 	return nil
 }
 
-// rowID extracts the request identifier of a cached row so that duplicates
-// can be dropped.
+// rowID extracts the identity of a cached row so that duplicates can be
+// dropped. The request id alone is not enough: the platform reuses it for the
+// billed row and the error row of one request, which share a second, and a
+// key without the type would keep only one of them.
 func rowID(data []byte) string {
 	var probe struct {
 		RequestID string `json:"request_id"`
+		Type      int    `json:"type"`
 	}
 	if err := json.Unmarshal(data, &probe); err == nil && probe.RequestID != "" {
-		return probe.RequestID
+		return probe.RequestID + "|" + strconv.Itoa(probe.Type)
 	}
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])[:16]

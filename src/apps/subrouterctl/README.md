@@ -265,6 +265,19 @@ subrouterctl usage logs --sort tps --order desc
 subrouterctl usage logs --sort ttft --order asc
 ```
 
+### How a log row is identified
+
+`id` is not unique: on a 48-hour pull, 3,128 rows carried only 977
+`id` values, so de-duplicating on `id` merges unrelated requests. A request
+is identified by `request_id` together with `type`. The platform reuses one
+request id for the billed row (type 2) and the error row (type 5) of the same
+request, and those two can share a second, so both fields are needed.
+
+An unfiltered pull is the union of the per-type pulls, row for row. Older
+versions keyed a row on its second and request id only, which dropped the
+billed row of a billed+error pair; version 4 of the cache rebuilds itself so
+those rows are fetched again.
+
 One log in full, including every field the platform returned and the whole
 performance payload it sends in the `other` field:
 

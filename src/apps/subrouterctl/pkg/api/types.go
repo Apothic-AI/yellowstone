@@ -380,6 +380,10 @@ type GroupMap map[string]Group
 
 // LogEntry is one usage log row. Every field the platform returns is kept so
 // that no detail is lost between the API and the terminal.
+//
+// ID is the platform's row id and is not unique across rows. A request is
+// identified by RequestID together with Type, because the platform reuses a
+// request id for the billed and the error row of one request.
 type LogEntry struct {
 	ID                int      `json:"id"`
 	UserID            int      `json:"user_id"`

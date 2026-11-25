@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -153,6 +154,120 @@ func TestGetLogRangeLeavesThePresentOpen(t *testing.T) {
 	}
 	if hits == before {
 		t.Error("the open end of the range must be fetched again")
+	}
+}
+
+// typedLogServer serves usage logs filtered by type. One second holds a billed
+// row and an error row that share a request id, the pair that an unfiltered
+// pull used to keep only half of.
+func typedLogServer(t *testing.T, hits *int) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		*hits++
+		from, _ := strconv.ParseInt(r.URL.Query().Get("start_timestamp"), 10, 64)
+		to, _ := strconv.ParseInt(r.URL.Query().Get("end_timestamp"), 10, 64)
+		wantType, _ := strconv.Atoi(r.URL.Query().Get("type"))
+		rows := []struct {
+			at         int64
+			typ        int
+			requestID  string
+			quota      int
+			prompt     int
+			completion int
+		}{
+			{1200, 2, "req-a", 100, 10, 2},
+			{1500, 5, "req-pair", 0, 11, 0},
+			{1500, 2, "req-pair", 5005, 1345677, 269},
+			{1800, 5, "req-b", 0, 12, 1},
+		}
+		items := []string{}
+		for _, x := range rows {
+			if x.at < from || x.at > to {
+				continue
+			}
+			if wantType > 0 && x.typ != wantType {
+				continue
+			}
+			items = append(items, fmt.Sprintf(
+				`{"id":1,"created_at":%d,"type":%d,"request_id":%q,"token_name":"k","model_name":"m","quota":%d,"prompt_tokens":%d,"completion_tokens":%d}`,
+				x.at, x.typ, x.requestID, x.quota, x.prompt, x.completion))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"success":true,"data":{"items":[%s],"has_more":false,"next_cursor":"","total":%d}}`,
+			joinJSON(items), len(items))
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func TestGetLogRangeKeepsABilledRowThatSharesItsSecondWithAnError(t *testing.T) {
+	hits := 0
+	srv := typedLogServer(t, &hits)
+	cl := rangeClient(t, srv)
+	window := func(logType int) LogQuery {
+		return LogQuery{Type: logType, StartTimestamp: 1000, EndTimestamp: 2000}
+	}
+	quota := func(rows []LogEntry) float64 {
+		total := 0.0
+		for _, row := range rows {
+			total += row.Quota
+		}
+		return total
+	}
+	pair := func(rows []LogEntry) (billed, errored bool) {
+		for _, row := range rows {
+			if row.RequestID != "req-pair" {
+				continue
+			}
+			switch row.Type {
+			case 2:
+				billed = true
+			case 5:
+				errored = true
+			}
+		}
+		return billed, errored
+	}
+
+	all, err := cl.GetLogRange(context.Background(), window(0))
+	if err != nil {
+		t.Fatalf("GetLogRange: %v", err)
+	}
+	billed, errored := pair(all)
+	if !billed || !errored {
+		t.Fatalf("the unfiltered pull dropped part of the billed+error pair: %d rows", len(all))
+	}
+
+	two, err := cl.GetLogRange(context.Background(), window(2))
+	if err != nil {
+		t.Fatalf("GetLogRange type 2: %v", err)
+	}
+	five, err := cl.GetLogRange(context.Background(), window(5))
+	if err != nil {
+		t.Fatalf("GetLogRange type 5: %v", err)
+	}
+
+	// The unfiltered pull is the union of the per-type pulls, row for row.
+	if len(all) != len(two)+len(five) {
+		t.Errorf("unfiltered rows = %d, want %d from types 2 and 5", len(all), len(two)+len(five))
+	}
+	if got, want := quota(all), quota(two)+quota(five); math.Abs(got-want) > 1e-9 {
+		t.Errorf("unfiltered quota = %g, want %g from types 2 and 5", got, want)
+	}
+
+	// The second call is served from disk. The row identity that the merge
+	// and the cache use must keep both rows of the pair there too.
+	before := hits
+	again, err := cl.GetLogRange(context.Background(), window(0))
+	if err != nil {
+		t.Fatalf("GetLogRange: %v", err)
+	}
+	if hits != before {
+		t.Errorf("the covered range was fetched again: %d requests", hits-before)
+	}
+	billed, errored = pair(again)
+	if !billed || !errored || len(again) != len(all) {
+		t.Errorf("the cached pull lost the billed+error pair: %d rows, billed=%v errored=%v", len(again), billed, errored)
 	}
 }
 
