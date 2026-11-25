@@ -554,6 +554,20 @@ remap_session_args() {
               printf 'pil: dropped instance-scoped --session (%s); no store copy, starting a new session in the store\n' "$rel" >&2
             fi
             ;;
+          "$SESSION_STORE"/*)
+            # A store path that does not exist is a resume target that never materialised
+            # (pi writes the session file lazily, on the first turn) or was lost. Passing it
+            # through is NOT harmless: pi's _setSessionFile treats an explicit path that is
+            # absent as "new session, keep this path", so it mints a fresh session id and then
+            # writes the header under the OLD filename. The result is a session file whose
+            # header id contradicts its name uuid, which beats identity validation (behold) and
+            # makes resume-by-id ambiguous. Measured 2026-11-25 on comms/starla/subtoken.
+            if [ -f "$v" ]; then
+              out+=(--session "$v")
+            else
+              printf 'pil: dropped --session %s (store path does not exist; a missing resume target cannot be resumed) — starting a new session\n' "$v" >&2
+            fi
+            ;;
           *) out+=(--session "$v") ;;
         esac
         ;;
@@ -563,6 +577,14 @@ remap_session_args() {
           out+=(--session "$SESSION_STORE/$rel")
         else
           printf 'pil: dropped instance-scoped --session (%s)\n' "$rel" >&2
+        fi
+        ;;
+      --session="$SESSION_STORE"/*)
+        v="${a#--session=}"
+        if [ -f "$v" ]; then
+          out+=(--session "$v")
+        else
+          printf 'pil: dropped --session %s (store path does not exist) — starting a new session\n' "$v" >&2
         fi
         ;;
       *) out+=("$a") ;;
@@ -645,6 +667,12 @@ selftest_args() {
     rel="${fixture#"$SESSION_STORE"/}"
     _check "live pin repointed"    4 "[--session-dir][$D][--session][$fixture]" \
       --session "/home/bitnom/.pi-profile-switch/instances/launch-zzzzzz/sessions/$rel"
+    _check "existing store session kept" 4 "[--session-dir][$D][--session][$fixture]" \
+      --session "$fixture"
+    _check "missing store session dropped" 2 "[--session-dir][$D]" \
+      --session "$SESSION_STORE/$enc/does-not-exist.jsonl"
+    _check "missing store session= dropped" 2 "[--session-dir][$D]" \
+      --session="$SESSION_STORE/$enc/does-not-exist.jsonl"
   else
     printf 'skip live pin (no store fixture under %s)\n' "$SESSION_STORE/$enc"
   fi

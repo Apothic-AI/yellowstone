@@ -753,11 +753,23 @@ def one_pass(only: str | None, dry: bool) -> int:
             if pid:
                 # The lane has stayed up, so forgive earlier flaps -- but only after FLAP_WINDOW,
                 # so a lane that dies again in a minute keeps its growing backoff.
+                #
+                # needs_human is cleared by the same evidence, and NOT only when a flap counter
+                # exists: a lane can be flagged with attempts==0 (pane absent at a boot-time pass,
+                # or a no-session DOWN), then come back and stay up. Measured 2026-11-25: comms-
+                # leader sat at needs_human=true with a correct session id for hours, because the
+                # old clear was gated on a counter that lane had never incremented. An alive lane
+                # that has been stable for FLAP_WINDOW is the evidence; the flag is an observation
+                # of the past, not a latch.
                 resumed_epoch = float(st.get("last_resume_epoch") or 0)
-                if st.get("attempts") and time.time() - resumed_epoch >= FLAP_WINDOW:
+                stable = time.time() - resumed_epoch >= FLAP_WINDOW
+                if stable and st.get("attempts"):
                     st = dict(st, attempts=0)
-                    st.pop("needs_human", None)
                     st["recovered_epoch"] = time.time()
+                if stable and st.get("needs_human"):
+                    st = dict(st)
+                    st.pop("needs_human", None)
+                    st.setdefault("recovered_epoch", time.time())
                 rec = agent(lane)
                 new = refresh(lane, st, rec)
                 if new != st and not dry:
