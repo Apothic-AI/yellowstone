@@ -383,3 +383,95 @@ test("extension entry registers the durable hooks and rewrites only the gateway 
   assert.equal(handler({ message: errorMessage(RECORDED_502) }), undefined);
   assert.equal(handler({ message: errorMessage(RECORDED_403, { stopReason: "stop" }) }), undefined);
 });
+
+// ---------------------------------------------------------------------------------------------
+// swarm-0wg — a permanent provider answer must not be retried, and the demotion must be visible
+// ---------------------------------------------------------------------------------------------
+
+// The real bodies: the 503 is the one that spun the herdr-pi-update-check cron for a day, the
+// 403 is relay.fast's source_disabled, and the 404 is the same class for a removed endpoint.
+const PERMANENT_503_MODEL =
+  '503: {"error":{"code":"model_not_found","message":"分组 provider:fxpayback 下模型 gpt-6.1-terra 无可用渠道 (request id: 202611252151112454798543OtorBmp)","type":"api_error"}}';
+const PERMANENT_403_SOURCE =
+  '403: {"error":{"code":"source_disabled","message":"The Kiro Pro source is turned off. Choose another source for this model, for your account or for this key."}}';
+const PERMANENT_404_MODEL = '404: {"error":{"code":"not_found","message":"model gpt-6.1-terra does not exist"}}';
+const TRANSIENT_503 = '503: {"error":{"code":"upstream_unavailable","message":"service temporarily unavailable"}}';
+const TRANSIENT_429 = '429: {"error":{"code":"rate_limit_exceeded","message":"too many requests"}}';
+
+const { classifyPermanentProviderError, terminalProviderErrorMessage } = (await import(
+  "../src/transient-error-retry.ts"
+)) as {
+  classifyPermanentProviderError: (errorMessage: string) => string | undefined;
+  terminalProviderErrorMessage: (errorClass: string, errorMessage: string) => string;
+};
+
+test("the permanent classes are recognised, and a plain throttle is not", () => {
+  assert.equal(classifyPermanentProviderError(PERMANENT_503_MODEL), "model_not_found");
+  assert.equal(classifyPermanentProviderError(PERMANENT_404_MODEL), "endpoint_not_found");
+  assert.equal(classifyPermanentProviderError(PERMANENT_403_SOURCE), "source_disabled");
+  assert.equal(classifyPermanentProviderError('401: {"error":{"message":"invalid api key"}}'), "credentials_rejected");
+  assert.equal(classifyPermanentProviderError(TRANSIENT_429), undefined);
+  assert.equal(classifyPermanentProviderError(TRANSIENT_503), undefined);
+});
+
+test("the terminal rendering carries none of the tokens pi reads as retryable", () => {
+  for (const [errorClass, body] of [
+    ["model_not_found", PERMANENT_503_MODEL],
+    ["source_disabled", PERMANENT_403_SOURCE],
+    ["endpoint_not_found", PERMANENT_404_MODEL],
+    ["credentials_rejected", '401: {"error":{"message":"invalid api key"}}'],
+  ] as const) {
+    const terminal = terminalProviderErrorMessage(errorClass, body);
+    assert.equal(
+      isRetryableAssistantError({ role: "assistant", stopReason: "error", errorMessage: terminal, content: [] }),
+      false,
+      `${errorClass}: the terminal message must not be retryable: ${terminal}`,
+    );
+    assert.match(terminal, /terminal_provider_error/);
+    if (extractRequestId(body)) assert.ok(terminal.includes(extractRequestId(body)!), "request id survives");
+  }
+});
+
+test("a permanent answer is demoted by the handler, and the provider text is kept", () => {
+  // The defect, proven on the installed classifier: pi WOULD retry this body forever.
+  assert.equal(
+    isRetryableAssistantError({ role: "assistant", stopReason: "error", errorMessage: PERMANENT_503_MODEL, content: [] }),
+    true,
+    "precondition: the dead-model body is retryable before the hook acts",
+  );
+
+  const handlers: Record<string, (event: unknown) => unknown> = {};
+  const entries: Array<{ type: string; data: unknown }> = [];
+  const pi = {
+    on(event: string, handler: (event: unknown) => unknown) {
+      handlers[event] = handler;
+    },
+    getSettings: () => ({ retry: { enabled: true, maxRetries: 1_000_000_000, baseDelayMs: 10, maxAgentDelayMs: 40 } }),
+    getSessionName: () => "test-session",
+    appendEntry(type: string, data: unknown) {
+      entries.push({ type, data });
+    },
+  };
+  transientErrorRetry(pi as never);
+  const handler = handlers.message_end!;
+
+  const demoted = handler({ message: errorMessage(PERMANENT_503_MODEL) }) as
+    | { message: { errorMessage: string } }
+    | undefined;
+  assert.ok(demoted, "the handler must replace a permanent error");
+  assert.match(demoted!.message.errorMessage, /^terminal_provider_error: model_not_found/);
+  assert.equal(
+    isRetryableAssistantError({ role: "assistant", stopReason: "error", errorMessage: demoted!.message.errorMessage, content: [] }),
+    false,
+    "the replacement must settle the turn",
+  );
+  assert.deepEqual(entries.map((entry) => entry.type), ["fleet-terminal-provider-error"]);
+  assert.equal((entries[0].data as { providerText: string }).providerText, PERMANENT_503_MODEL);
+  assert.equal((entries[0].data as { class: string }).class, "model_not_found");
+
+  // A throttle and a plain upstream 503 keep retrying: the demotion is not a blanket "any 5xx".
+  assert.equal(handler({ message: errorMessage(TRANSIENT_429) }), undefined);
+  assert.equal(handler({ message: errorMessage(TRANSIENT_503) }), undefined);
+  assert.equal(entries.length, 1, "no terminal entry for the retryable families");
+});
+

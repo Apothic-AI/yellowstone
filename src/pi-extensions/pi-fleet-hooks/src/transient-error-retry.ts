@@ -43,6 +43,16 @@
 // pi's own retry loop uses, is exported by pi-ai in every version we run, and cannot
 // drift, so the retry decision is delegated and only the *rewrite* decision is ours.
 //
+// swarm-0wg adds the opposite direction: a provider answer that CANNOT succeed on retry is
+// demoted from retryable to terminal. Under FT-94's unbounded retries a permanent answer (a model
+// id the provider no longer serves, a turned-off source, a rejected key) is retried forever: the
+// turn never ends, the lane reports "working", and the only visible symptom is provider spend.
+// Measured 2026-11-25 on the herdr-pi-update-check cron: the task's model returned
+// `503 model_not_found — no available channel for model gpt-6.1-terra` and the run burned ~22
+// calls per 2h cycle for a day. The rewrite keeps the class and the request id in the transcript,
+// keeps the provider's verbatim text in a session entry and in the diagnostic log, and removes
+// the tokens pi's classifier reads as retryable (status digits, `api_error`, gateway phrasing).
+//
 // FT-94 diagnostics: every retryable failure in a chain is appended as one JSON line to a
 // durable state file (see `diagnosticLogPath`), with the attempt number, the reason, the
 // delay pi will sleep for that attempt (computed with pi's own exported `retryDelayMs` and
@@ -109,6 +119,59 @@ const NON_RETRYABLE_CONFIG =
 // death pi retries, and the guard below only runs on messages pi does NOT already retry.
 const NON_RETRYABLE_CANCELLED =
   /(?:aborted|cancel(?:l)?ed|interrupted)\s+by\s+(?:the\s+)?user|user.?(?:abort|cancel(?:l)?ed)|operation.?(?:was|has).?(?:been.?)?(?:abort|cancel(?:l)?ed)/i;
+
+// swarm-0wg: answers that are deterministic — the same request can never succeed. Matched on the
+// body, not on the status alone: a gateway 503 for a model it does not serve and a gateway 503
+// while its upstream restarts are the same digit and opposite decisions.
+const PERMANENT_MODEL =
+  /model.?not.?found|no.?such.?model|unknown.?model|model.?not.?available|no.?available.?channels?|模型.{0,12}无可用渠道/i;
+const PERMANENT_SOURCE =
+  /source.?disabled|source.?is.?turned.?off|source.?turned.?off|no.?available.?source|source.?is.?disabled/i;
+const PERMANENT_ENDPOINT =
+  /(?<![a-z0-9])404(?![a-z0-9])[\s\S]{0,200}(?:not.?found|no.?such|does.?not.?exist|unsupported)/i;
+const PERMANENT_CREDENTIALS =
+  /invalid.?api.?.?key|api.?.?key.?(?:invalid|revoked|expired)|unauthori[sz]ed|permission.?denied|not.?authori[sz]ed|no.?configured.?account/i;
+
+export type PermanentProviderErrorClass =
+  | "model_not_found"
+  | "source_disabled"
+  | "endpoint_not_found"
+  | "credentials_rejected";
+
+/** The permanent class of a provider error body, or undefined when it may still clear. */
+export function classifyPermanentProviderError(errorMessage: string): PermanentProviderErrorClass | undefined {
+  if (PERMANENT_MODEL.test(errorMessage)) return "model_not_found";
+  if (PERMANENT_SOURCE.test(errorMessage)) return "source_disabled";
+  if (PERMANENT_ENDPOINT.test(errorMessage)) return "endpoint_not_found";
+  if (PERMANENT_CREDENTIALS.test(errorMessage)) return "credentials_rejected";
+  return undefined;
+}
+
+const PERMANENT_REASON: Record<PermanentProviderErrorClass, string> = {
+  model_not_found: "the provider has no channel for this model id",
+  source_disabled: "the provider source is turned off for this key",
+  endpoint_not_found: "the provider has no such endpoint",
+  credentials_rejected: "the provider rejected the credentials",
+};
+
+/**
+ * A terminal rendering of a permanent provider error: it names the class and the request id and
+ * deliberately carries none of the tokens pi's retry classifier reads as retryable (a status
+ * digit, `api_error`, gateway stream wording). The provider's own text stays available in the
+ * session entry `fleet-terminal-provider-error` and in the diagnostic log.
+ */
+export function terminalProviderErrorMessage(
+  errorClass: PermanentProviderErrorClass,
+  errorMessage: string,
+): string {
+  const requestId = extractRequestId(errorMessage);
+  const id = requestId ? ` (request id: ${requestId})` : "";
+  return (
+    `terminal_provider_error: ${errorClass} — ${PERMANENT_REASON[errorClass]}; ` +
+    `retrying this answer cannot succeed. The provider's own text is kept in this session as ` +
+    `fleet-terminal-provider-error${id}.`
+  );
+}
 
 /** Extracts the gateway request id from a recorded error body, or undefined. */
 export function extractRequestId(errorMessage: string): string | undefined {
@@ -216,6 +279,37 @@ export default function (pi: ExtensionAPI) {
       // chain that ends on a permanent failure reports what actually ended it.
       lastReason = errorMessage;
       lastRequestId = extractRequestId(errorMessage);
+
+      // swarm-0wg: demote a permanent answer before anything else can promote it. Only an error
+      // pi would otherwise retry is touched — an answer pi already treats as terminal keeps its
+      // text untouched, so the transcript stays exactly as the provider wrote it.
+      if (isRetryableAssistantError(message)) {
+        const permanentClass = classifyPermanentProviderError(errorMessage);
+        if (permanentClass) {
+          appendDiagnostic({
+            event: "terminal_provider_error",
+            class: permanentClass,
+            reason: errorMessage,
+            requestId: lastRequestId,
+            provider: message.provider,
+            model: message.model,
+            attempts: attempt,
+            session: pi.getSessionName(),
+          });
+          try {
+            pi.appendEntry("fleet-terminal-provider-error", {
+              class: permanentClass,
+              providerText: errorMessage,
+              requestId: lastRequestId,
+              provider: message.provider,
+              model: message.model,
+            });
+          } catch (error) {
+            console.error(`[transient-error-retry] terminal entry failed: ${String(error)}`);
+          }
+          return { message: { ...message, errorMessage: terminalProviderErrorMessage(permanentClass, errorMessage) } as typeof message };
+        }
+      }
 
       const policy = retryPolicy(pi);
       const promoted = rewriteTransientError(message);
