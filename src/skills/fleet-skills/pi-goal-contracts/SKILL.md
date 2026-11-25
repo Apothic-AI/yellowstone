@@ -16,6 +16,12 @@ Verbs: `pause`, `resume`, `clear`, `edit <obj>`, `add <obj>`, `prioritize <obj>`
 - The queue **self-advances**: `goal_complete` sets a pending advance, and the next goal activates at the settled idle boundary with no human focus step.
 - A stopped next item **stays stopped**. A paused goal you skip to does not silently resume.
 
+### `next` vs `skip` — both advance the queue, only one keeps the goal
+
+`/goal next` **rotates** instead of discarding: the active goal is shelved with its identity, objective text, cumulative usage and budget intact and appended to the queue tail, while the head is promoted in its place (`nextGoal()` = shelve + promote; the shelved copy is `status: queued`, so it comes back around). Exposure: `/goal next` (no arguments) and the queue menu's *Rotate current goal to end…*, which appears only when something is queued. It dispatches at the settled idle boundary like `skip`, persists its own pending reason across reload, and refuses to rotate a goal that is already `complete`. With nothing queued the active goal is still parked and the notice reads *Goal rotated: … No goals remain.* — nothing activates.
+
+`/goal skip` **discards** the active goal (`skipGoal()` takes the queue head and drops the current one); its id and text are gone. Use `next` when the work is still wanted later, `skip` when it is being abandoned.
+
 ## Four tools
 
 `goal_complete`, `goal_blocked`, `goal_wait`, `goal_edit`. There is **no** `create_goal` or `get_goal` on pi.
