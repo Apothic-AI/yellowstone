@@ -113,6 +113,10 @@ const FLEET_FAMILIES: Array<[string, string]> = [
     "shared upstream overload (recorded, bare)",
     "shared upstream overload retry stopped: context deadline exceeded (request id: 20261118153109485512669m6aRMLUA)",
   ],
+  [
+    "HTTP/2 upstream stream read failure (recorded)",
+    "upstream stream read failed before completion: http2: response body closed",
+  ],
   // The same families as relayed by the openai-completions adapter, which prefixes the status:
   [
     "routing retry budget expired (403-wrapped)",
@@ -137,7 +141,10 @@ for (const [name, text] of FLEET_FAMILIES) {
         true,
         `${name}: the rewrite must be accepted by pi's own classifier`,
       );
-      assert.ok(rewritten.includes("request id: "), "the request id survives verbatim");
+      if (text.includes("request id: ")) {
+        assert.ok(rewritten.includes("request id: "), "the request id survives verbatim");
+      }
+      assert.ok(rewritten.endsWith(text.replace(/^unknown:\\s*/i, "")), "the original failure text survives verbatim");
     }
   });
 }

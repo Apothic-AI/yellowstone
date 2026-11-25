@@ -77,7 +77,7 @@ const NON_RETRYABLE_LIMIT =
 // that says it stopped retrying is telling us to wait and ask again, not that the request
 // was wrong.
 const TRANSIENT_HINT =
-  /upstream response stream|stream ended unexpectedly|response stream ended|temporarily unavailable|please retry later|shared upstream overload|retry budget expired|before first protocol event|first stream event timeout/i;
+  /upstream response stream|upstream stream read failed before completion|stream ended unexpectedly|response stream ended|temporarily unavailable|please retry later|shared upstream overload|retry budget expired|before first protocol event|first stream event timeout/i;
 
 // FT-75: a 4xx status whose body is the gateway's own `bad_response_status_code` envelope --
 // the same payload it sends as 502 when its relay fails. Deliberately requires both the exact

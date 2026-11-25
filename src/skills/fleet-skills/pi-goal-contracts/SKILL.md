@@ -9,10 +9,10 @@ pi runs `@signalridge/pi-goal` (npm; config `~/.pi/agent/pi-goal.json`, `experim
 
 ## Queue model
 
-Verbs: `pause`, `resume`, `clear`, `edit <obj>`, `add <obj>`, `prioritize <obj>`, `drop-last`, `skip`, `status`.
+Verbs: `pause`, `resume`, `clear`, `edit <obj>`, `add <obj>`, `prioritize <obj>`, `next`, `drop-last`, `skip`, `status`.
 
 - `addGoal()` **appends when a goal is active and starts immediately when none is**, so `/goal add` is *always* safe. Hand over a backlog by adding several and letting the queue walk.
-- `prioritize` puts a goal at the front; `skip` advances past the head; `drop-last` removes the tail.
+- `prioritize` puts a goal at the front; `next` rotates the active goal to the queue tail without discarding it, promoting the next item; `skip` discards the active goal and advances past the head; `drop-last` removes the tail. Use `next` for fair rotation when you want to return to the current goal later, and `skip` only when you mean to abandon it.
 - The queue **self-advances**: `goal_complete` sets a pending advance, and the next goal activates at the settled idle boundary with no human focus step.
 - A stopped next item **stays stopped**. A paused goal you skip to does not silently resume.
 

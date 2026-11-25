@@ -94,6 +94,7 @@ test("verification gate: SDK, adapter and the extension under test are discovera
 // ---------------------------------------------------------------------------------------------
 
 const REQUEST_ID = "20261119095112854781304HZXFss7T";
+const HTTP2_STREAM_DROP = "upstream stream read failed before completion: http2: response body closed";
 const ROUTING_BUDGET_BODY = JSON.stringify({
   message: `routing retry budget expired before first protocol event (request id: ${REQUEST_ID})`,
 });
@@ -114,7 +115,7 @@ function successSse(text: string): string {
 
 interface Scripted {
   status: number;
-  body: string;
+  body: string | ReadableStream<Uint8Array>;
   contentType?: string;
 }
 
@@ -131,6 +132,7 @@ interface Harness {
 async function createHarness(
   script: Scripted[],
   settings: Record<string, unknown>,
+  useRetryExtension = true,
 ): Promise<Harness> {
   assert.ok(PI_ROOT && PI_AI);
 
@@ -193,7 +195,7 @@ async function createHarness(
   const resourceLoader = new sdk.DefaultResourceLoader({
     cwd,
     agentDir,
-    additionalExtensionPaths: [EXTENSION_PATH],
+    additionalExtensionPaths: useRetryExtension ? [EXTENSION_PATH] : [],
     noExtensions: false,
   });
   await resourceLoader.reload();
@@ -282,6 +284,79 @@ test("retry diagnostics use the fleet jitter setting and preserve the five-minut
 // ---------------------------------------------------------------------------------------------
 // Requirement: retries continue past the finite budget, with exponential growth and a cap
 // ---------------------------------------------------------------------------------------------
+
+test("Pi 1.6 still settles the HTTP/2 stream drop without the fleet retry extension", async () => {
+  const harness = await createHarness(
+    [
+      {
+        status: 200,
+        body: new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(
+              new TextEncoder().encode(
+                `data: ${JSON.stringify({ id: "partial", model: "test-model", choices: [{ index: 0, delta: { content: "partial" } }] })}\\n\\n`,
+              ),
+            );
+            controller.error(new Error(HTTP2_STREAM_DROP));
+          },
+        }),
+      },
+    ],
+    FAST,
+    false,
+  );
+
+  try {
+    await harness.prompt("check native Pi retry for HTTP/2 close");
+    assert.equal(harness.fetchTimes.length, 1, "native Pi classifier does not retry this exact failure");
+    const assistantEntries = harness
+      .lines()
+      .filter((entry) => entry.type === "message" && entry.message?.role === "assistant");
+    assert.equal(assistantEntries.at(-1)?.message.stopReason, "error");
+    assert.equal(assistantEntries.at(-1)?.message.errorMessage, HTTP2_STREAM_DROP);
+  } finally {
+    await harness.dispose();
+  }
+});
+
+test("a real session retries the recorded HTTP/2 stream drop and recovers the same turn", async () => {
+  const harness = await createHarness(
+    [
+      {
+        status: 200,
+        body: new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(
+              new TextEncoder().encode(
+                `data: ${JSON.stringify({ id: "partial", model: "test-model", choices: [{ index: 0, delta: { content: "partial" } }] })}\n\n`,
+              ),
+            );
+            controller.error(new Error(HTTP2_STREAM_DROP));
+          },
+        }),
+      },
+      { status: 200, body: successSse("recovered after stream drop") },
+    ],
+    FAST,
+  );
+
+  try {
+    await harness.prompt("recover after a transient HTTP/2 response-body close");
+    assert.equal(harness.fetchTimes.length, 2, "Pi must issue a second provider request after the stream drop");
+    const assistantEntries = harness
+      .lines()
+      .filter((entry) => entry.type === "message" && entry.message?.role === "assistant");
+    assert.equal(assistantEntries[0]?.message.stopReason, "error");
+    assert.equal(assistantEntries[0]?.message.errorMessage, `server_error: ${HTTP2_STREAM_DROP}`);
+    assert.equal(assistantEntries.at(-1)?.message.stopReason, "stop", "the same turn must recover and finish");
+    const scheduled = harness.diagnostics().filter((entry) => entry.event === "retry_scheduled");
+    assert.equal(scheduled.length, 1);
+    assert.match(String(scheduled[0].reason), /upstream stream read failed before completion: http2: response body closed/);
+    assert.equal(harness.diagnostics().filter((entry) => entry.event === "recovered").length, 1);
+  } finally {
+    await harness.dispose();
+  }
+});
 
 test("a real session retries a 403 routing-budget family past the old 3-attempt budget and keeps the turn", async () => {
   // Six identical failures, then success. Raw `403:` is not retryable by pi's classifier, so
