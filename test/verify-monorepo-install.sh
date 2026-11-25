@@ -112,7 +112,7 @@ PY
   while IFS= read -r s; do
     [ -n "$s" ] || continue
     case "$s" in
-      npm:*) sources_resolved="$sources_resolved$s"$'\n' ;;
+      npm:*|git:*) sources_resolved="$sources_resolved$s"$'\n' ;;
       /*)    sources_resolved="$sources_resolved$s"$'\n' ;;
       *)     r="$(cd "$(dirname "$SETTINGS")" 2>/dev/null && realpath -m "$s")"
              sources_resolved="$sources_resolved${r:-$s}"$'\n' ;;
@@ -123,7 +123,7 @@ PY
   while IFS= read -r s; do
     [ -n "$s" ] || continue
     case "$s" in
-      npm:*) : ;;
+      npm:*|git:*) : ;;
       "$REPO"/*|"$SANDBOX/repo"/*)
         [ -e "$s" ] || bad "source does not exist: $s" ;;
       *'/Code/'*)
