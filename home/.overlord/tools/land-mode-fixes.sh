@@ -2,12 +2,22 @@
 # land-mode-fixes — replace the two verified-false sentences in this space's mode file,
 # then relaunch this lane, so the new definition digest is confirmed at startup.
 #
-# Why the two steps are one script: editing a mode file changes its digest. This lane's
-# session recorded the old digest, and `driftPolicy` defaults to `block` — so an edit on its
-# own makes the NEXT turn fall back to the native prompt, losing the whole role contract
-# (verified: resolveModeSelection with an edited definition and a recorded fingerprint =>
-# blocked=true, base=NONE). A relaunch whose environment carries PI_MODE_CONFIRM_PROJECT=1
-# records the new digest at startup, which is why <cwd>/.pi/launch.env already has that flag.
+# Why the two steps are one script: editing a mode file changes its digest, and this lane's
+# session recorded the old digest, so the next request is governed by the DRIFT policy — which is
+# per-build, not universal (corrected 2026-11-26; the original text here said "defaults to `block`"
+# and that is TRUE ONLY OF THE NPM COPY, which no lane on this machine loads):
+#
+#   * `~/.pi/agent/npm/node_modules/@tryinget/pi-modes`      -> `?? "block"`  (loaded by NOBODY)
+#   * `~/Code/yellowstone/src/pi-extensions/pi-modes`        -> `?? "reuse"`  (loaded by 33/33
+#     instances; declared in each instance's settings `packages[].source`)
+#
+# Both report version `0.6.0`, so nothing in the version string distinguishes them. Under the
+# fleet's actual `reuse` policy an edited definition does NOT fall back to the native prompt —
+# the lane keeps composing its **approved snapshot**, i.e. the OLD contract, silently, with a
+# `definition changed since activation` diagnostic. Silent staleness is the hazard, not a dropped
+# role contract. A relaunch whose environment carries PI_MODE_CONFIRM_PROJECT=1 records the new
+# digest at startup; `/mode-reapprove` inside the lane is the other route, but a lane may not send
+# it to itself (~/AGENTS.md, "Acting on yourself").
 # Doing them in one script means the window in which the file is edited but not launched is
 # the duration of a relaunch, not the gap between two of an agent's turns.
 #
@@ -69,8 +79,10 @@ OLD_RELOAD = "`/reload` re-reads a changed `AGENTS.md`; it never re-reads a chan
 NEW_RELOAD = ("`/reload` re-reads a changed `AGENTS.md` (it reloads extensions, skills, prompts, themes "
               "and context files), but it does not govern a mode file: `pi-modes` re-reads mode "
               "definitions from disk on every turn, and a definition whose digest changed is *drift* — "
-              "under the default `block` policy its space half drops on the next turn until it is "
-              "re-approved.")
+              "whose consequence depends on the build's `driftPolicy`. The fleet loads the fork, where "
+              "the default is `reuse`: the lane keeps composing its approved snapshot (the OLD "
+              "contract) silently until it re-approves. The npm copy defaults to `block`, which drops "
+              "the space half instead. Both are version 0.6.0; read `packages[].source` to know which.")
 
 OLD_BEADS = ("every space attached with `BEADS_DIR=<space>/.beads` and the\nsame `project_id` "
              "(`D1`, `migration-plan-20261029.md`)")
