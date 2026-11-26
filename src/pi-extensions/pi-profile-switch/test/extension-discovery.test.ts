@@ -354,19 +354,19 @@ describe("DiscoveredExtensions (pure discovery & selection)", () => {
 		expect(result.diagnostics?.[0].message).toMatch(/filtered out by this package's settings entry/);
 	});
 
-	it("names an explicit empty extensions list as a deliberate disable, not a fault", async () => {
+	it("stays silent for an explicit empty extensions list, which is a deliberate disable", async () => {
 		await addPackage("pi-off", { extensions: ["./a.ts"] });
 		// Pi's `applyPackageFilter` treats `userPatterns.length === 0` as "disable
 		// every resource of this type" — the documented switch-off, not a broken
-		// filter. Reporting it as a defect sends the reader hunting for a typo that
-		// does not exist (pi-thinking-fold's `extensions: []`).
+		// filter. Warning on a chosen state teaches lanes to ignore the warnings that
+		// name real faults (pi-thinking-fold's `extensions: []`), so this reports
+		// nothing at all: silence is the accurate statement about intent.
 		await setConfiguredPackages([{ source: "npm:pi-off", extensions: [] }]);
 		const extensions = await discoverExtensions({ cwd: fixture.cwd, agentDir: fixture.agentDir });
 
 		const result = await extensions.select(["pi-off"]);
 		expect(result.entries).toEqual([]);
-		expect(result.diagnostics?.[0].code).toBe("disabled-by-settings");
-		expect(result.diagnostics?.[0].message).toMatch(/deliberate switch-off, not a fault/);
+		expect(result.diagnostics ?? []).toEqual([]);
 	});
 
 	it("does not read a generated instance's derived empty list as intent", async () => {
@@ -395,8 +395,8 @@ describe("DiscoveredExtensions (pure discovery & selection)", () => {
 		const result = await extensions.select(["pi-beads"]);
 
 		expect(result.entries).toEqual([]);
-		// The point: NOT `disabled-by-settings`. A derived list must fall through to
-		// the filter diagnosis, which names the `./` prefix as the cause.
+		// The point: silence is reserved for an authored empty list. A derived list must
+		// fall through to the filter diagnosis, which names the `./` prefix as the cause.
 		expect(result.diagnostics?.[0].code).toBe("filtered-by-settings");
 	});
 
@@ -476,7 +476,10 @@ describe("local extension reference diagnostics", () => {
 		const result = await extensions.select(["ghost", "relative.ts", "relative/path.ts", "../relative.ts", missing, "empty-package", "zero-*", file]);
 		expect(result.entries).toEqual([{ id: file, entry: file, origin: "path" }]);
 		expect(result.unmatched).toEqual(["zero-*"]);
-		expect(result.diagnostics?.map((issue) => issue.reference)).toEqual(["ghost", "relative.ts", "relative/path.ts", "../relative.ts", missing, "empty-package", "zero-*"]);
+		// `empty-package` is absent by design: its settings entry declares an explicit
+		// empty list, which is a chosen switch-off rather than a failure, so it emits no
+		// diagnostic. It must still not fall through to the relative-base guess below.
+		expect(result.diagnostics?.map((issue) => issue.reference)).toEqual(["ghost", "relative.ts", "relative/path.ts", "../relative.ts", missing, "zero-*"]);
 		for (const issue of result.diagnostics ?? []) {
 			expect(issue.kind).toBe("extension");
 			expect(issue.message).toContain("not loaded");

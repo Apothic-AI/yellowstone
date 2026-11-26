@@ -238,7 +238,8 @@ export class DiscoveredExtensions {
 					if (pkg !== undefined && pkg.name === name) {
 						const pkgEntries = this.#packageEntries(pkg);
 						if (pkgEntries.length === 0) {
-							diagnose(reference, ...emptyPackageDiagnostic(pkg));
+							const diagnostic = emptyPackageDiagnostic(pkg);
+							if (diagnostic !== undefined) diagnose(reference, ...diagnostic);
 						}
 						for (const pkgEntry of pkgEntries) add(pkgEntry, reference);
 					}
@@ -260,8 +261,8 @@ export class DiscoveredExtensions {
 			if (pkg !== undefined) {
 				const pkgEntries = this.#packageEntries(pkg);
 				if (pkgEntries.length === 0) {
-					const [code, cause] = emptyPackageDiagnostic(pkg);
-					diagnose(reference, code, cause);
+					const diagnostic = emptyPackageDiagnostic(pkg);
+					if (diagnostic !== undefined) diagnose(reference, ...diagnostic);
 					continue;
 				}
 				for (const pkgEntry of pkgEntries) add(pkgEntry, reference);
@@ -317,14 +318,14 @@ export function packageNameFromSource(source: string): string {
  *
  *  A package only reaches `#packages` when some declared entry exists on disk, so
  *  `filteredOut` means entries were found and then filtered. The remaining case is a
- *  manifest whose globs match nothing — still author-fixable, but named accurately. */
-function emptyPackageDiagnostic(pkg: DiscoveredPackage): [code: string, cause: string] {
-	if (pkg.deliberatelyDisabled) {
-		return [
-			"disabled-by-settings",
-			`package "${pkg.name}" is disabled by its own settings entry, which declares an empty list for every resource type it provides; that is a deliberate switch-off, not a fault — remove the empty list (or restore an entry) to load it again`,
-		];
-	}
+ *  manifest whose globs match nothing — still author-fixable, but named accurately.
+ *
+ *  A deliberate switch-off returns no diagnostic at all. An empty list is a chosen
+ *  state (`applyPackageFilter` reads `userPatterns.length === 0` as "disable every
+ *  resource of this type"), and warning on a chosen state teaches lanes to ignore
+ *  the warnings that do name real faults. Silence is the accurate report. */
+function emptyPackageDiagnostic(pkg: DiscoveredPackage): [code: string, cause: string] | undefined {
+	if (pkg.deliberatelyDisabled) return undefined;
 	if (pkg.filteredOut) {
 		return [
 			"filtered-by-settings",
