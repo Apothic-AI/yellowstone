@@ -464,6 +464,14 @@ def deliver(lane: str, msg: str, marker: str, attempts: int = 6) -> bool:
     detail = (proc.stderr or proc.stdout or "").strip()
     typed = proc.returncode == 0 or "agent_prompt_stalled" in detail
     if not typed:
+        # A --wait timeout is not evidence the text was never typed: the prompt can be
+        # submitted while the lane's turn is still running, and the call then times out
+        # at 30s. Measured 2026-11-26: the notice was in the session 2s after the call,
+        # the call timed out, and the retry below re-sent it -- the lane got the notice
+        # twice. Ask the session before re-sending; only retry when it never landed.
+        if notice_recorded(lane, marker, wait=4.0):
+            out(f"{lane}: told the lane it was resumed")
+            return True
         # Nothing was typed at all: let the lane settle and make one full attempt more.
         time.sleep(3)
         proc = subprocess.run(["herdr", "agent", "prompt", lane, msg, "--wait", "--timeout", "30000"],
