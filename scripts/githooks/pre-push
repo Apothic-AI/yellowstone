@@ -39,6 +39,31 @@ case "$self_path" in
     ;;
 esac
 
+# Destination. $2 is the URL git is pushing to. The gates below compare this machine's mirror
+# against the live copy — a property of THIS repository — so they cannot describe a push that
+# publishes something else (a subrepo's upstream, a mirror). Measured 2026-11-26 (overlord, at the
+# source): the hook read no destination at all, so a push of unrelated content ran these gates
+# anyway and was judged by them.
+#
+# The location check above catches a hook running outside this repository; this one catches a push
+# made FROM this tree TO somewhere else, which is the subrepo case. Both must hold to run the gates.
+dest="${2:-}"
+if [ -n "$dest" ]; then
+  own=0
+  for _url in $(git remote -v | awk '{print $2}' | sort -u); do
+    [ -n "$_url" ] || continue
+    if [ "$_url" = "$dest" ]; then own=1; break; fi
+    # an unconfigured URL naming this same repository is still this repository
+    case "$dest" in
+      *"/$(basename "$_url" .git)") own=1; break ;;
+    esac
+  done
+  if [ "$own" != 1 ]; then
+    echo "pre-push: skip: destination $dest is not a remote of this repository ($repo) — these gates describe this repository only" >&2
+    exit 0
+  fi
+fi
+
 rc=0
 for t in test/verify-revert-detection.sh test/verify-mirror-live.sh; do
   # A missing check must FAIL, not `continue`. `[ -f "$t" ] || continue` reads as
