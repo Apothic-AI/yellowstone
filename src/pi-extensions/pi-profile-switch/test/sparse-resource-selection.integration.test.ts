@@ -177,8 +177,15 @@ function observe(args: string[], toolCommand?: string): Promise<Observation & { 
 
 /** The native baseline: the pi binary with the real agent dir and no launcher. */
 function observeNative(toolCommand?: string): Promise<Observation & { tools?: string[] }> {
+	// NATIVE_PI must be EXECUTED, not handed to node. Every entry under this
+	// repo's node_modules/.bin is a `#!/bin/sh` shim (pi, jiti, tsc, vitest, …),
+	// not the symlink npm writes, so `node <shim>` parses a shell script and dies
+	// with "SyntaxError: Invalid or unexpected token" on line 2 — stderr only,
+	// empty stdout — and the driver then waits out its 20 s budget for a
+	// get_state response that can never come. That single mismatch accounted for
+	// all 17 failures in this file.
 	return observeWith(
-		new RpcDriver("node", [NATIVE_PI, "--mode", "rpc"], { cwd: fixture.cwd, env: launcherEnv(fixture) }),
+		new RpcDriver(NATIVE_PI, ["--mode", "rpc"], { cwd: fixture.cwd, env: launcherEnv(fixture) }),
 		toolCommand,
 	);
 }
