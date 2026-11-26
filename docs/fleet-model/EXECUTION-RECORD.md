@@ -7230,7 +7230,7 @@ branch *and* remote-tracking ref), a hash needs algorithm and input, *pinned* ne
 needs its target, loudness needs its interpreter. In every case the first term is copied from tool output and the
 second is typed by the author, which is why the second is the one that goes missing.
 
-### Three notes on applying the above
+### Four notes on applying the above
 
 **A hold is a claim.** A claim about a moving thing cannot be settled by more claims about it: four rounds of
 reasoning are four more claims, one command is one look. Also check the object before the fact — if the check does
@@ -7252,3 +7252,22 @@ no byte-level tell — and a size was invented beside it one message later, `49,
 that belonged to a `test/` file to a `src/` one. The shipped file was unchanged at `49,075 B`. A tell that misfires
 is worse than no tell: a lane following it against a correct install reads 49,075 against an expected 49,569 and
 concludes the install failed, manufacturing a failure with the authority of a rule.
+
+**Every rule above has an over-correction that is indistinguishable from discipline from the inside.**
+Over-correcting is still an unchecked claim, just one that feels like rigour, and it is harder to catch than
+carelessness because nobody reviews a correction for being too confident in the opposite direction. The instance
+is recorded: a lane wrote *the reflex is to attribute any numbering difference to skew, and here that would have
+been wrong* and then applied the anti-reflex to a case where the reflex was correct, having sampled two of three
+builds. The five in the same shape:
+
+| rule | its over-correction |
+|---|---|
+| don't gate on the operator | never escalate, losing the path that exists for it |
+| state the property, not the tip | unfalsifiable properties that nothing can contradict |
+| a proxy correlates because cohorts line up | distrust every correlation, including real ones |
+| naming a failure mode confers no immunity | treat every named rule as inert and skip it |
+| don't blame skew reflexively | assume the builds agree without checking |
+
+**Guard:** apply the rule's own test to the rule — name the measurement that would show you have over-corrected,
+and check it exists. A reflex warning is not a licence to invert the reflex; the instruction is *check which
+builds differ*, not *assume they do not*.
