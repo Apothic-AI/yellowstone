@@ -6677,6 +6677,20 @@ over the real generator with real discovery contexts (including *"keeps an unres
 declaration for an undeclared kind"*). No lane, no `mkdtemp` that outlives the turn, re-runnable by
 anyone. **Cite source line + discriminating suite + a preserved read; never an instance directory.**
 
+
+**Amendment, 2026-11-26T~20:05Z — the first clause above is too absolute; the second stands.** The
+`prompts` and `themes` kinds are `UNMANAGED_DIR_KINDS` (`settings-generator.ts:142`) and are re-included
+**verbatim**, so a `prompts` value in a generated instance is a *provenance record* of the authored config
+in effect at that launch — the one question no test can reconstruct after the fact (see `:376`). Measured
+2026-11-26 over 30 instance dirs: 26 carried `prompts: ["./prompts/*.md"]` with `extensions: []`, and 4
+carried `prompts: ["prompts/*.md"]` with one entry — a clean partition on the authored-config boundary,
+where the `./` was authored and the empty allowlist is the generator's silent share. The rule is LAYERED,
+not ranked: a **test** proves the BRANCH (which row of the table above executes); an **unmanaged
+passthrough** proves PROVENANCE (which authored settings were in effect); a **snapshot** preserves a
+reclaimed instance; the **authored file** states intent. Only the branch claim needs a test.
+"A proof that cannot discriminate is worse than none" is unchanged and stands.
+
+
 **Two instrument traps that made two correct readers disagree about the same fleet.** Both were
 found the same night, both produce a confidently wrong number rather than an error:
 
@@ -6699,8 +6713,17 @@ and reclaimed, so directory counts drift between measurements — the disk itsel
 instance dirs, **32** with `settings.json`, **2** beads-correct, **30** disabled on disk. Over the
 **live** lanes only (session-record pid → `/proc/<pid>/environ` → `PI_CODING_AGENT_DIR`): **2 of 30**
 correct — `synomone-leader` (`launch-OVLwuc`, a hand patch) and `yellowstone-leader`
-(`launch-lZX3qp`, a genuine generation). Overlord measures 32 live against my 30 by a slightly
-different enumeration; the ratio is unchanged. **The outage number is the live count, not "33/33
+(`launch-lZX3qp`, a genuine generation). **CORRECTED 2026-11-26T~17:05Z: `launch-lZX3qp` no longer exists.**
+It was yellowstone-leader's PREVIOUS launch: its holder pid 877145 is dead, and YL's 09:16:13 restart
+replaced it with `launch-VO2w3q` — also a genuine generation, also beads-correct. The 09:14Z reading was
+true when taken; one of its two exemplars is now dead and the other is live under a new name. Re-measured
+~17:05Z: **28 live instance dirs, 4 beads-correct** (`launch-NDZ1Ni`, `launch-OVLwuc`, `launch-VO2w3q`,
+`launch-y9hL5E`); 33 dirs / 30 `settings.json` on disk. **A lane's own instance is the one most likely to
+be cited after it has already been swept, because a lane cannot observe its own restart.** Overlord measures 32 live against my 30 by a slightly
+different enumeration; the ratio is unchanged. **CORRECTED 2026-11-26T~17:10Z: the 32-vs-30 spread
+was enumeration and is now resolved — Overlord's census (pid → cwd → instance, parent `pi` only) reads
+28 distinct dirs and 4 beads-correct at ~17:05Z, and the earlier "Overlord measures 32" figure was an
+attribution error, not a second measurement.** **The outage number is the live count, not "33/33
 files".** Quoting a bare "N of M" without saying disk-or-live, and without a timestamp, is the error
 to avoid — we each made it once.
 
