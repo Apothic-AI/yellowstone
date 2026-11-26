@@ -7163,7 +7163,11 @@ package does not contain (it ships no `test/` directory), so the gate was named 
 **Rule:** verify the staged DIFF, and verify it AFTER `git add` — verify-then-stage is not atomic, and the window
 between the two is exactly when foreign content lands. Counts are necessary and not sufficient: every added line
 must be one the committer wrote, which is an authorship question a `--numstat` total cannot answer.
-`git diff --cached --numstat` plus a reading of the additions, or nothing.
+`git diff --cached --numstat` plus a reading of the additions, or nothing. The two catch different faults: a
+count catches a COUNT mismatch, and only reading the diff catches a CONTENT error that preserves the count —
+an arithmetically plausible `22 insertions` still carried a stray line, because the anchor matched the last
+line of the previous note rather than this one. That is the authorship arm made operational: each added line
+must be one the author wrote, and the only way to know is to read it.
 
 **Rule (second half):** a gate must name the artifact it gates, and by membership — the package, not the checkout
 that contains it; the shipped bytes, not the sources. A gate that names its artifact by habit will be satisfied by
