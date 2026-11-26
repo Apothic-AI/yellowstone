@@ -6432,6 +6432,16 @@ global pin still `7b2756bdc`; branch pushed to apothic-fork for durability). Det
   resolves the current global pin. Overlord flagged; rollback/per-lane pin is their decision.
 - Reboot cause not established here; passed to Overlord to ask sysops-leader.
 
+**Amendment (2026-11-26T10:27Z): the pin has advanced to 1.6.2.** `~/.pi/pi-bin` now points at
+`~/.local/lib/pi-apothic-7102ddee7/pi` (install `1.6.2`, dir written 05:18:34 -0500, pin flipped
+05:27:01 -0500), so `pil`-launched lanes resolve **1.6.2** and `89306ca8e`/1.6.1 is the previous
+build. **The check is the pin file, not `command -v pi`:** on a shell, bare `pi` still resolves through
+PATH to `~/.local/lib/pi-apothic-89306ca8e/pi` (1.6.1) because that directory precedes the others,
+while `pil` reads `PI_BIN_PIN_FILE` (`~/.pi/pi-bin`, `~/.local/bin/pil:428`). So "which build is
+running" has two correct answers depending on the asker — **pin for lanes, PATH for shells** — and
+`readlink -f $(command -v pi)` answers the shell question while looking like it answers the lane one.
+This is the same two-answer shape as the two `pi-modes` `0.6.0` builds (§54): name the reader.
+
 ## §51 — Compaction: `alignPiThreshold` enabled, so 40% is pi's own hard threshold (2026-11-26)
 
 Operator decision: the 40% global threshold must be pi's hard compaction threshold for every model
@@ -6651,8 +6661,41 @@ including prompts **without** the `./`. **One genuine generation is enough to pr
 path; the mechanism at `settings-generator.ts:538` plus one re-readable snapshot is the durable
 statement.**
 
+**The evidence class for generation behaviour is tests, not artifacts — and a proof that cannot
+discriminate is worse than none.** Generation has two branches, and on a *correct* authored entry they
+emit identical output, so an observation taken on a healthy instance cannot tell them apart:
+
+| `resourceSelection.extensions` | code path | authored `./src/index.ts` (matches nothing) |
+|---|---|---|
+| declared | `settings-generator.ts:538` `packageExtensions.get(source) ?? []` | `[]` — derived, disabled |
+| undeclared | `:540` `appendPackageExclusions(base.extensions, …)` | `["./src/index.ts"]` — pass-through, still broken |
+
+They diverge **only on the fault**. That is why reading one healthy instance and concluding "the
+self-heal works" is unsound, and why the durable proof is the repo's own suite:
+`npx vitest run test/settings-generator-selection.test.ts` → **76 tests, 1.3 s**, covering both halves
+over the real generator with real discovery contexts (including *"keeps an unresolved package's native
+declaration for an undeclared kind"*). No lane, no `mkdtemp` that outlives the turn, re-runnable by
+anyone. **Cite source line + discriminating suite + a preserved read; never an instance directory.**
+
+**Two instrument traps that made two correct readers disagree about the same fleet.** Both were
+found the same night, both produce a confidently wrong number rather than an error:
+
+1. **The beads entry is a *list element*, matched by its `source` value — not a dict key.** A reader
+   that walks the settings tree for a *key* containing `beads` finds nothing, because the shape is
+   `{"source": "npm:pi-beads-extension", …}` inside `packages[]`. That reader returned `None` for all
+   30 instances and then labelled the `None` "no settings.json", printing `no settings.json: 30`
+   beside a directory holding 32 of them. The correct match is on the element's `source`:
+   `for x in packages: src = x.get('source'); if 'beads' in src`. One line, and it is the entire
+   difference between reporting **1 of 30** and **2 of 30** — the missing lane being the reader's own.
+   Same family as `assignee`-vs-`owner`: a shape assumption defeating a correct reading.
+2. **Pids overcount lanes; the lane unit is the distinct instance dir.** Two readers measured
+   34 pids / 30 dirs and 30 pids / 30 dirs within an hour — a lane's child or subagent holds the same
+   `PI_CODING_AGENT_DIR`, so pid count is an upper bound that drifts with what is running. Quote
+   **distinct instance dirs** as the denominator and treat pids as the raw probe.
+
 **Numbers are a moving target and the denominator must be stated.** Instances are `mkdtemp` per launch
-and reclaimed, so directory counts drift between measurements. Measured 2026-11-26T09:14Z: **35**
+and reclaimed, so directory counts drift between measurements — the disk itself moved from **35 dirs /
+32 `settings.json` at 09:14Z** to **36 / 33 at 11:54:03Z** while this was being argued. Measured 2026-11-26T09:14Z: **35**
 instance dirs, **32** with `settings.json`, **2** beads-correct, **30** disabled on disk. Over the
 **live** lanes only (session-record pid → `/proc/<pid>/environ` → `PI_CODING_AGENT_DIR`): **2 of 30**
 correct — `synomone-leader` (`launch-OVLwuc`, a hand patch) and `yellowstone-leader`
@@ -6906,6 +6949,14 @@ Commits `ae5bfa4f9` (three-way split) and `8852a1a4e` (generated-instance guard)
 targeted; deploy (subrepo push + wrapper pin) **held** behind the 1.6.2 release so the two changes
 stay separately attributable.
 
+**Two correct test counts, one per ref — never read the gap as a lost test.** The same two-file run
+gives **131/131** on the published pin `43931336f` and **133/133** once the two held commits are
+applied. The extra two tests *are* the held work (the deliberate-disable case and the generated-instance
+`[]` guard), so they cannot exist on the pin. Git-subrepo merged only the published pin, so a reader
+seeing 131 and 133 side by side is looking at two trees, not a regression. Similarly,
+`test/settings-generator-selection.test.ts` is **76/76** — a third, unrelated suite over generation
+behaviour.
+
 ### The restart-results artifact is not evidence
 
 `~/.local/state/pil/restart-results/self-w17-p1-1795679253226.json` reads
@@ -6919,6 +6970,35 @@ observation is claimed.
 evidence: **composed prompt** (decisive) → **session pid change** → `reconcile-mode --inspect` →
 artifact (currently worthless for this run). Gating on `phase` would have concluded the relaunch
 had not fired, and been wrong.
+
+**Corollary, learned the same night by nearly causing an unnecessary kill: a lane waiting for a
+deferred self-relaunch can already be in the state it is waiting for.** YL-01 reported
+`FAIL base=1 overlay=0 chars=20863` and `drift`, pre-authorised an external
+`restart-fleet.py --only w17:p1` as the fallback, and asked for silence so its helper's 2 s
+`agent_status` poll could see an `idle`. Measured instead of acted on: `ps` showed pid **877145**
+started **03:51:07**, elapsed **9,289 s** — no relaunch had occurred — while the composed prompt read
+**`PASS base=1 overlay=1 chars=37331`** on three consecutive probes and `reconcile-mode --inspect`
+read **`match`**. The lane had composed the merged contract since 03:51; the `20863` reading was the
+pre-merge state, stale by hours. **The restart would have blanked a correct 37,331-char contract and
+re-opened a gate that already passed.** Two lessons: (1) a helper's poll can never be satisfied by the
+lane that is *waiting* for it, so "the helper has not fired" is not evidence of a defect — check the
+goal, not the helper; (2) before pre-authorising a destructive fallback, re-measure the condition the
+fallback exists to fix. The composed prompt is what settles it, and it costs one probe.
+
+A 13-minute monitor on pid **and** composed prompt then held **flat** — `877145`,
+`PASS base=1 overlay=1 chars=37331` — from `11:27:32Z` to `11:40:26Z`, with the process at 10,319 s
+elapsed and no pid change. That settles the last open question of the night: YL-01 then reported
+Step 3 as freshly landed with a `FAIL 20863 -> PASS 37331` before/after pair, and **both halves belong
+to the 08:51Z relaunch** — the mode file was written `06:33:40Z`, before the process started, so the
+lane had composed 37,331 for its entire life. YL-01's own discovery explains the misread: its
+`agent_status` field was stale, so the lane looked un-relaunched to every idle-gated tool. **Attribute
+Step 3 once, to 08:51Z**; a stale status field is enough to invent a relaunch that never happened.
+
+The probe order above also has a **reader trap**: `readlink -f $(command -v pi)` answers *which build
+a shell would run*, not *which build a lane runs* — lanes resolve `PI_BIN_PIN_FILE`
+(`~/.local/bin/pil:428`). On 2026-11-26T10:27Z the pin pointed at `pi-apothic-7102ddee7` (1.6.2)
+while `command -v pi` still resolved `pi-apothic-89306ca8e` (1.6.1); both readings were correct about
+different questions.
 
 ### The gate that actually decided Step 3
 
