@@ -47,8 +47,7 @@ one that matches the work instead of expecting it restated here.
    `monitor` for event streams, never polling in turn. If you don't have any pending tasks to complete after setting your monitor(s), end your turn. Your monitors will wake you.
 2. **Never prompt a `working` lane.** It aborts the turn, and on a goal lane it *pauses
    the goal*. Queue the note to a file and deliver at the stop boundary.
-3. **Never run infrastructure or act on a paid resource without authorization.** Report
-   what you would have done instead.
+3. **Without prior authorization — an explicit grant from the operator, or one already recorded in the space's authority notes — do not run infrastructure or act on a paid resource.** When you do not hold it, say what you would have done and why it needs the grant.
 4. **Never conclude a lane is fine from a status field.** `working` is not progress and
    `idle` is not done; read the footer, an artifact, or the lane's run.
 5. **Never report unverified success.** A lane's report is `reported`; only a file,
