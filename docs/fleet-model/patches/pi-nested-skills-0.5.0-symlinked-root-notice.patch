@@ -1,0 +1,14 @@
+--- a/src/skills.ts
++++ b/src/skills.ts
+@@ -205,7 +205,10 @@
+ 
+   let rootIsDirectory = false;
+   try {
+-    rootIsDirectory = lstatSync(root).isDirectory();
++    const rootStat = lstatSync(root);
++    // LOCAL PATCH: a symlinked root is skipped by design (Pi loads its target natively); skip it silently, still unscanned.
++    if (rootStat.isSymbolicLink() && statSync(root).isDirectory()) return;
++    rootIsDirectory = rootStat.isDirectory();
+   } catch (error) {
+     result.warnings.push({
+       path: root,

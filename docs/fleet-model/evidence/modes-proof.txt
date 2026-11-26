@@ -1,0 +1,43 @@
+# Role-scoped instructions — verification evidence
+# captured 2026-11-01T16:14:00Z
+# scratch cwd: /tmp/modes-proof-space (its .pi/modes/probe-leader.json is the leader-only overlay)
+
+## session 2026-11-01T16-10-18-535Z_01a197e0-4026-73b8-83ef-d6eb5e033d0c.jsonl
+   marker (MARKER-LEADER-ONLY-8C41):      1
+   base leader contract phrase:           1
+   worker contract phrase:                0
+## session 2026-11-01T16-10-43-795Z_01a197e0-a2d3-772f-a575-b78fc4e4ced2.jsonl
+   marker (MARKER-LEADER-ONLY-8C41):      0
+   base leader contract phrase:           0
+   worker contract phrase:                1
+## session 2026-11-01T16-11-29-033Z_01a197e1-5389-7493-8328-b4840b16d0b5.jsonl
+   marker (MARKER-LEADER-ONLY-8C41):      0
+   base leader contract phrase:           0
+   worker contract phrase:                0
+## session 2026-11-01T16-11-36-601Z_01a197e1-7118-7114-a49a-64a45c23209a.jsonl
+   marker (MARKER-LEADER-ONLY-8C41):      0
+   base leader contract phrase:           0
+   worker contract phrase:                0
+
+# --- 2026-11-01T16:29-16:31Z: acceptance test in the real testbed, launched through pil ---
+# cwd: /home/bitnom/Documents/Assistant   (the space, not a scratch dir)
+# launcher: pil (pi-profile), so PI_CODING_AGENT_DIR = an instance whose settings.json
+#           carries "defaultProjectTrust": "never"
+# precondition applied before these runs: "/home/bitnom/Documents/Assistant": true
+#           in ~/.pi/agent/trust.json
+
+## A  ab-leader     PI_MODES base=leader overlay=assistant-leader + PI_MODE_CONFIRM_PROJECT=1
+   stderr: (empty)   delta=1  leader_contract=1  worker_contract=0
+## B  ab-worker     PI_MODE=worker PI_PROFILE=worker, same cwd
+   stderr: (empty)   delta=0  leader_contract=0  worker_contract=1
+## C  ab-noconfirm  same as A but WITHOUT PI_MODE_CONFIRM_PROJECT
+   stderr: Startup project mode(s) not confirmed: assistant-leader (...); using native SYSTEM.md/host base
+   delta=0  leader_contract=0  worker_contract=0      <-- the failure mode: base contract lost too
+
+# --- the original production failure, reproduced and root-caused ---
+# plain `pi` in the same cwd, untrusted space (has .pi/skills, absent from trust.json):
+#   stderr: Startup composition is invalid: assistant-leader: overlay mode is unavailable
+#           and was omitted; using native SYSTEM.md/host base
+#   delta=0  leader_contract=0
+# isolation in a scratch cwd: with .pi/skills present -> overlay unavailable;
+#                             remove .pi/skills        -> composes.

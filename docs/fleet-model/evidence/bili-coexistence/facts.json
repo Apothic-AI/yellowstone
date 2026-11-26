@@ -1,0 +1,146 @@
+[
+ {
+  "kind": "bead id",
+  "value": "swarm-kbn"
+ },
+ {
+  "kind": "bead id",
+  "value": "swarm-8bk"
+ },
+ {
+  "kind": "bead id",
+  "value": "swarm-3m6"
+ },
+ {
+  "kind": "bead id",
+  "value": "swarm-nwv"
+ },
+ {
+  "kind": "bead id",
+  "value": "swarm-6ji"
+ },
+ {
+  "kind": "bead id",
+  "value": "swarm-vwr"
+ },
+ {
+  "kind": "bead id",
+  "value": "swarm-c0l"
+ },
+ {
+  "kind": "bead id",
+  "value": "swarm-3fc"
+ },
+ {
+  "kind": "bead id",
+  "value": "swarm-7p5"
+ },
+ {
+  "kind": "bead id",
+  "value": "swarm-c0z"
+ },
+ {
+  "kind": "bead id",
+  "value": "swarm-c4z"
+ },
+ {
+  "kind": "bead id",
+  "value": "swarm-fyd"
+ },
+ {
+  "kind": "bead id",
+  "value": "swarm-i9f"
+ },
+ {
+  "kind": "bead id",
+  "value": "swarm-l7o"
+ },
+ {
+  "kind": "bead id",
+  "value": "swarm-lr2"
+ },
+ {
+  "kind": "bead id",
+  "value": "swarm-pbn"
+ },
+ {
+  "kind": "bead id",
+  "value": "swarm-5mr"
+ },
+ {
+  "kind": "bead id",
+  "value": "swarm-brl"
+ },
+ {
+  "kind": "bead id",
+  "value": "swarm-04j"
+ },
+ {
+  "kind": "uuid",
+  "value": "07b8230e-d7cf-4f22-a338-ef727894a4c1"
+ },
+ {
+  "kind": "uuid",
+  "value": "0e73b068-6eff-49c8-b600-5826afd2c6ab"
+ },
+ {
+  "kind": "uuid",
+  "value": "8152933b-b23d-4007-8a02-219a2b1da539"
+ },
+ {
+  "kind": "uuid",
+  "value": "85eab8fc-52a2-4af3-9779-1241777f0ad3"
+ },
+ {
+  "kind": "uuid",
+  "value": "67aefda7-dd46-40cb-a0c2-b9727617e711"
+ },
+ {
+  "kind": "uuid",
+  "value": "79d5ec60-afb0-4d79-b316-e5b3fd326946"
+ },
+ {
+  "kind": "uuid",
+  "value": "9f726694-6c7e-4eb9-a8e5-952333223009"
+ },
+ {
+  "kind": "uuid",
+  "value": "56557a9a-f63a-475d-91a4-26dc48ee77d9"
+ },
+ {
+  "kind": "uuid",
+  "value": "3ab52dfd-51de-45d9-88c2-6cf1dc1c8fa8"
+ },
+ {
+  "kind": "uuid",
+  "value": "2a4fbf85-64d4-4960-934e-88646b3066f8"
+ },
+ {
+  "kind": "uuid",
+  "value": "958a9090-2607-4f85-bf11-e27531716342"
+ },
+ {
+  "kind": "uuid",
+  "value": "458da9e1-4699-482e-bf27-678bf66e669a"
+ },
+ {
+  "kind": "uuid",
+  "value": "2c6c247e-13a0-4381-b3a2-467ea88a06dd"
+ },
+ {
+  "kind": "uuid",
+  "value": "eadb0ff3-e49e-4c55-9937-9eed2fa38ab1"
+ },
+ {
+  "kind": "uuid",
+  "value": "e1251921-6a18-4f45-add9-08f8f8aa1a3b"
+ },
+ {
+  "kind": "uuid",
+  "value": "726b0c6d-3c81-4617-ab00-68a2b37f6af3"
+ },
+ {
+  "kind": "uuid",
+  "value": "60b6d591-3aca-4bdd-86b4-6a4e20f0c9e4"
+ }
+]

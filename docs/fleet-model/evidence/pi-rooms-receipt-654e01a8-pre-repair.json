@@ -1,0 +1,12 @@
+{
+  "id": "654e01a8-0718-4127-b5f5-7dad83b98d3b",
+  "receipts": {
+    "assistant-leader": {
+      "queuedAt": "2026-11-02T18:46:34.893Z",
+      "deliveredAt": "2026-11-02T18:46:34.945Z"
+    },
+    "self-improvement-leader": {
+      "queuedAt": "2026-11-02T18:46:34.893Z"
+    }
+  }
+}

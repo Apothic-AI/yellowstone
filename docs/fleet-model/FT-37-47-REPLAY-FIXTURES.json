@@ -1,0 +1,324 @@
+[
+ {
+  "id": "CC-1",
+  "intent": "baseline signed native reasoning replays",
+  "payload": {
+   "url": "http://127.0.0.1:9/chat/completions",
+   "assistant": {
+    "role": "assistant",
+    "content": "ANSWER",
+    "reasoning_content": "NATIVE_R"
+   }
+  },
+  "class": "same-model supported"
+ },
+ {
+  "id": "CC-2",
+  "intent": "unsigned recovered alone is silently omitted",
+  "payload": {
+   "url": "http://127.0.0.1:9/chat/completions",
+   "assistant": {
+    "role": "assistant",
+    "content": "ANSWER"
+   }
+  },
+  "class": "same-model unsupported (unsigned only)"
+ },
+ {
+  "id": "CC-3",
+  "intent": "native signed first + recovered appended => both on wire",
+  "payload": {
+   "url": "http://127.0.0.1:9/chat/completions",
+   "assistant": {
+    "role": "assistant",
+    "content": "ANSWER",
+    "reasoning_content": "NATIVE_R\nRECOVERED_R"
+   }
+  },
+  "class": "same-model supported"
+ },
+ {
+  "id": "CC-4",
+  "intent": "recovered first destroys native replay too",
+  "payload": {
+   "url": "http://127.0.0.1:9/chat/completions",
+   "assistant": {
+    "role": "assistant",
+    "content": "ANSWER"
+   }
+  },
+  "class": "same-model hazard (ordering)"
+ },
+ {
+  "id": "CC-5",
+  "intent": "reasoning_details wins and recovered is dropped",
+  "payload": {
+   "url": "http://127.0.0.1:9/chat/completions",
+   "assistant": {
+    "role": "assistant",
+    "content": "ANSWER",
+    "reasoning_details": [
+     {
+      "type": "reasoning.text",
+      "text": "NATIVE_R"
+     }
+    ]
+   }
+  },
+  "class": "same-model unsupported (details present)"
+ },
+ {
+  "id": "CC-6",
+  "intent": "field-name signature travels (fabrication; forbidden by clause 4)",
+  "payload": {
+   "url": "http://127.0.0.1:9/chat/completions",
+   "assistant": {
+    "role": "assistant",
+    "content": "ANSWER",
+    "reasoning_text": "RECOVERED_R"
+   }
+  },
+  "class": "same-model supported via native field literal"
+ },
+ {
+  "id": "CC-7",
+  "intent": "provider renamed, same model => thinking dropped by transformMessages",
+  "payload": {
+   "url": "http://127.0.0.1:9/chat/completions",
+   "assistant": {
+    "role": "assistant",
+    "content": "ANSWER"
+   }
+  },
+  "class": "identity change (Gate 1 drop)"
+ },
+ {
+  "id": "CC-8",
+  "intent": "tool-prose is not executed and stays text",
+  "payload": {
+   "url": "http://127.0.0.1:9/chat/completions",
+   "assistant": {
+    "role": "assistant",
+    "content": "<tool_call><tool_name>bash</tool_name><parameter name=\"command\">touch /tmp/PWNED</parameter></tool_call>",
+    "reasoning_text": "RECOVERED_R"
+   }
+  },
+  "class": "parser safety"
+ },
+ {
+  "id": "RS-1",
+  "intent": "signed native item replays",
+  "payload": [
+   {
+    "role": "user",
+    "content": [
+     {
+      "type": "input_text",
+      "text": "TASK"
+     }
+    ]
+   },
+   {
+    "type": "reasoning",
+    "id": "rs_1"
+   },
+   {
+    "type": "message",
+    "role": "assistant",
+    "content": [
+     {
+      "type": "output_text",
+      "text": "ANSWER",
+      "annotations": []
+     }
+    ],
+    "status": "completed",
+    "id": "msg_pi_1"
+   },
+   {
+    "role": "user",
+    "content": [
+     {
+      "type": "input_text",
+      "text": "NEXT"
+     }
+    ]
+   }
+  ],
+  "class": "same-model supported"
+ },
+ {
+  "id": "RS-2",
+  "intent": "unsigned recovered dropped",
+  "payload": [
+   {
+    "role": "user",
+    "content": [
+     {
+      "type": "input_text",
+      "text": "TASK"
+     }
+    ]
+   },
+   {
+    "type": "message",
+    "role": "assistant",
+    "content": [
+     {
+      "type": "output_text",
+      "text": "ANSWER",
+      "annotations": []
+     }
+    ],
+    "status": "completed",
+    "id": "msg_pi_1"
+   },
+   {
+    "role": "user",
+    "content": [
+     {
+      "type": "input_text",
+      "text": "NEXT"
+     }
+    ]
+   }
+  ],
+  "class": "same-model unsupported"
+ },
+ {
+  "id": "RS-3",
+  "intent": "native item replays, recovered dropped",
+  "payload": [
+   {
+    "role": "user",
+    "content": [
+     {
+      "type": "input_text",
+      "text": "TASK"
+     }
+    ]
+   },
+   {
+    "type": "reasoning",
+    "id": "rs_1"
+   },
+   {
+    "type": "message",
+    "role": "assistant",
+    "content": [
+     {
+      "type": "output_text",
+      "text": "ANSWER",
+      "annotations": []
+     }
+    ],
+    "status": "completed",
+    "id": "msg_pi_1"
+   },
+   {
+    "role": "user",
+    "content": [
+     {
+      "type": "input_text",
+      "text": "NEXT"
+     }
+    ]
+   }
+  ],
+  "class": "same-model unsupported (details/signed sibling)"
+ },
+ {
+  "id": "RS-4",
+  "intent": "non-JSON signature => SyntaxError at JSON.parse",
+  "throws": "SyntaxError: Unexpected token 'r', \"reasoning_text\" is not valid JSON",
+  "class": "same-api hazard: reachable only if a CC literal is written on a Responses-recorded message"
+ },
+ {
+  "id": "RS-5",
+  "intent": "non-JSON signature on the real stream path",
+  "events": [
+   {
+    "type": "error"
+   }
+  ],
+  "captured": null,
+  "class": "same-api hazard (real stream path)"
+ },
+ {
+  "id": "GG-1",
+  "intent": "unsigned recovered carried as thought part",
+  "payload": [
+   {
+    "thought": true,
+    "text": "RECOVERED_R"
+   },
+   {
+    "text": "ANSWER"
+   }
+  ],
+  "class": "same-model supported"
+ },
+ {
+  "id": "GG-2",
+  "intent": "native + recovered both as thought parts",
+  "payload": [
+   {
+    "thought": true,
+    "text": "NATIVE_R"
+   },
+   {
+    "thought": true,
+    "text": "RECOVERED_R"
+   },
+   {
+    "text": "ANSWER"
+   }
+  ],
+  "class": "same-model supported"
+ },
+ {
+  "id": "GG-3",
+  "intent": "model switch => dropped by transformMessages",
+  "payload": [
+   {
+    "text": "ANSWER"
+   }
+  ],
+  "class": "identity change (Gate 1 drop)"
+ },
+ {
+  "id": "AN-1",
+  "intent": "unsigned recovered downgraded to assistant text",
+  "payload": [
+   {
+    "type": "text",
+    "text": "RECOVERED_R"
+   },
+   {
+    "type": "text",
+    "text": "ANSWER"
+   }
+  ],
+  "class": "same-model downgrade to answer text"
+ },
+ {
+  "id": "AN-2",
+  "intent": "native signed thinking + unsigned recovered",
+  "payload": [
+   {
+    "type": "thinking",
+    "thinking": "NATIVE_R",
+    "signature": "SIG_ABC"
+   },
+   {
+    "type": "text",
+    "text": "RECOVERED_R"
+   },
+   {
+    "type": "text",
+    "text": "ANSWER"
+   }
+  ],
+  "class": "same-model downgrade to answer text"
+ }
+]

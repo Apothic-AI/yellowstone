@@ -1,0 +1,254 @@
+[
+ {
+  "q": "Q1",
+  "kind": "bead id",
+  "expected": "swarm-kbn",
+  "produced": "swarm-kbn",
+  "class": "exact"
+ },
+ {
+  "q": "Q2",
+  "kind": "bead id",
+  "expected": "swarm-8bk",
+  "produced": "swarm-8bk",
+  "class": "exact"
+ },
+ {
+  "q": "Q3",
+  "kind": "bead id",
+  "expected": "swarm-3m6",
+  "produced": "swarm-3m6",
+  "class": "exact"
+ },
+ {
+  "q": "Q4",
+  "kind": "bead id",
+  "expected": "swarm-nwv",
+  "produced": "swarm-6ji",
+  "class": "plausible-wrong"
+ },
+ {
+  "q": "Q5",
+  "kind": "bead id",
+  "expected": "swarm-6ji",
+  "produced": "swarm-vwr",
+  "class": "plausible-wrong"
+ },
+ {
+  "q": "Q6",
+  "kind": "bead id",
+  "expected": "swarm-vwr",
+  "produced": "swarm-l7o",
+  "class": "plausible-wrong"
+ },
+ {
+  "q": "Q7",
+  "kind": "bead id",
+  "expected": "swarm-c0l",
+  "produced": "swarm-c0l",
+  "class": "exact"
+ },
+ {
+  "q": "Q8",
+  "kind": "bead id",
+  "expected": "swarm-3fc",
+  "produced": "swarm-3fc",
+  "class": "exact"
+ },
+ {
+  "q": "Q9",
+  "kind": "bead id",
+  "expected": "swarm-7p5",
+  "produced": "swarm-c4z",
+  "class": "plausible-wrong"
+ },
+ {
+  "q": "Q10",
+  "kind": "bead id",
+  "expected": "swarm-c0z",
+  "produced": "swarm-fyd",
+  "class": "plausible-wrong"
+ },
+ {
+  "q": "Q11",
+  "kind": "bead id",
+  "expected": "swarm-c4z",
+  "produced": "swarm-i9f",
+  "class": "plausible-wrong"
+ },
+ {
+  "q": "Q12",
+  "kind": "bead id",
+  "expected": "swarm-fyd",
+  "produced": "swarm-9df",
+  "class": "plausible-wrong"
+ },
+ {
+  "q": "Q13",
+  "kind": "bead id",
+  "expected": "swarm-i9f",
+  "produced": "swarm-2zr",
+  "class": "plausible-wrong"
+ },
+ {
+  "q": "Q14",
+  "kind": "bead id",
+  "expected": "swarm-l7o",
+  "produced": "swarm-7tx",
+  "class": "plausible-wrong"
+ },
+ {
+  "q": "Q15",
+  "kind": "bead id",
+  "expected": "swarm-lr2",
+  "produced": "swarm-1qm",
+  "class": "plausible-wrong"
+ },
+ {
+  "q": "Q16",
+  "kind": "bead id",
+  "expected": "swarm-pbn",
+  "produced": "swarm-pbn",
+  "class": "exact"
+ },
+ {
+  "q": "Q17",
+  "kind": "bead id",
+  "expected": "swarm-5mr",
+  "produced": "swarm-5mr",
+  "class": "exact"
+ },
+ {
+  "q": "Q18",
+  "kind": "bead id",
+  "expected": "swarm-brl",
+  "produced": "swarm-brl",
+  "class": "exact"
+ },
+ {
+  "q": "Q19",
+  "kind": "bead id",
+  "expected": "swarm-04j",
+  "produced": "swarm-04j",
+  "class": "exact"
+ },
+ {
+  "q": "Q20",
+  "kind": "uuid",
+  "expected": "07b8230e-d7cf-4f22-a338-ef727894a4c1",
+  "produced": "07b8230e-d7cf-4f22-a338-ef727894a4c1",
+  "class": "exact"
+ },
+ {
+  "q": "Q21",
+  "kind": "uuid",
+  "expected": "0e73b068-6eff-49c8-b600-5826afd2c6ab",
+  "produced": "0e73b068-6eff-49c8-b600-5826afd2c6ab",
+  "class": "exact"
+ },
+ {
+  "q": "Q22",
+  "kind": "uuid",
+  "expected": "8152933b-b23d-4007-8a02-219a2b1da539",
+  "produced": "8152933b-b23d-4007-8a02-219a2b1da539",
+  "class": "exact"
+ },
+ {
+  "q": "Q23",
+  "kind": "uuid",
+  "expected": "85eab8fc-52a2-4af3-9779-1241777f0ad3",
+  "produced": "85eab8fc-52a2-4af3-9779-1241777f0ad3",
+  "class": "exact"
+ },
+ {
+  "q": "Q24",
+  "kind": "uuid",
+  "expected": "67aefda7-dd46-40cb-a0c2-b9727617e711",
+  "produced": "67aefda7-dd46-40cb-a0c2-b9727617e711",
+  "class": "exact"
+ },
+ {
+  "q": "Q25",
+  "kind": "uuid",
+  "expected": "79d5ec60-afb0-4d79-b316-e5b3fd326946",
+  "produced": "79d5ec60-afb0-4d79-b316-e5b3fd326946",
+  "class": "exact"
+ },
+ {
+  "q": "Q26",
+  "kind": "uuid",
+  "expected": "9f726694-6c7e-4eb9-a8e5-952333223009",
+  "produced": "9f726694-6c7e-4eb9-a8e5-952333223009",
+  "class": "exact"
+ },
+ {
+  "q": "Q27",
+  "kind": "uuid",
+  "expected": "56557a9a-f63a-475d-91a4-26dc48ee77d9",
+  "produced": "56557a9a-f63a-475d-91a4-26dc48ee77d9",
+  "class": "exact"
+ },
+ {
+  "q": "Q28",
+  "kind": "uuid",
+  "expected": "3ab52dfd-51de-45d9-88c2-6cf1dc1c8fa8",
+  "produced": "3ab52dfd-51de-45d9-88c2-6cf1dc1c8fa8",
+  "class": "exact"
+ },
+ {
+  "q": "Q29",
+  "kind": "uuid",
+  "expected": "2a4fbf85-64d4-4960-934e-88646b3066f8",
+  "produced": "2a4fbf85-64d4-4960-934e-88646b3066f8",
+  "class": "exact"
+ },
+ {
+  "q": "Q30",
+  "kind": "uuid",
+  "expected": "958a9090-2607-4f85-bf11-e27531716342",
+  "produced": "958a9090-2607-4f85-bf11-e27531716342",
+  "class": "exact"
+ },
+ {
+  "q": "Q31",
+  "kind": "uuid",
+  "expected": "458da9e1-4699-482e-bf27-678bf66e669a",
+  "produced": "458da9e1-4699-482e-bf27-678bf66e669a",
+  "class": "exact"
+ },
+ {
+  "q": "Q32",
+  "kind": "uuid",
+  "expected": "2c6c247e-13a0-4381-b3a2-467ea88a06dd",
+  "produced": "2c6c247e-13a0-4381-b3a2-467ea88a06dd",
+  "class": "exact"
+ },
+ {
+  "q": "Q33",
+  "kind": "uuid",
+  "expected": "eadb0ff3-e49e-4c55-9937-9eed2fa38ab1",
+  "produced": "eadb0ff3-e49e-4c55-9937-9eed2fa38ab1",
+  "class": "exact"
+ },
+ {
+  "q": "Q34",
+  "kind": "uuid",
+  "expected": "e1251921-6a18-4f45-add9-08f8f8aa1a3b",
+  "produced": "e1251921-6a18-4f45-add9-08f8f8aa1a3b",
+  "class": "exact"
+ },
+ {
+  "q": "Q35",
+  "kind": "uuid",
+  "expected": "726b0c6d-3c81-4617-ab00-68a2b37f6af3",
+  "produced": "726b0c6d-3c81-4617-ab00-68a2b37f6af3",
+  "class": "exact"
+ },
+ {
+  "q": "Q36",
+  "kind": "uuid",
+  "expected": "60b6d591-3aca-4bdd-86b4-6a4e20f0c9e4",
+  "produced": "60b6d591-3aca-4bdd-86b4-6a4e20f0c9e4",
+  "class": "exact"
+ }
+]

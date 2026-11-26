@@ -1,0 +1,103 @@
+[
+ {
+  "id": "TR-1",
+  "intent": "CC-recorded message replayed by Responses model (same provider+model id, different api)",
+  "threw": false,
+  "reasoningItems": 0,
+  "carriesNative": false,
+  "carriesRecovered": false,
+  "carriesAnswer": true,
+  "verdict": "thinking dropped by transformMessages BEFORE the Responses adapter; no JSON.parse reached",
+  "class": "REAL cross-API transition (identity preserved) - proves Gate 1 sanitizes before adapter"
+ },
+ {
+  "id": "TR-2",
+  "intent": "Responses-recorded message carrying a CC field-name signature, same model",
+  "threw": "SyntaxError: Unexpected token 'r', \"reasoning_content\" is not valid JSON",
+  "class": "same-api hazard: Responses-recorded message carrying a CC field literal"
+ },
+ {
+  "id": "TR-3",
+  "intent": "same as TR-2 on the real stream path",
+  "events": [
+   {
+    "type": "error"
+   }
+  ],
+  "class": "same-api hazard on real stream path (turn fails)"
+ },
+ {
+  "id": "CC-9",
+  "intent": "recovered-only + native CC field literal",
+  "assistant": {
+   "role": "assistant",
+   "content": "ANSWER",
+   "reasoning_content": "RECOVERED_R"
+  },
+  "verdict": "REPLAYED",
+  "class": "same-model supported (recovered-only)"
+ },
+ {
+  "id": "CC-10",
+  "intent": "field signature first + reasoning_details later (whole content)",
+  "assistant": {
+   "role": "assistant",
+   "content": "ANSWER",
+   "reasoning_details": [
+    {
+     "type": "reasoning.text",
+     "text": "NATIVE_DETAILS"
+    }
+   ]
+  },
+  "verdict": "DETAILS OVERRODE FIELD",
+  "class": "same-model unsupported (details override, field first)"
+ },
+ {
+  "id": "CC-11",
+  "intent": "details first + field signature later",
+  "assistant": {
+   "role": "assistant",
+   "content": "ANSWER",
+   "reasoning_details": [
+    {
+     "type": "reasoning.text",
+     "text": "NATIVE_DETAILS"
+    }
+   ]
+  },
+  "verdict": "DETAILS OVERRODE FIELD",
+  "class": "same-model unsupported (details override, details first)"
+ },
+ {
+  "id": "AN-4",
+  "intent": "anthropic message carrying a CC field literal on the recovered block",
+  "content": [
+   {
+    "type": "thinking",
+    "thinking": "NATIVE_R",
+    "signature": "SIG_ABC"
+   },
+   {
+    "type": "thinking",
+    "thinking": "RECOVERED_R",
+    "signature": "reasoning_content"
+   },
+   {
+    "type": "text",
+    "text": "ANSWER"
+   }
+  ],
+  "class": "same-api hazard: CC literal echoed to Anthropic as opaque signature"
+ },
+ {
+  "id": "AN-5",
+  "intent": "anthropic-recorded message replayed by a CC model",
+  "assistant": {
+   "role": "assistant",
+   "content": "ANSWER"
+  },
+  "verdict": "ALL dropped by transformMessages",
+  "class": "identity change (Gate 1 drop)"
+ }
+]
