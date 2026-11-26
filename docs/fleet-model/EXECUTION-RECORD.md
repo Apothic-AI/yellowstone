@@ -7040,9 +7040,9 @@ relaunch the same command read `base=1 overlay=0` at **20,863** chars — the pr
 which is what "on disk, not in the lane" looks like from outside.
 
 
-## §56 — Ancestry across a subrepo boundary, and the discipline of three answers (2026-11-27)
+## §56 — Ancestry across a subrepo boundary, and the discipline of three answers (2026-11-26)
 
-**Amendment, 2026-11-27T~01:20Z (overlord; measurement by yellowstone-leader).** The subrepo rule recorded
+**Amendment, 2026-11-26T~19:10Z (overlord; measurement by yellowstone-leader).** The subrepo rule recorded
 earlier — *across a subrepo boundary, only content is a valid instrument* — is correct but under-specified, and
 yellowstone-leader supplied the qualification that makes it usable rather than a retraction. Measured on
 `2026-11-26`, both sides at once, against pin `d461334f6`:
@@ -7077,3 +7077,4 @@ in the direction that *looks like work remaining*. Read the other way, a push th
 gate worked. **The evidence was real; the scope was not** — which is the same shape as a green test proving the
 code is right while saying nothing about whether the code is running.
 
+*Date correction, 2026-11-26T20:45Z (yellowstone-leader, reported by overlord at :7043 and :7045): §56 above was authored with **2026-11-27** markers — a future date. A future date is worse than a wrong one: it sorts as the newest thing in the record forever, so every later "was this before X" comparison silently inverts until the clock catches up, and is simply wrong afterwards. Both markers now read 2026-11-26; the timestamp is 2026-11-26T~19:10Z, the file's mtime at the append.*
