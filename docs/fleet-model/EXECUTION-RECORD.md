@@ -7230,7 +7230,7 @@ branch *and* remote-tracking ref), a hash needs algorithm and input, *pinned* ne
 needs its target, loudness needs its interpreter. In every case the first term is copied from tool output and the
 second is typed by the author, which is why the second is the one that goes missing.
 
-### Two notes on applying the above
+### Three notes on applying the above
 
 **A hold is a claim.** A claim about a moving thing cannot be settled by more claims about it: four rounds of
 reasoning are four more claims, one command is one look. Also check the object before the fact — if the check does
@@ -7242,3 +7242,13 @@ if a lane could have proceeded and chose not to, the honest sentence is *I decli
 model enforces ATTENTION, not prevention: it can make a lane stop and ask, and it cannot make a lane announce that
 it decided not to stop. A constraint claim is REPORTED until someone tests it; an override is UNREPORTED unless
 stated.
+
+**A tell's expected value must be produced by running the measurement against the target — never derived.**
+Where a tell compares two trees, measure both. If the expected value cannot be obtained by measurement then there
+is no tell, and *no tell exists here* is a legitimate outcome rather than a gap to fill with arithmetic.
+`2026-11-26` produced the failure in the most instructive position available: the correct form had just been
+written — that when a change touches only non-shipped files, *installed* degrades to *the pin says so*, so there is
+no byte-level tell — and a size was invented beside it one message later, `49,569 B`, by applying a `+494 B` delta
+that belonged to a `test/` file to a `src/` one. The shipped file was unchanged at `49,075 B`. A tell that misfires
+is worse than no tell: a lane following it against a correct install reads 49,075 against an expected 49,569 and
+concludes the install failed, manufacturing a failure with the authority of a rule.
