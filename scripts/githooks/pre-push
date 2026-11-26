@@ -19,6 +19,26 @@ set -uo pipefail
 repo="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
 cd "$repo" || exit 0
 
+# Scope. These gates protect *this* repository, and the hook lives inside it — so if the hook
+# file being executed is not inside the repository being pushed, the push is publishing some
+# other repository and these gates do not describe it. Measured 2026-11-26: run from a throwaway
+# `git init` directory, this hook failed with "test/verify-revert-detection.sh is missing, so
+# this push is not checked" — correct logic, applied to the wrong repository, reported as a
+# failure to push content that never had those gates.
+#
+# This does NOT weaken the missing-script FAIL below. When the push is from this repository,
+# core.hooksPath is the relative `scripts/githooks`, so the hook file necessarily resolves
+# inside $repo and the FAIL still fires. The skip can only be reached when the hook is running
+# outside the repository whose gates it lists, which is exactly when they do not apply.
+self_path="$(realpath -- "${BASH_SOURCE[0]}" 2>/dev/null || printf '%s' "${BASH_SOURCE[0]}")"
+case "$self_path" in
+  "$repo"/*) ;;
+  *)
+    echo "pre-push: skip: this hook is $self_path, outside the repository being pushed ($repo) — its gates do not apply here" >&2
+    exit 0
+    ;;
+esac
+
 rc=0
 for t in test/verify-revert-detection.sh test/verify-mirror-live.sh; do
   # A missing check must FAIL, not `continue`. `[ -f "$t" ] || continue` reads as
