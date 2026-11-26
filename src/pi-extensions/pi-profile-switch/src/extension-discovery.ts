@@ -48,6 +48,17 @@ export interface DiscoveredPackage {
 	 *  from "declares no extension entries" — the two failures have different
 	 *  causes and must not share one message. */
 	filteredOut: boolean;
+	/** True when the package's own settings entry disables every resource type
+	 *  it declares with an explicit empty array (e.g. `"extensions": []`).
+	 *
+	 *  Pi treats an empty array as "explicitly disable all resources of this
+	 *  type" (`applyPackageFilter`, `userPatterns.length === 0`), which is the
+	 *  documented way to switch a package off. That is an **intentional**
+	 *  disable, not a fault: it must not be reported with the same message as a
+	 *  filter that was meant to match something and did not (the
+	 *  pi-beads-extension `"./src/index.ts"` incident). Kept separate from
+	 *  `filteredOut` so the diagnosis names which of the two happened. */
+	deliberatelyDisabled: boolean;
 }
 
 export interface DiscoveredLocalExtension {
@@ -307,6 +318,12 @@ export function packageNameFromSource(source: string): string {
  *  `filteredOut` means entries were found and then filtered. The remaining case is a
  *  manifest whose globs match nothing — still author-fixable, but named accurately. */
 function emptyPackageDiagnostic(pkg: DiscoveredPackage): [code: string, cause: string] {
+	if (pkg.deliberatelyDisabled) {
+		return [
+			"disabled-by-settings",
+			`package "${pkg.name}" is disabled by its own settings entry, which declares an empty list for every resource type it provides; that is a deliberate switch-off, not a fault — remove the empty list (or restore an entry) to load it again`,
+		];
+	}
 	if (pkg.filteredOut) {
 		return [
 			"filtered-by-settings",
@@ -354,16 +371,45 @@ export interface DiscoverExtensionsOptions {
 	projectTrusted?: boolean;
 }
 
-/** Builds the Pi package manager that owns discovery for one cwd/agentDir. */
-function createPackageManager(options: DiscoverExtensionsOptions): PackageManager {
+/** Builds the Pi package manager that owns discovery for one cwd/agentDir.
+ *  Returns the settings manager too: the deliberate-disable diagnosis needs the
+ *  raw package entries, which the resolver does not surface. */
+function createPackageManager(options: DiscoverExtensionsOptions): { packageManager: PackageManager; settingsManager: SettingsManager } {
 	const settingsManager = SettingsManager.create(options.cwd, options.agentDir, {
 		projectTrusted: options.projectTrusted ?? false,
 	});
-	return new DefaultPackageManager({
-		cwd: options.cwd,
-		agentDir: options.agentDir,
+	return {
+		packageManager: new DefaultPackageManager({
+			cwd: options.cwd,
+			agentDir: options.agentDir,
+			settingsManager,
+		}),
 		settingsManager,
-	});
+	};
+}
+
+/** Sources whose settings entry explicitly disables a resource type with an
+ *  empty array. Pi reads `userPatterns.length === 0` as "disable every resource
+ *  of this type", so an explicit `"extensions": []` is a deliberate switch-off;
+ *  a non-empty list that matches nothing is a different, usually accidental,
+ *  failure. Both arrive here with zero resolved entries, so the raw entry is the
+ *  only thing that tells them apart. */
+function deliberatelyDisabledSources(settingsManager: SettingsManager): Set<string> {
+	const disabled = new Set<string>();
+	const global = settingsManager.getGlobalSettings();
+	const project = settingsManager.getProjectSettings();
+	for (const list of [global.packages, project.packages]) {
+		for (const entry of list ?? []) {
+			if (!isRecord(entry)) continue;
+			const source = entry.source;
+			if (typeof source !== "string" || source.length === 0) continue;
+			// `extensions` is the resource type this diagnosis is about; an explicit
+			// empty array is the documented "disable all" spelling.
+			const extensions = entry.extensions;
+			if (Array.isArray(extensions) && extensions.length === 0) disabled.add(source);
+		}
+	}
+	return disabled;
 }
 
 interface PackageGroup {
@@ -378,7 +424,7 @@ interface PackageGroup {
 
 /** Runs Pi's own resolution once and classifies the result into pi-profile's
  *  selectable model. */
-async function resolveImplicit(packageManager: PackageManager, agentDir: string): Promise<ImplicitExtensionDiscovery> {
+async function resolveImplicit(packageManager: PackageManager, agentDir: string, deliberatelyDisabled: Set<string>): Promise<ImplicitExtensionDiscovery> {
 	const warnings: string[] = [];
 	// `skip` is the API's read-only mode: missing sources are reported as
 	// absent instead of triggering an install (no network, no mutation).
@@ -442,6 +488,7 @@ async function resolveImplicit(packageManager: PackageManager, agentDir: string)
 			// resolved list can only mean filtering removed every entry. A package
 			// that declares nothing never reaches here at all.
 			filteredOut: group.known && group.entries.length === 0,
+			deliberatelyDisabled: group.known && group.entries.length === 0 && deliberatelyDisabled.has(group.source),
 		});
 	}
 
@@ -454,7 +501,8 @@ async function resolveImplicit(packageManager: PackageManager, agentDir: string)
 }
 
 export async function discoverImplicitExtensions(options: DiscoverExtensionsOptions): Promise<ImplicitExtensionDiscovery> {
-	return await resolveImplicit(createPackageManager(options), options.agentDir);
+	const { packageManager, settingsManager } = createPackageManager(options);
+	return await resolveImplicit(packageManager, options.agentDir, deliberatelyDisabledSources(settingsManager));
 }
 
 export async function discoverExtensions(options: DiscoverExtensionsOptions): Promise<DiscoveredExtensions> {

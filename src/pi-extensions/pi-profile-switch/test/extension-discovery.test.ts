@@ -109,6 +109,7 @@ describe("discoverImplicitExtensions", () => {
 				root: pkg.root,
 				entries: [path.join(pkg.root, "index.ts")],
 				filteredOut: false,
+				deliberatelyDisabled: false,
 			},
 		]);
 	});
@@ -127,6 +128,7 @@ describe("discoverImplicitExtensions", () => {
 				root: pkg.root,
 				entries: [path.join(pkg.root, "dist", "index.js")],
 				filteredOut: false,
+				deliberatelyDisabled: false,
 			},
 		]);
 	});
@@ -337,7 +339,10 @@ describe("DiscoveredExtensions (pure discovery & selection)", () => {
 
 	it("reports a package whose settings filter disables every entry", async () => {
 		await addPackage("pi-multi", { extensions: ["./a.ts"] });
-		await setConfiguredPackages([{ source: "npm:pi-multi", extensions: [] }]);
+		// A non-empty filter that matches nothing: the filter was meant to select
+		// something and did not. Distinct from an explicit `extensions: []`, which
+		// Pi defines as a deliberate switch-off.
+		await setConfiguredPackages([{ source: "npm:pi-multi", extensions: ["missing.ts"] }]);
 		const extensions = await discoverExtensions({ cwd: fixture.cwd, agentDir: fixture.agentDir });
 
 		const result = await extensions.select(["pi-multi"]);
@@ -347,6 +352,21 @@ describe("DiscoveredExtensions (pure discovery & selection)", () => {
 		// wrong file — the pi-beads-extension incident.
 		expect(result.diagnostics?.[0].code).toBe("filtered-by-settings");
 		expect(result.diagnostics?.[0].message).toMatch(/filtered out by this package's settings entry/);
+	});
+
+	it("names an explicit empty extensions list as a deliberate disable, not a fault", async () => {
+		await addPackage("pi-off", { extensions: ["./a.ts"] });
+		// Pi's `applyPackageFilter` treats `userPatterns.length === 0` as "disable
+		// every resource of this type" — the documented switch-off, not a broken
+		// filter. Reporting it as a defect sends the reader hunting for a typo that
+		// does not exist (pi-thinking-fold's `extensions: []`).
+		await setConfiguredPackages([{ source: "npm:pi-off", extensions: [] }]);
+		const extensions = await discoverExtensions({ cwd: fixture.cwd, agentDir: fixture.agentDir });
+
+		const result = await extensions.select(["pi-off"]);
+		expect(result.entries).toEqual([]);
+		expect(result.diagnostics?.[0].code).toBe("disabled-by-settings");
+		expect(result.diagnostics?.[0].message).toMatch(/deliberate switch-off, not a fault/);
 	});
 
 	it("selects multi-entry packages as a whole and by individual entry", async () => {
@@ -446,7 +466,7 @@ describe("local extension reference diagnostics", () => {
 	it("diagnoses glob-selected packages with no usable entries while retaining usable matches", async () => {
 		await addPackage("pi-empty", { extensions: ["./a.ts"] });
 		await addPackage("pi-usable", { extensions: ["./b.ts"] });
-		await setConfiguredPackages([{ source: "npm:pi-empty", extensions: [] }, "npm:pi-usable"]);
+		await setConfiguredPackages([{ source: "npm:pi-empty", extensions: ["missing.ts"] }, "npm:pi-usable"]);
 		const extensions = await discoverExtensions({ cwd: fixture.cwd, agentDir: fixture.agentDir });
 		const result = await extensions.select(["pi-*"]);
 		expect(result.entries.map((entry) => entry.id)).toEqual(["pi-usable"]);
