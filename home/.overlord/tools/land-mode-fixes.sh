@@ -63,7 +63,13 @@ case "$CWD" in
 esac
 
 LANE="${LANE:-self-improvement-leader}"
-PANE="${PANE:-w1K:p1}"
+# No default: w1K:p1 was retired 2026-11-26 and the workspace removed. A default naming a dead pane
+# would make the final self-restart target a lane that cannot exist. Refuse instead, loudly.
+if [ -z "${PANE:-}" ]; then
+  echo "land-mode-fixes: REFUSED — no PANE given, and there is no safe default." >&2
+  echo "  The historical default (w1K:p1) is retired; set PANE explicitly if you truly mean it." >&2
+  exit 4
+fi
 CWD="${CWD:-/home/bitnom/Documents/Fleet}"
 MODE="$CWD/.pi/modes/leader.json"
 DRY=0
