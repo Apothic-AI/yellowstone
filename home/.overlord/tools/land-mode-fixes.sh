@@ -8,8 +8,10 @@
 # and that is TRUE ONLY OF THE NPM COPY, which no lane on this machine loads):
 #
 #   * `~/.pi/agent/npm/node_modules/@tryinget/pi-modes`      -> `?? "block"`  (loaded by NOBODY)
-#   * `~/Code/yellowstone/src/pi-extensions/pi-modes`        -> `?? "reuse"`  (loaded by 33/33
-#     instances; declared in each instance's settings `packages[].source`)
+#   * `~/Code/yellowstone/src/pi-extensions/pi-modes`        -> `?? "reuse"`  (the build every lane
+#     loads; declared in 32 of 32 instance `settings.json` that declare a pi-modes package at all —
+#     measured 2026-11-26 by reading every
+#     `/home/bitnom/.pi-profile-switch/instances/launch-*/settings.json` `packages[].source`)
 #
 # Both report version `0.6.0`, so nothing in the version string distinguishes them. Under the
 # fleet's actual `reuse` policy an edited definition does NOT fall back to the native prompt —
@@ -44,7 +46,15 @@ esac
 set -uo pipefail
 
 # Only the Fleet (SI) mode file may be edited. Anything else is a mistake, not a target.
-case "${CWD:-/home/bitnom/Documents/Fleet}" in
+#
+# The guard reads the CALLER'S ACTUAL DIRECTORY, not a variable that already defaults to the one
+# path the guard permits. Measured 2026-11-26: the earlier form tested
+# "${CWD:-/home/bitnom/Documents/Fleet}" while CWD was only defaulted ~10 lines LATER, so from any
+# other directory CWD was unset, the guard substituted its own permitted default and always passed
+# — a guard that could never fire. Proven by running it from this space and reaching the patch
+# logic (rc=1) instead of refusing (rc=3).
+CWD="${CWD:-$PWD}"
+case "$CWD" in
   */Documents/Fleet|*/Documents/Fleet/) ;;
   *)
     echo "land-mode-fixes: REFUSED — Fleet-era artifact, will not edit $CWD". >&2
