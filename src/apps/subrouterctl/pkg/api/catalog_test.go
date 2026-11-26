@@ -173,6 +173,78 @@ func TestSharedProviderJSONParity(t *testing.T) {
 	assertKeyParity(t, "shared", decodeJSON(t, raw), asJSONTree(t, providers[0]))
 }
 
+// unmeasuredDetailPayload is a provider detail response whose first model row
+// omits the speed pair, exactly as the live API does for an offer it has not
+// measured, beside a measured row for contrast.
+const unmeasuredDetailPayload = `{
+  "success": true,
+  "data": {
+    "provider": {"id": "12", "slug": "demo", "company_name": "Demo Provider"},
+    "public_model_count": 2,
+    "filtered_model_count": 2,
+    "bazaarlink_summary": {"integrity_status": "verified"},
+    "models": [
+      {"id": 1, "model_name": "unmeasured-offer", "provider_slug": "demo",
+       "input_price": 0.1, "output_price": 0.2},
+      {"id": 2, "model_name": "measured-offer", "provider_slug": "demo",
+       "input_price": 0.1, "output_price": 0.2,
+       "output_tokens_per_second": 124.5, "output_speed_samples": 42}
+    ]
+  }
+}`
+
+// TestUnmeasuredOfferJSONShape pins the CLI contract for an offer the platform
+// has not measured, which is not the same as the API contract.
+//
+// The API omits both speed fields. The CLI does not: pkg/api intentionally
+// writes every declared field (no omitempty anywhere in this package), so an
+// unmeasured offer must arrive in -o json as output_tokens_per_second: 0 with
+// output_speed_samples: 0. OutputSpeedSamples is the discriminator, because a
+// measured offer at 0 tok/s does not occur. Tables render the same offer as a
+// dash instead; that half is pinned by TestModelRowsRenderOutputSpeed.
+func TestUnmeasuredOfferJSONShape(t *testing.T) {
+	cl := payloadServer(t, []byte(unmeasuredDetailPayload))
+	detail, err := cl.GetMarketplaceProvider(context.Background(), "demo")
+	if err != nil {
+		t.Fatalf("GetMarketplaceProvider: %v", err)
+	}
+	if len(detail.Models) != 2 {
+		t.Fatalf("decoded %d models, want 2", len(detail.Models))
+	}
+
+	unmeasured, ok := asJSONTree(t, detail.Models[0]).(map[string]any)
+	if !ok {
+		t.Fatalf("the unmeasured model did not marshal to an object")
+	}
+	tps, present := unmeasured["output_tokens_per_second"]
+	if !present {
+		t.Fatalf("output_tokens_per_second is missing from the JSON output; the package writes every declared field")
+	}
+	if tps != float64(0) {
+		t.Errorf("output_tokens_per_second = %v, want 0", tps)
+	}
+	samples, present := unmeasured["output_speed_samples"]
+	if !present {
+		t.Fatalf("output_speed_samples is missing from the JSON output; it is the discriminator and must always be present")
+	}
+	if samples != float64(0) {
+		t.Errorf("output_speed_samples = %v, want 0", samples)
+	}
+
+	// A measured offer keeps its figure, so the two are distinguishable by the
+	// sample count alone.
+	measured, ok := asJSONTree(t, detail.Models[1]).(map[string]any)
+	if !ok {
+		t.Fatalf("the measured model did not marshal to an object")
+	}
+	if got, want := measured["output_speed_samples"], float64(42); got != want {
+		t.Errorf("measured output_speed_samples = %v, want %v", got, want)
+	}
+	if got, want := measured["output_tokens_per_second"], 124.5; got != want {
+		t.Errorf("measured output_tokens_per_second = %v, want %v", got, want)
+	}
+}
+
 func TestProviderDetailCarriesOutputSpeed(t *testing.T) {
 	raw := loadPayload(t, "provider_detail.json")
 	cl := payloadServer(t, envelope(t, raw, 0))

@@ -27,6 +27,9 @@ func TestModelColumnsMatchEveryRowWidth(t *testing.T) {
 }
 
 func TestModelRowsRenderOutputSpeed(t *testing.T) {
+	// This is the table half of the unmeasured-offer contract: the table shows a
+	// dash, while -o json shows 0 with 0 samples (pinned by
+	// TestUnmeasuredOfferJSONShape in pkg/api). Both describe the same state.
 	cols := modelColumns()
 	tpsIndex := -1
 	for i, c := range cols {

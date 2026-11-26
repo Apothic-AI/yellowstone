@@ -220,9 +220,17 @@ Every directory, log feed and task list takes the same three flags.
 | `-q, --search`    | Free text search. Matched against names, slugs and categories.  |
 | `--sort`          | Sort field, for example `price`, `rating`, `used`, `time`.      |
 | `--order`         | `asc` (default) or `desc`.                                      |
-| `--limit`         | Maximum rows to print. `0` prints everything.                    |
+| `--limit`         | Maximum table rows to print. `0` prints everything.              |
 | `--page`          | Page number for the server-side paged endpoints.                 |
 | `--page-size`     | Rows per page. `50` by default.                                 |
+
+`--limit` caps the **table**, not the payload. `-o json` and `-o yaml` return
+the whole result set the command fetched, so a script sees every row and does
+its own paging: `provider list --limit 1 -o json` returns every row of the
+page it read, and `token list --limit 1 -o json` returns all 50 rows of its
+page. `usage logs` is the exception, because there the limit is sent to the
+API as the page size rather than applied at render time, so it caps the
+structured output too.
 
 ```bash
 # cheapest routes for gpt models, most expensive first
@@ -297,11 +305,24 @@ $ subrouterctl model list --search deepseek --limit 3
 └────────────────────┴──────────┴──────────┴────────┴────────┴──────┴────────┴────────┴─────────┴───────┘
 ```
 
-A dash means the platform has not measured that offer yet; it does not mean
-zero tokens per second. The same distinction is in `-o json`: an unmeasured
-offer has no `output_tokens_per_second` at all rather than a zero. `--sort tps`
-ranks the measured offers and puts the unmeasured ones last in both directions,
-because an unmeasured offer is not a slow one.
+A dash means the platform has not measured that offer; it does not mean zero
+tokens per second. The raw API payload omits both fields entirely for an
+unmeasured offer, but the CLI output does not: this package writes every JSON
+field it declares and uses `omitempty` nowhere, so an unmeasured offer arrives
+in `-o json` as `output_tokens_per_second: 0` together with
+`output_speed_samples: 0`. The sample count is the discriminator, because it is
+greater than zero exactly when the platform measured something and a measured
+offer at 0 tok/s was never observed:
+
+```json
+{"model_name": "unmeasured-offer", "output_tokens_per_second": 0,     "output_speed_samples": 0}
+{"model_name": "glm-5.3-fast",     "output_tokens_per_second": 142.2, "output_speed_samples": 3}
+```
+
+So read the pair, not the speed alone: `output_speed_samples > 0` means
+measured, and only then does `output_tokens_per_second` carry a figure.
+`--sort tps` ranks the measured offers and puts the unmeasured ones last in
+both directions, because an unmeasured offer is not a slow one.
 
 The speed appears on every table that shows model offers: `model list`,
 `provider show` (the catalogue under the provider) and `provider models`.
