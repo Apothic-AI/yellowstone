@@ -6662,7 +6662,9 @@ path; the mechanism at `settings-generator.ts:538` plus one re-readable snapshot
 statement.**
 
 **The evidence class for generation behaviour is tests, not artifacts — and a proof that cannot
-discriminate is worse than none.** Generation has two branches, and on a *correct* authored entry they
+discriminate is worse than none.** (*The general form is §57 rule 4, with the independence requirement as
+rule 5; this section keeps the instance that produced them.*) Generation has two branches, and on a *correct*
+authored entry they
 emit identical output, so an observation taken on a healthy instance cannot tell them apart:
 
 | `resourceSelection.extensions` | code path | authored `./src/index.ts` (matches nothing) |
@@ -6688,7 +6690,7 @@ where the `./` was authored and the empty allowlist is the generator's silent sh
 not ranked: a **test** proves the BRANCH (which row of the table above executes); an **unmanaged
 passthrough** proves PROVENANCE (which authored settings were in effect); a **snapshot** preserves a
 reclaimed instance; the **authored file** states intent. Only the branch claim needs a test.
-"A proof that cannot discriminate is worse than none" is unchanged and stands.
+"A proof that cannot discriminate is worse than none" is unchanged and stands (see §57, rules 4 and 5).
 
 
 **Two instrument traps that made two correct readers disagree about the same fleet.** Both were
