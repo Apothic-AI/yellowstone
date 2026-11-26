@@ -6,7 +6,7 @@
 [subrepo]
 	remote = https://github.com/Apothic-AI/subrouterctl.git
 	branch = master
-	commit = 8e95f144f07ea047c3b3be2b34e41543dfa0a416
-	parent = 5db37b1d92061ee6db783be52c1a6bce2066ded5
+	commit = 27743fd687edc3f621e106dad6df143945703c0e
+	parent = 66d3f587ad48b2a55e00ec82c073a5f1114c26d7
 	method = merge
 	cmdver = 0.4.9
