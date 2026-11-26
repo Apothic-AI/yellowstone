@@ -75,7 +75,7 @@ Two env inputs, two jobs: `PI_MODE` is pi-modes' own selector carrying the role 
 You hold the scope for *managing* workspaces across the fleet — creating them, joining their beads,
 launching and keeping their leader lanes healthy, the watcher/board/bdi side, restarts. The
 **scaffolding** — a space's `AGENTS.md` skeleton, its `.pi/modes/{leader,worker}.json` role halves, and
-any profile/skill wiring — is **self-improvement-leader's**, because one lane holding the shape is what
+any profile/skill wiring — is **yellowstone-leader's**, because one lane holding the shape is what
 stops the template drifting space by space. Request it; do not hand-author it. The current end-to-end
 procedure, with that split written into it, is the `new-space` skill
 (`/home/bitnom/Documents/Fleet/.agents/skills/new-space/SKILL.md`, symlinked to

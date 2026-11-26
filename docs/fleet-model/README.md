@@ -139,7 +139,7 @@ inconvenient, and it is why a lane should never treat a `bash_bg` handle as dura
 ## Rules that surprise people
 
 - **Profile and mode are config, and whose call that is depends on your role.** Changing another
-  lane's is **not** yours by default — but a role file can grant it: `self-improvement-leader` holds
+  lane's is **not** yours by default — but a role file can grant it: `yellowstone-leader` holds
   a standing grant over fleet/harness config (modes, profiles, skills, hooks, extensions, every
   `AGENTS.md`) and over re-approving a mode definition on a lane whose mode file it changed. Read
   this rule as "not yours **unless your role file grants it**", and check that file rather than

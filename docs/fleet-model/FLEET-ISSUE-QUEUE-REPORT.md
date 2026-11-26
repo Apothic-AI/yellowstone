@@ -276,7 +276,7 @@ evaluation`, line **1291**, bead **`swarm-c0l.9.42`** (created by the parent aft
 recorded the heading as observed-but-unmapped). The first pass is preserved inside
 `refreshes[1].ft51_mapped.observed`; the follow-up is recorded there too. Two tracker notes, which
 the parent owns: the bead description says line 1294 where the source measures 1291 (stale by three
-lines, source hash unchanged), and any future orchestration of FT-51 requires self-improvement-leader
+lines, source hash unchanged), and any future orchestration of FT-51 requires yellowstone-leader
 **and** overlord to each check their own workspace for bili notes first. No FT-51 research was done.
 
 **Constraints honoured:** the operator source was not edited, no Bead was created, closed or

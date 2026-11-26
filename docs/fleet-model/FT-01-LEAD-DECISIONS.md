@@ -1,7 +1,7 @@
 # FT-01 — lead decisions and mechanics proof
 
 Source: `/home/bitnom/Documents/Assistant/Fleet TODOs.md`, § FT-01.
-Lead: `self-improvement-leader`. Integration: `yellowstone-leader`. Ops: `overlord`.
+Lead: `yellowstone-leader` (was `self-improvement-leader` until 2026-11-26; lane retired, roles merged into `yellowstone-leader`). Integration: `yellowstone-leader`. Ops: `overlord`.
 Coordination room: `ft-01-yellowstone-subrepo`.
 
 This page is the decision record. Measurements live in the repo at
@@ -13,7 +13,7 @@ proof that the mechanism works before anyone moves a directory.
 
 | Actor | Owns |
 |---|---|
-| self-improvement-leader | FT-01 decisions, layout, staffing, fleet changes it forces, this record |
+| yellowstone-leader | FT-01 decisions, layout, staffing, fleet changes it forces, this record |
 | yellowstone-leader | integration in `~/Code/yellowstone`, `docs/ft-01-inventory.md` |
 | overlord | ops only: reloads, lane spawns and labels, worktree panes, herdr surgery |
 

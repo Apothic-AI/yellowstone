@@ -4,7 +4,7 @@ Settles FT-72. Written 2026-11-17 by the worker `si-ft72-prompt`, against the op
 2026-11-16/17, which are newer than the item body and override it where they differ.
 
 **What this governs.** Any request that crosses a space boundary: the fleet-progress lane (the
-"overlord" — `self-improvement-leader`, and in its own words the `overlord` lane at
+"overlord" — the `overlord` lane at
 `~/.overlord`) asking another space to do something, a leader handing work to another leader,
 and the sender's question of whether it landed.
 

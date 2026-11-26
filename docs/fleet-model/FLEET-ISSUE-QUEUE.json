@@ -1340,7 +1340,7 @@
       "dependency": "not inferred here; the post-maintenance boundary swarm-c0l.9.41 gates FT-32 only",
       "compaction_gate": "between-every-issue handoff + overlord compaction confirmation still applies",
       "operator_file_edited": false,
-      "notes": "Appended to the operator source after FT-50 at line 1291. Enumeration only: no research, no implementation, no orchestration by this refresh. Before any future orchestration, self-improvement-leader and overlord must each check their own workspace for relevant bili notes and bring that context in; the sealed b-series named in FT-08 is part of the evidence question. The item asks for a verdict on recall-under-compression and on suitability to replace the mid-session compaction path, kept distinct from the continuation/handoff procedure for session loss."
+      "notes": "Appended to the operator source after FT-50 at line 1291. Enumeration only: no research, no implementation, no orchestration by this refresh. Before any future orchestration, yellowstone-leader and overlord must each check their own workspace for relevant bili notes and bring that context in; the sealed b-series named in FT-08 is part of the evidence question. The item asks for a verdict on recall-under-compression and on suitability to replace the mid-session compaction path, kept distinct from the continuation/handoff procedure for session loss."
     }
   ],
   "refreshes": [
@@ -1474,9 +1474,9 @@
           "line_note": "measured at line 1291 in the source at md5 801ac226daccf5c2d0fe1e8276f89a48; the bead description says line 1294, which is stale by three lines — the source has not changed since this refresh's hash, and the parent owns the bead text",
           "assignment_notes": [
             "enumeration only: no FT-51 research, implementation or orchestration performed or started",
-            "the requirements colocated with the bead are preserved: before any future FT-51 orchestration, self-improvement-leader AND overlord must each check their own workspace for relevant bili notes",
+            "the requirements colocated with the bead are preserved: before any future FT-51 orchestration, yellowstone-leader AND overlord must each check their own workspace for relevant bili notes",
             "the between-every-issue handoff/overlord compaction gate and the paid/auth bounds still apply",
-            "owners are self-improvement-leader plus the billion-context space"
+            "owners are yellowstone-leader plus the billion-context space"
           ]
         }
       }
