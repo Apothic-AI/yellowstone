@@ -786,6 +786,28 @@ export async function writeRuntimeFiles(
 	const warnings: string[] = [];
 	const settings = await computeSettings(plan, options, runtimeDir);
 
+	// A lane whose resolved model is absent from the compaction overrides it
+	// carries AND has no base reserveTokens falls back to pi's default reserve
+	// (16384) — a measured 36x smaller safety margin than the fleet's 600000,
+	// with no error attached. Warn where the fault is real; stay silent when a
+	// base reserveTokens covers the model, and when the profile declares no
+	// compaction block at all (nothing declared, nothing to check).
+	const resolvedModel = plan.model;
+	const compaction = settings.compaction;
+	if (
+		resolvedModel !== undefined &&
+		isRecord(compaction) &&
+		isRecord(compaction.modelOverrides) &&
+		compaction.reserveTokens === undefined
+	) {
+		const modelKey = `${resolvedModel.provider}/${resolvedModel.id}`;
+		if (!(modelKey in compaction.modelOverrides)) {
+			warnings.push(
+				`profile "${plan.profile}": model ${modelKey} has no compaction.modelOverrides entry and no base reserveTokens; pi's default reserve (16384) applies`,
+			);
+		}
+	}
+
 	// Validate the extension-path transition before any managed write so an
 	// unsafe pre-existing path fails actionably and leaves the runtime intact.
 	const extensionsRepresentation = extensionPathRepresentation(plan);
