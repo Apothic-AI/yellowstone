@@ -191,6 +191,27 @@ if [ -n "$guard_hit" ]; then
   fi
 fi
 
+# --- assignee identity (swarm-dzu) -------------------------------------------------
+# `--claim` asks the real binary to stamp an assignee, and it derives that from the OS
+# identity — so every lane that claims a bead writes `bitnom`, which on this board is the
+# OPERATOR's identity and means "the operator owns this". A lane's claim then reads as an
+# operator claim, and nothing downstream can tell them apart: work assigned away from the
+# operator looks like work reserved for them.
+#
+# The lane's own name is the honest assignee, and this shim already knows it — PI_ROOMS_NAME
+# is the same identity it writes into the pane join below. An explicit --assignee always
+# wins, and with no PI_ROOMS_NAME (an operator's own shell) nothing is injected, so the
+# pre-existing behaviour is preserved exactly where it was correct.
+if [ "$claim" = 1 ] && [ -n "${PI_ROOMS_NAME:-}" ]; then
+  has_assignee=0
+  for a in "$@"; do
+    case "$a" in --assignee|--assignee=*|-a) has_assignee=1 ;; esac
+  done
+  if [ "$has_assignee" = 0 ]; then
+    set -- "$@" --assignee "$PI_ROOMS_NAME"
+  fi
+fi
+
 "$REAL_BD" "$@"
 rc=$?
 [ "$rc" -ne 0 ] && exit "$rc"
