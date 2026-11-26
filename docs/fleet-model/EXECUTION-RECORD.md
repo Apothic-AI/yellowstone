@@ -3474,7 +3474,7 @@ src/launcher/spawn.ts:26   const EXTENSION_ENTRY = fileURLToPath(new URL("../../
 ```
 
 That extension is what registers `/profile` and calls
-`ui.setStatus("profile", \`profile: ${profile}\`)` (`extensions/pi-profile/index.ts:108-110`) — i.e. the
+``ui.setStatus("profile", `profile: ${profile}`)`` (`extensions/pi-profile/index.ts:108-110`) — i.e. the
 footer token *and* the in-session profile command both come from it.
 
 **Consequence: the loaded set is fixed at spawn.** A lane started before its launcher injected that `-e`
@@ -5604,29 +5604,29 @@ is mid-turn; and `"a deferral past its lifetime is target_gone, not an eternal d
 
 ## FT-89 published (2026-11-18T16:43:11Z) — verified against upstream and by roundtrip
 
-\`d03a2aac5\` "git subrepo push src/pi-extensions/pi-goal". Two checks, and only the second one decides it:
+`d03a2aac5` "git subrepo push src/pi-extensions/pi-goal". Two checks, and only the second one decides it:
 
-- **Upstream ref equals the pin:** \`refs/heads/main\` = \`14282978814d4608ad64be897089432e9e4980b0\`, the
-  same sha recorded as \`commit =\` in \`.gitrepo\`. A sha read-back alone would only prove a number was
+- **Upstream ref equals the pin:** `refs/heads/main` = `14282978814d4608ad64be897089432e9e4980b0`, the
+  same sha recorded as `commit =` in `.gitrepo`. A sha read-back alone would only prove a number was
   copied, which is why it is not the acceptance evidence.
 - **Roundtrip clone diff: 0 source differences.** A fresh shallow clone of what was published differs
-  from the subrepo directory in exactly two entries, both local-only build artifacts (\`graft\`,
-  \`node_modules\`). The published tree is the tree.
+  from the subrepo directory in exactly two entries, both local-only build artifacts (`graft`,
+  `node_modules`). The published tree is the tree.
 
 **Not yet in evidence: the two-lane acceptance run.** The push happened, which suggests it passed, but I
 have seen no report of it and will not infer one from a commit message — asked the owner for the artifact.
 
-## FT-85/86/87 landed in \`~/AGENTS.md\` (rolled out, operator's decision pending)
+## FT-85/86/87 landed in `~/AGENTS.md` (rolled out, operator's decision pending)
 
-Two blocks: the **context-measurement bullet** in \`## Standing behaviour\`, and **\`## Delegating work\`**
+Two blocks: the **context-measurement bullet** in `## Standing behaviour`, and **`## Delegating work`**
 with the FT-87 routing rules and the FT-86 worker-retirement rule. Carrier rationale: a mode file is
 drift-gated (one edited line blocks composition and drops every leader to the native prompt until each
-re-lanes), while \`AGENTS.md\` is role-neutral and needs only a reload.
+re-lanes), while `AGENTS.md` is role-neutral and needs only a reload.
 
-**Rollout evidence:** one-lane proof on \`w1K:p1N\` (1 sent, 0 failed, verified 1/1), then the fleet — 31
-sent, 0 failed, **30/31 confirmed**, with the one unconfirmed pane (\`w25:p1\`) re-sent and verified 1/1.
-Only \`yellowstone-leader\` was skipped, by design, because it is working; it picks the text up on its next
-reload. Backup: \`~/AGENTS.md.bak-20261118T163302Z\`. Reverting is one restore plus one reload.
+**Rollout evidence:** one-lane proof on `w1K:p1N` (1 sent, 0 failed, verified 1/1), then the fleet — 31
+sent, 0 failed, **30/31 confirmed**, with the one unconfirmed pane (`w25:p1`) re-sent and verified 1/1.
+Only `yellowstone-leader` was skipped, by design, because it is working; it picks the text up on its next
+reload. Backup: `~/AGENTS.md.bak-20261118T163302Z`. Reverting is one restore plus one reload.
 
 **Order I got wrong:** the operator asked for the summary *to decide*; I landed the text first and
 summarised after. The summary now exists and the state is reversible, but the decision should have come
@@ -7038,4 +7038,42 @@ reconcile-mode --inspect --only w17:p1
 sections; the cadence is supplied by the base and is not duplicated by the delta.** Before the
 relaunch the same command read `base=1 overlay=0` at **20,863** chars — the pre-merge composition,
 which is what "on disk, not in the lane" looks like from outside.
+
+
+## §56 — Ancestry across a subrepo boundary, and the discipline of three answers (2026-11-27)
+
+**Amendment, 2026-11-27T~01:20Z (overlord; measurement by yellowstone-leader).** The subrepo rule recorded
+earlier — *across a subrepo boundary, only content is a valid instrument* — is correct but under-specified, and
+yellowstone-leader supplied the qualification that makes it usable rather than a retraction. Measured on
+`2026-11-26`, both sides at once, against pin `d461334f6`:
+
+| command | result |
+|---|---|
+| `git cat-file -t d461334f6` | `commit` — **the sha is present** |
+| `git merge-base --is-ancestor ae5bfa4f9 d461334f6` (local commit) | **exit 1 — NO**, for work that is published |
+| `git merge-base --is-ancestor 61d59608c d461334f6` (upstream twin) | **exit 0 — YES** |
+
+**Ancestry is not broken.** It is answering about a **different history** from the one the local commit lives
+in, because `git subrepo push` rewrites commits, so a local sha and its published twin are different objects in
+different chains. **Within a single history ancestry remains the correct and cheapest check** — it resolved four
+stale deliveries on 2026-11-26 — and a blanket "ancestry is unreliable" would cost that instrument. The rule
+names the boundary; it does not retract the tool.
+
+**The valid cross-boundary instrument is content:** the subdirectory blob set,
+`git ls-tree -r <commit> -- <subdir>`, compared entry by entry. Whole-tree `rev-parse ^{tree}` is equally
+invalid across the boundary (different repositories), and so is SHA equality.
+
+**And the discipline that made this findable — three answers, never one.** For any "is it deployed?" question
+there are three independent states, and proving one is not proving three:
+
+| answer | instrument |
+|---|---|
+| **pushed** | `git ls-remote <remote> refs/heads/main` |
+| **pinned** | the `.gitrepo` `commit =` line, or the wrapper's dependency ref |
+| **installed** | `node_modules` content — byte-identity of the deployed file against the published tree |
+
+The failure this prevents is precise: a lane proved "installed" and read it as three, and the inference was wrong
+in the direction that *looks like work remaining*. Read the other way, a push that passed was read as proof the
+gate worked. **The evidence was real; the scope was not** — which is the same shape as a green test proving the
+code is right while saying nothing about whether the code is running.
 
