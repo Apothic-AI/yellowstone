@@ -64,7 +64,7 @@ if printf '%s\n' "$visible" | sed -n '/╭/,/╰/p' | grep -qE '^│[^│]*[^ �
   skip "composer holds a draft"
 fi
 
-msg='[wake — self-scheduled by overlord-wake.timer, not from the operator] Self-check, then stop or continue. FOCUS: the lanes that should be doing anything are self-improvement-leader, yellowstone-leader, and this lane when active. Other lanes idle is normal — note one only if it unexpectedly becomes active or shows as unknown.
+msg='[wake — self-scheduled by overlord-wake.timer, not from the operator] Self-check, then stop or continue. FOCUS: the lanes that should be doing anything are yellowstone-leader and this lane when active. Other lanes idle is normal — note one only if it unexpectedly becomes active or shows as unknown. (self-improvement-leader was retired 2026-11-26 when its role merged into yellowstone-leader; naming a closed lane here would be a wake instruction that can never be satisfied.)
 
 (1) `todo` list — anything in progress or pending that should be finished.
 (2) ./tools/leader-board.py — any lane BLOCKED, STALE, GONE or goal-degraded and unhandled, and any `!!` line at the top of the board — a `!! herdr binary` line means the fleet is not running the deployed herdr build, or will not reboot into it, and it is repaired that hour with the three-command sequence in pi-fleet-model/CURRENT-STATE-herdr-pin-drift.md §4a (a fleet ran pre-fix herdr for a day and a half because nothing read that signal). For any lane the board flags: read the tail of that lane'\''s output before believing the flag — do not take a lane'\''s claimed blocker at face value; check what it actually did and whether it is really blocked.
