@@ -369,6 +369,37 @@ describe("DiscoveredExtensions (pure discovery & selection)", () => {
 		expect(result.diagnostics?.[0].message).toMatch(/deliberate switch-off, not a fault/);
 	});
 
+	it("does not read a generated instance's derived empty list as intent", async () => {
+		// pi-profile's generator writes `rewritten.extensions =
+		// packageExtensions.get(source) ?? []`, so inside a per-launch instance an
+		// empty list is *derived* — it records that discovery enabled nothing, not
+		// that anyone chose to disable the package. Reading it as deliberate would
+		// relabel the pi-beads-extension `"./src/index.ts"` fault as "not a fault",
+		// which is precisely the false negative this diagnostic exists to prevent.
+		const pkg = await addPackage("pi-beads", { extensions: ["./src/index.ts"] });
+		const instanceDir = path.join(fixture.profileSwitchDir, "instances", "launch-test");
+		await mkdir(instanceDir, { recursive: true });
+		// A real instance symlinks the npm root from the real agent dir rather than
+		// copying it, so mirror that here — otherwise the package is not installed
+		// from the instance's point of view and never reaches discovery at all.
+		await symlink(path.join(fixture.agentDir, "npm"), path.join(instanceDir, "npm"));
+		await writeFile(
+			path.join(instanceDir, "settings.json"),
+			JSON.stringify({
+				packages: [{ source: "npm:pi-beads", extensions: [], prompts: ["./prompts/*.md"] }],
+			}),
+		);
+		expect(pkg.root).toContain("pi-beads");
+
+		const extensions = await discoverExtensions({ cwd: fixture.cwd, agentDir: instanceDir });
+		const result = await extensions.select(["pi-beads"]);
+
+		expect(result.entries).toEqual([]);
+		// The point: NOT `disabled-by-settings`. A derived list must fall through to
+		// the filter diagnosis, which names the `./` prefix as the cause.
+		expect(result.diagnostics?.[0].code).toBe("filtered-by-settings");
+	});
+
 	it("selects multi-entry packages as a whole and by individual entry", async () => {
 		await addPackage("multi-ext", { extensions: ["./a.ts", "./b.ts"] });
 		const extensions = await discoverExtensions({ cwd: fixture.cwd, agentDir: fixture.agentDir });

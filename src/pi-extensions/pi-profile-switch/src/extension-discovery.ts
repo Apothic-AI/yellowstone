@@ -30,6 +30,7 @@ import { minimatch } from "minimatch";
 
 import { isRecord } from "./json-file.ts";
 import type { ResolutionDiagnostic } from "./profile-resolver.ts";
+import { getInstancesRootDir } from "./workspace.ts";
 
 export interface DiscoveredPackage {
 	/** Selectable package name: package.json "name", or the source minus its
@@ -393,9 +394,25 @@ function createPackageManager(options: DiscoverExtensionsOptions): { packageMana
  *  of this type", so an explicit `"extensions": []` is a deliberate switch-off;
  *  a non-empty list that matches nothing is a different, usually accidental,
  *  failure. Both arrive here with zero resolved entries, so the raw entry is the
- *  only thing that tells them apart. */
-function deliberatelyDisabledSources(settingsManager: SettingsManager): Set<string> {
+ *  only thing that tells them apart.
+ *
+ *  **Only a hand-authored settings file can express intent.** A generated instance
+ *  writes `rewritten.extensions = packageExtensions.get(source) ?? []`, so an
+ *  empty list there is *derived* — it records that discovery enabled nothing,
+ *  not that anyone chose to disable it. Reading it as deliberate would relabel
+ *  exactly the pi-beads-extension fault as "not a fault", which is the failure
+ *  this diagnostic exists to prevent. So when the surveyed agent dir is one of
+ *  pi-profile's own per-launch instances, report `deliberatelyDisabled: false`
+ *  and let `filteredOut` carry the truth. */
+function isGeneratedInstanceDir(agentDir: string): boolean {
+	const root = getInstancesRootDir();
+	return agentDir === root || agentDir.startsWith(root + path.sep);
+}
+
+function deliberatelyDisabledSources(settingsManager: SettingsManager, agentDir: string): Set<string> {
 	const disabled = new Set<string>();
+	// A derived empty list is not an authored one; see the note above.
+	if (isGeneratedInstanceDir(agentDir)) return disabled;
 	const global = settingsManager.getGlobalSettings();
 	const project = settingsManager.getProjectSettings();
 	for (const list of [global.packages, project.packages]) {
@@ -502,7 +519,7 @@ async function resolveImplicit(packageManager: PackageManager, agentDir: string,
 
 export async function discoverImplicitExtensions(options: DiscoverExtensionsOptions): Promise<ImplicitExtensionDiscovery> {
 	const { packageManager, settingsManager } = createPackageManager(options);
-	return await resolveImplicit(packageManager, options.agentDir, deliberatelyDisabledSources(settingsManager));
+	return await resolveImplicit(packageManager, options.agentDir, deliberatelyDisabledSources(settingsManager, options.agentDir));
 }
 
 export async function discoverExtensions(options: DiscoverExtensionsOptions): Promise<DiscoveredExtensions> {
