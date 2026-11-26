@@ -84,6 +84,11 @@ export default function modeExtension(pi: ExtensionAPI) {
     scope: "builtin" as const,
   }));
   const warnedDiagnostics = new Set<string>();
+  // Project modes the startup selection lost to a missing confirmation (session_start falls
+  // back to the native base before before_agent_start ever sees them, so no composition
+  // diagnostic fires for that loss). Remembered so the agent itself is warned, not just the
+  // launcher's stderr; re-checked against the current approvals every turn.
+  let startupDroppedProjectModes: ResolvedMode[] = [];
 
   // Recorded confirmations, plus this process's startup acknowledgements where they still match the
   // current definition: a stale acknowledgement must not hide a newer recorded confirmation.
@@ -305,6 +310,7 @@ export default function modeExtension(pi: ExtensionAPI) {
 
   pi.on("session_start", async (event, ctx) => {
     warnedDiagnostics.clear();
+    startupDroppedProjectModes = [];
     if (typeof ctx.getSystemPrompt !== "function") {
       const warning = `pi-modes requires Pi ${PI_HOST_COMPATIBILITY}; prompt composition APIs are unavailable`;
       if (ctx.hasUI) ctx.ui.notify(warning, "error");
@@ -337,6 +343,7 @@ export default function modeExtension(pi: ExtensionAPI) {
       );
       const projectAcknowledged = process.env.PI_MODE_CONFIRM_PROJECT === "1";
       const projectConfirmationMissing = unconfirmedProject.length > 0 && !projectAcknowledged;
+      if (projectConfirmationMissing) startupDroppedProjectModes = unconfirmedProject;
       const fallback =
         resolution.blocked ||
         resolution.diagnostics.length > 0 ||
@@ -428,11 +435,56 @@ export default function modeExtension(pi: ExtensionAPI) {
         else console.warn(warning);
       }
     }
+    // A dropped project half is the one diagnostic that must reach the model, not just the UI:
+    // the lane would otherwise run on the fallback definition with no role text and no signal
+    // that anything is missing. Inject the recovery instruction as a prompt section, so it
+    // loads only when the condition actually fires — no static Degraded start text in any
+    // AGENTS.md.
+    const dropped = diagnostics.filter((diagnostic) =>
+      diagnostic.message.includes("project text dropped:"),
+    );
+    // Startup is the other way a lane loses its space half: session_start rejects an
+    // unconfirmed project mode outright and falls back to the native base before this handler
+    // ever sees it, so no composition diagnostic fires. Re-check the remembered modes against
+    // the current approvals, so a mode confirmed mid-session stops warning.
+    const stillDroppedAtStartup = unconfirmedProjectModes(
+      startupDroppedProjectModes.map((mode) => mode.key),
+      loaded.modes,
+      projectApprovals(loaded.modes),
+    );
+    const degradedWarning =
+      dropped.length > 0 || stillDroppedAtStartup.length > 0
+        ? [
+            "# WARNING: your space role text was dropped",
+            ...dropped.map((diagnostic) => `- ${diagnostic.message}`),
+            ...(stillDroppedAtStartup.length > 0
+              ? [
+                  `- Startup project mode(s) not confirmed: ${describeProjectModes(stillDroppedAtStartup)}; the lane is running on the native base without this space's role text.`,
+                ]
+              : []),
+            "You are running on the fallback definition alone, without this space's role text. Say so in your first turn and ask for a relaunch carrying `PI_MODE_CONFIRM_PROJECT=1`. Do not proceed as if you hold the role.",
+          ].join("\n")
+        : undefined;
+    if (degradedWarning !== undefined) {
+      event.systemPromptOptions.sections = {
+        ...event.systemPromptOptions.sections,
+        mode_degraded_warning: degradedWarning,
+      };
+    }
     if (!replayed.selection.baseKey && replayed.selection.overlayKeys.length === 0) return;
     const { customPrompt, sections, forceSystemPrompt } = composed.changes;
     // Pi 1.x keeps the prompt in the transcript as sections built from these options; editing
     // them keeps that structure, while a returned prompt is forced text (replace_final only).
-    if (forceSystemPrompt !== undefined) return { systemPrompt: forceSystemPrompt };
+    // A forced prompt (replace_final) discards the options sections above, so a degraded lane
+    // on that path gets the warning appended to the forced text instead.
+    if (forceSystemPrompt !== undefined) {
+      return {
+        systemPrompt:
+          degradedWarning === undefined
+            ? forceSystemPrompt
+            : `${forceSystemPrompt}\n\n<mode_degraded_warning>\n${degradedWarning}\n</mode_degraded_warning>`,
+      };
+    }
     if (customPrompt !== undefined) event.systemPromptOptions.customPrompt = customPrompt;
     if (sections) {
       event.systemPromptOptions.sections = { ...event.systemPromptOptions.sections, ...sections };

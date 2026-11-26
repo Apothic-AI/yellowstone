@@ -414,6 +414,10 @@ test(
       const unconfirmed = await warn.turnPrompt();
       assert.doesNotMatch(unconfirmed, /EVIL PROJECT PROMPT/);
       assert.match(unconfirmed, /Review the current work/);
+      // The degraded lane is told in its own prompt, at the moment it happens — this is the
+      // just-in-time replacement for the static Degraded start sections.
+      assert.match(unconfirmed, /space role text was dropped/);
+      assert.match(unconfirmed, /PI_MODE_CONFIRM_PROJECT=1/);
       assert.ok(warn.notifications.some((message) => /is not confirmed/.test(message)));
       assert.ok(warn.notifications.some((message) => /project text dropped/.test(message)));
 
@@ -422,6 +426,7 @@ test(
       assert.doesNotMatch(await warn.turnPrompt(), /EVIL PROJECT PROMPT/);
       await warn.command("mode")("+review --confirm-project");
       assert.match(await warn.turnPrompt(), /EVIL PROJECT PROMPT/);
+      assert.doesNotMatch(await warn.turnPrompt(), /space role text was dropped/);
 
       // A confirmed project file is edited under the allow drift policy: the edit is unconfirmed,
       // so the composed definition falls back to the built-in half again.
@@ -706,12 +711,19 @@ test(
           ),
         ),
       );
+      // The degraded lane is told in its own prompt, at the moment it happens — the startup
+      // rejection alone only warns the launcher, never the agent.
+      const blockedPrompt = await blocked.turnPrompt();
+      assert.doesNotMatch(blockedPrompt, /Repository review rules\./);
+      assert.match(blockedPrompt, /space role text was dropped/);
+      assert.match(blockedPrompt, /PI_MODE_CONFIRM_PROJECT=1/);
 
       process.env.PI_MODE_CONFIRM_PROJECT = "1";
       const acknowledged = harness(p.cwd);
       await acknowledged.run("session_start", { reason: "startup" });
       assert.deepEqual(acknowledged.activeOverlays(), ["review"]);
       assert.match(await acknowledged.turnPrompt(), /Repository review rules\./);
+      assert.doesNotMatch(await acknowledged.turnPrompt(), /space role text was dropped/);
       assert.ok(!existsSync(p.approvalsPath), "nothing is recorded");
 
       delete process.env.PI_MODE_CONFIRM_PROJECT;
