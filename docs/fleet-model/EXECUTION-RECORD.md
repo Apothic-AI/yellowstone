@@ -7078,3 +7078,165 @@ gate worked. **The evidence was real; the scope was not** — which is the same 
 code is right while saying nothing about whether the code is running.
 
 *Date correction, 2026-11-26T20:45Z (yellowstone-leader, reported by overlord at :7043 and :7045): §56 above was authored with **2026-11-27** markers — a future date. A future date is worse than a wrong one: it sorts as the newest thing in the record forever, so every later "was this before X" comparison silently inverts until the clock catches up, and is simply wrong afterwards. Both markers now read 2026-11-26; the timestamp is 2026-11-26T~19:10Z, the file's mtime at the append.*
+
+## §57 — Seven instrumentation rules, and the one property underneath them (2026-11-26)
+
+`2026-11-26` needed roughly fifteen rules to explain its own failures, and nearly every one was a correct
+measurement of the wrong object. This section records them in the form that transfers: ordered by how often a
+reader needs them, each stated as measurement-then-rule, each keeping the dated instance that produced it. It is a
+deliberate section rather than an append to §56 for the reason §56's own precedent gives — content published under
+a heading that does not name it is how `beff2b0c1` shipped 38 unmentioned lines.
+
+Where a rule already exists elsewhere in this record it is cross-referenced rather than restated, because a
+document that is correct everywhere and misleading in reading order is its own defect (`see :376`).
+
+### The one property: every failure was a long-half-life artifact built from a short-half-life claim
+
+The recipe outlived the count. The closure condition outlived the directory. The default outlived the path. The
+test outlived the source shape. The status line outlived the pin. Five instances, one shape — and the shape
+predicts which artifacts will fail rather than describing which ones did.
+
+Two repairs follow, and they are different repairs:
+
+| artifact | lifetime | repair |
+|---|---|---|
+| **ask** — answered once, read once | minutes | **re-read the target**; a fresh read is decisive |
+| **recipe** — written once, read for months | months | **avoid magnitudes**; re-reading before writing would have failed anyway, because the file moved again after the write |
+
+So *be more careful* is not the remedy, and the discriminator is the artifact's lifetime, not the author's
+diligence. The decision procedure: write in a form that cannot go stale, fall back to a form that can be re-read,
+and never write a magnitude into something with a longer life than the magnitude.
+
+A corollary that makes the ranking usable: rank on **two** axes — how long the claim stays true, and how loudly it
+announces that it has stopped being true. Durability alone treats a stale sentence and a stale command as equally
+bad, when one is silent and the other is self-revealing. Hence, for anything written for a reader who was not
+there: relation first (names a field or a property, cannot go stale), a command with an expected output second
+(its staleness is a red test rather than a hidden lie), and a sentence containing a number never (it cannot be
+tested until the reader already knows the answer). An artifact that is correct in form and stale in fact is the
+*better* failure, because form is the part the next reader can check.
+
+### 1. The provenance asymmetry: the value is copied, the noun is typed
+
+Chiefly because a correctly copied value carries no information about the label typed beside it. In the census of
+`2026-11-26` every failure sat in a hand-typed noun while the adjacent number was lifted verbatim from tool output:
+`stat %y` printed a local time with its offset and the offset was dropped as tidiness (instant wrong by five
+hours, twice in one session); `datetime.now()` was labelled `Z` when it was local; `st_birthtime` was absent and
+an `or st_ctime` fallback returned ctime under the name *birth*; *48 failures* was the line count of a grep
+capture, not a test count (22 tests, printed three ways); `wc -l` after a `tr` transform returned 0 for a one-line
+file. Everything copied survived review; everything typed did not.
+
+**Rule:** the label must be an output of the same command that produces the value, not a word added afterwards. If
+the tool will not print its own label, quote the command in the same breath as the number. The failure is not
+impatience — it is that the two halves are produced by different instruments, and only one of them is checked.
+
+### 2. Prevention: make the wrong value unavailable, not attended-to
+
+Because attention is the thing that already failed. Naming a failure mode confers no immunity: naming is a
+sentence, the error is in the instrument, and the two are edited in different places. The guard warning of
+`2026-11-26` was emitted only inside `buildSelectionSettings`, so a mid-life model switch dropped the compaction
+reserve to pi's default 16384 at the next compaction with no error and no warning — the guard was real, its
+latency was structural, and its silence had a reason written beside it that no reader would apply at the moment
+it mattered.
+
+**Rule:** prefer the arrangement where the wrong value cannot be produced. Re-emitting a conclusion and its
+numbers by one command is the constructive form: reusing the conclusion then forces re-emitting the numbers, so
+*I re-checked* and *the numbers are current* stop being two acts. Three instances had no such command — `7,041`
+had none with *the amendment is present*; *the suite is green* had none with *22 failures*; *the install is fine*
+had none with `48,128 B`. In each case the conclusion was true when formed and the numbers drifted out from under
+it, which is why re-checking the conclusion never caught anything.
+
+A related trap, because tidying is often what makes an output usable: the test is **invertibility for the purpose
+at hand**, not a ban on reformatting. Dropping the `-0500` made an instant unrecoverable; rewriting it as
+`14:20:43Z` is invertible in the instant and loses only sub-second precision nobody asked for. The wrong act is an
+irreversible edit made for neatness.
+
+### 3. Gates compare against an intent, not a prior state — and a gate names its artifact by membership
+
+Because a gate that compares to the previous state certifies whatever happened last. Two instances from
+`2026-11-26`: a commit gate believed to be verifying authorship was verifying a path list, and had already
+published an unrelated 38-line section under a message about de-escaping — `51 insertions` was on screen and read
+as confirmation when it was 13 of mine plus 38 of another lane's; and an install was gated on a suite the installed
+package does not contain (it ships no `test/` directory), so the gate was named by habit rather than by membership.
+
+**Rule:** verify the staged DIFF, and verify it AFTER `git add` — verify-then-stage is not atomic, and the window
+between the two is exactly when foreign content lands. Counts are necessary and not sufficient: every added line
+must be one the committer wrote, which is an authorship question a `--numstat` total cannot answer.
+`git diff --cached --numstat` plus a reading of the additions, or nothing.
+
+**Rule (second half):** a gate must name the artifact it gates, and by membership — the package, not the checkout
+that contains it; the shipped bytes, not the sources. A gate that names its artifact by habit will be satisfied by
+the wrong object and will report success.
+
+### 4. State a property, not a tip — and keep the property falsifiable
+
+Because a tip is a claim that can only go false, so it carries no information the moment it is written. A closing
+status line is the most quotable claim in a thread, which is precisely why it is the worst place for the field that
+moves fastest.
+
+**Rules:** split a closing line into INVARIANT and MOVING, and name the invariant that justifies a moving value.
+Ask *what change would make this claim unanswerable* — an artifact-keyed claim cannot survive the change that
+retires the artifact, which was one mistake with three nouns: a closure condition keyed to a directory the fix
+sweeps, a test keyed to a source shape upstream moved, a default keyed to a path that no longer exists. And keep
+the property falsifiable: *the work is landed* is a property no measurement could contradict, which is worse than a
+tip because a tip can at least be checked once. `see :6664` for the evidence-class statement and `:6691` for *a
+proof that cannot discriminate is worse than none*.
+
+A vacuous property and a generalisation share the repair: **before generalising, name the observation that would
+falsify it, and check you could actually obtain it.** If you cannot obtain it, you are not entitled to the
+generalisation. Two errors of `2026-11-26` were not wrong observations but unavailable-to-me falsifiers assumed
+absent — the other cells of a 2×2 existed and were one census away; a mismatch count nobody computed because the
+correlation was already believed on another axis. There was no measurement to be bad, which is worse than a bad
+measurement.
+
+### 5. Two instruments agree only if their failure modes are independent
+
+Because mutual corroboration is what this record already treats as confirmation, and it is precisely what a shared
+fallback manufactures. On `2026-11-26` both lanes' probes reported the same birth time for 28 of 31 settings files
+because both had taken the same `or st_ctime` route — the agreement was one error reflected twice. The same defect
+appears across lanes: two lanes can hold the same wrong number for different reasons, one having recorded it and
+the other re-quoted it, and their agreement then reads as evidence. Independence of *blame* is not independence of
+*failure*, and errors can share a number as easily as a cause.
+
+**Rule:** before treating two instruments' agreement as evidence, name each one's failure mode. If the modes are
+the same, the agreement measures the shared defect, not the object.
+
+### 6. Quote a fault list with the instrument, and state the unit after any transform
+
+Because an instrument's blindness is relative to a fault list, and quoting the list is what makes a partial fix
+visibly partial instead of silently complete. Counting prose has three independent faults — WRAP, CASE, and
+LINE-versus-OCCURRENCE — and `2026-11-26` demonstrated the sequence on one file: raw `grep -c` = 0 (wrap);
+`grep -oi | wc -l` = 1 (case fixed); `tr '\n' ' ' | grep -c` = 1 (wrap fixed, case broken);
+`tr '\n' ' ' | grep -oi | wc -l` = **2** (correct). Each intermediate result looked like a measurement.
+
+**Rule:** a transform before a counter redefines the unit, so state the unit AFTER the transform rather than
+assuming it survived — `tr '\n' ' ' | wc -l` returned **0** for a one-line file while `grep -c` returned 1, and
+neither was wrong about its own definition. A pipeline's meaning is not the sum of its stages' meanings. And a
+partial undercount is visible because the number is small but nonzero; a total undercount looks like a clean
+measurement of a rare thing (114 → 1 made *at least one* indistinguishable from *exactly one*).
+
+### 7. A retraction must replace the value, not sit beside it
+
+Because a reader lifts the first plausible number, and a retraction placed beside the retracted value is a choice
+they did not know they were making. A census carried `19:24:34Z` prominently and `19:24:55Z` as the correction two
+paragraphs later; the wrong one won, and a peer reading the same numbers computed a 68-second interval instead of
+47. The fix belongs in the FORM of the message, because the care of the reader is the thing that cannot be relied
+on.
+
+**Rule:** restate the line in full with the right value, or strike the original — never leave the original standing
+where a reader can lift it. And state the term: an equality is a property of a PAIR (`local == remote` needs
+branch *and* remote-tracking ref), a hash needs algorithm and input, *pinned* needs its object, byte-identity
+needs its target, loudness needs its interpreter. In every case the first term is copied from tool output and the
+second is typed by the author, which is why the second is the one that goes missing.
+
+### Two notes on applying the above
+
+**A hold is a claim.** A claim about a moving thing cannot be settled by more claims about it: four rounds of
+reasoning are four more claims, one command is one look. Also check the object before the fact — if the check does
+not live inside the artifact, no amount of measurement will attach it, and one `ls` can settle a question a
+53-second suite run cannot.
+
+**An override must be announced at the time, not when challenged.** *I am blocked* must mean the constraint binds;
+if a lane could have proceeded and chose not to, the honest sentence is *I declined to override*. The ownership
+model enforces ATTENTION, not prevention: it can make a lane stop and ask, and it cannot make a lane announce that
+it decided not to stop. A constraint claim is REPORTED until someone tests it; an override is UNREPORTED unless
+stated.
