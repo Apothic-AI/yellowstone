@@ -6,7 +6,7 @@
 [subrepo]
 	remote = https://github.com/Apothic-AI/pi-profile-switch
 	branch = main
-	commit = d5f61bfe477b57a3776a6658724b17f95a8aa5ef
-	parent = 928ac49bd34a5b0fadb9a628c2081cd89624a48f
+	commit = d050b76ea12912366da28918eee89b85da59d281
+	parent = 5a6050823e315fa13d9d0e0bc4da08bf36aab7c6
 	method = merge
 	cmdver = 0.4.9
