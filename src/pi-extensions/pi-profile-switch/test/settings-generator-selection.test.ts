@@ -991,10 +991,14 @@ describe("independent per-kind materialization (fix-undeclared-resource-filterin
 		expect((await generatedSettings(result.runtimeDir)).skills).toEqual([
 			`-${path.join(result.runtimeDir, "skills", "hidden-skill", "SKILL.md")}`,
 			`+${path.join(result.runtimeDir, "skills", "kept-skill", "SKILL.md")}`,
-			// Real Pi treats a `~` override as a no-op, so it is preserved verbatim
-			// rather than remapped into an effective exclusion.
-			`-~/${path.relative(fixture.root, path.join(fixture.agentDir, "skills", "tilde-hidden", "SKILL.md"))}`,
+			// A `~` override under the agent dir IS effective in Pi (measured
+			// 2026-11-26), so it is remapped to the mirror path exactly like the
+			// absolute spelling above; keeping it verbatim would leave it pointing
+			// at the real agent dir, where it matches nothing in the instance.
+			`-${path.join(result.runtimeDir, "skills", "tilde-hidden", "SKILL.md")}`,
 			"-skills/relative-hidden/SKILL.md",
+			// A `~` target outside the agent dir has no mirror, so it keeps its
+			// native spelling.
 			"-~/.agents/skills/agents-hidden/SKILL.md",
 		]);
 	});

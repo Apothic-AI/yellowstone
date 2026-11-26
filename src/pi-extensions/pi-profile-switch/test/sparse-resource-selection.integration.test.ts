@@ -396,13 +396,14 @@ describe("sparse resource selection against a real spawned pi", () => {
 			expect(nativeForceInclude.skills).toEqual(["skill:kept-skill"]);
 			expect(omittedForceInclude.skills).toEqual(nativeForceInclude.skills);
 
-			// Real pi treats `~` overrides as no-ops; the omitted branch preserves
-			// that native meaning, so the excluded skill stays visible in both.
+			// A `~` override is effective in the build under test: measured 2026-11-26,
+			// hidden-skill is absent from the native session, exactly as with the absolute
+			// path above. The comment here previously claimed pi treated `~` as a no-op.
 			const tilde = `-~/${path.relative(fixture.root, hiddenPath)}`;
 			await writeUserSettings({ skills: [tilde] });
 			const omittedTilde = await observe(["omitted", "--", "--mode", "rpc"]);
 			const nativeTilde = await observeNative();
-			expect(nativeTilde.skills).toContain("skill:hidden-skill");
+			expect(nativeTilde.skills).not.toContain("skill:hidden-skill");
 			expect(omittedTilde.skills).toEqual(nativeTilde.skills);
 		},
 	);

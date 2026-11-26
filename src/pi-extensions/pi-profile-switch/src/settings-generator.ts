@@ -214,9 +214,12 @@ function isUnderAgentDir(target: string, agentDir: string): boolean {
  *  override under the agent dir is rewritten to the mirror path. A target that
  *  escapes the agent dir is resolved against the real agent dir and emitted
  *  absolute, because nothing mirrors it and the instance base dir would change
- *  its meaning. `~` targets keep their native spelling (real Pi does not expand
- *  them in override entries); `expandTilde` retains the declared branch's
- *  historical remap. */
+ *  its meaning. With `expandTilde`, a `~` target that lands under the agent dir
+ *  is rewritten onto the mirror path; with it unset the entry keeps its native
+ *  spelling. The old note here claimed real Pi does not expand `~` in override
+ *  entries — disproved 2026-11-26 (see mapNativeSkillEntryNative). The
+ *  extension mapping still passes `~` through: that path is UNMEASURED, so it
+ *  keeps its previous behaviour rather than guessing from the skills result. */
 function mapNativeSkillEntry(
 	entry: string,
 	agentDir: string,
@@ -290,10 +293,20 @@ function userSkillExclusions(userSkills: unknown, agentDir: string, runtimeDir: 
 		.map((entry) => mapNativeSkillEntry(entry, agentDir, runtimeDir, true));
 }
 
-/** Native-base (undeclared) mapping: absolute targets only. Real Pi treats a
- *  `~` override as a no-op, so rewriting it would newly change native meaning. */
+/** Native-base (undeclared) mapping.
+ *
+ *  The premise that used to sit here — "real Pi treats a `~` override as a
+ *  no-op, so rewriting it would newly change native meaning" — is false.
+ *  Measured 2026-11-26 against the build under test: `-~/<agentDir>/skills/
+ *  <name>/SKILL.md` removes that skill from a native session's list, exactly
+ *  as the absolute spelling does. Passing `~` through unchanged therefore
+ *  does NOT preserve native meaning in the instance: the instance's agent dir
+ *  is the runtime mirror, so the unrewritten target resolves to the real agent
+ *  dir and silently stops matching. `expandTilde` rewrites a `~` target that
+ *  lands under the agent dir onto the mirror path and leaves every other `~`
+ *  target in its native spelling, which is the behaviour we want here. */
 function mapNativeSkillEntryNative(entry: string, agentDir: string, runtimeDir: string): string {
-	return mapNativeSkillEntry(entry, agentDir, runtimeDir, false);
+	return mapNativeSkillEntry(entry, agentDir, runtimeDir, true);
 }
 
 /** The `-<path>` force-exclusions for one resolved skill entry, covering both
