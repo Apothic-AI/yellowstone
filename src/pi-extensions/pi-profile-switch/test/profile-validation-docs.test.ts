@@ -31,18 +31,40 @@ async function checkContractLink(file: string, domain: string, requirement: stri
 	expect(`${main}\n${approved}`, `${owner}: anchor lacks a main or approved-delta owner`).toContain(`### Requirement: ${requirement}`);
 }
 
+// The native value inventories this suite guards against restating. These are
+// CONTRACT values, recorded deliberately rather than re-derived from Pi's source
+// on every run.
+//
+// Deriving them from source made this a coupling defect: the test pinned the
+// SHAPE of another package's internals, so any upstream refactor read as "the
+// authority moved" and failed five documentation assertions for a reason that
+// had nothing to do with the documentation. Pi 1.6.2 moved the `mcpServers`
+// shape into `@earendil-works/pi-mcp` — `dist/core/mcp-servers.js` now only says
+// so in its header and imports the validator — and the old derivation then found
+// zero transports and threw.
+//
+// Provenance, from Pi's own documentation at 1.6.2:
+//   docs/mcp.md:78  "When present, `type` must be `stdio`, `http`, or
+//                   `streamable-http`."
+//   docs/mcp.md:79  "`sse` is rejected."
+//   dist/cli/args.js  VALID_THINKING_LEVELS
+// When Pi's supported values change, update the list HERE: a deliberate,
+// reviewable edit in our repository instead of a silent dependency on someone
+// else's file layout.
+const NATIVE_THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+// `sse` is rejected by Pi, so it is not part of the inventory to guard against.
+const NATIVE_MCP_TRANSPORTS = ["stdio", "http", "streamable-http"];
+
 async function assertReferenceOnlyNativeValues(file: string): Promise<void> {
 	const text = await read(file);
-	const args = await read("node_modules/@earendil-works/pi-coding-agent/dist/cli/args.js");
-	const levelArray = args.match(/const VALID_THINKING_LEVELS = (\[[^\]]+\])/);
-	if (!levelArray) throw new Error("installed Pi thinking authority moved; update the source reference");
-	const levels = JSON.parse(levelArray[1]) as string[];
-	expect(levels.every((level) => new RegExp(`\\b${level}\\b`).test(text)), `${file}: copied native thinking inventory`).toBe(false);
-	const mcp = await read("node_modules/@earendil-works/pi-coding-agent/dist/core/mcp-servers.js");
-	const rejected = [...mcp.matchAll(/if \(type === "([^"]+)"\)\s*return/g)].map((match) => match[1]);
-	const transports = [...new Set([...mcp.matchAll(/type === "([^"]+)"/g)].map((match) => match[1]).filter((value) => !rejected.includes(value)))];
-	if (transports.length < 2) throw new Error("installed Pi transport authority moved; update the source reference");
-	expect(transports.every((transport) => new RegExp(`(?:["\x60]|\\b)${transport}(?:["\x60]|\\b)`).test(text)), `${file}: copied native transport inventory`).toBe(false);
+	expect(
+		NATIVE_THINKING_LEVELS.every((level) => new RegExp(`\\b${level}\\b`).test(text)),
+		`${file}: copied native thinking inventory`,
+	).toBe(false);
+	expect(
+		NATIVE_MCP_TRANSPORTS.every((transport) => new RegExp(`(?:["\x60]|\\b)${transport}(?:["\x60]|\\b)`).test(text)),
+		`${file}: copied native transport inventory`,
+	).toBe(false);
 }
 
 describe("profile validation documentation", () => {
@@ -100,6 +122,17 @@ describe("profile validation documentation", () => {
 	});
 
 	it.each(CURRENT_DOCS)("does not copy native value inventories into %s", assertReferenceOnlyNativeValues);
+
+	it("keeps the recorded native transport contract in step with the installed Pi docs", async () => {
+		// Advisory, and pointed at DOCUMENTATION rather than at source shape: docs are
+		// the public contract, whereas the previous source regex broke the moment Pi
+		// moved a file. An absent docs file is not a failure — the recorded contract
+		// above is the authority; this only surfaces drift early.
+		const doc = path.resolve("node_modules/@earendil-works/pi-coding-agent/docs/mcp.md");
+		if (!existsSync(doc)) return;
+		const text = await read(doc);
+		for (const transport of NATIVE_MCP_TRANSPORTS) expect(text, `Pi docs no longer mention ${transport}`).toContain(transport);
+	});
 
 	it("documents the composed definition as mechanism, without restating the contract tables", async () => {
 		const overview = await read("docs/architecture/overview.md");
