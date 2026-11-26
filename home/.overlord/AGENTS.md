@@ -142,8 +142,12 @@ These stand even when the space half is missing.
 - **Comms is its own space** since 2026-11-01: workspace `w1T`, lane `comms-leader`, cwd
   `~/Documents/Comms`. It is no longer a tab in this workspace.
 - **The fleet record is not here.** It lives at `~/Documents/Fleet/pi-fleet-model/`.
-  `~/Documents/Fleet` is the cwd of the `self-improvement` workspace `w1K`, and that
-  directory's `AGENTS.md` is its own contract, not this space's.
+  **`~/Documents/Fleet` is no longer any workspace's cwd** — the `self-improvement` workspace
+  `w1K` was retired and removed 2026-11-26 when its role merged into `yellowstone-leader`
+  (plan: `Code/yellowstone/research/si-into-yellowstone-merge-plan.md` — it moved into the yellowstone repo on 2026-11-26). The directory itself is
+  **retained** as the operator's Obsidian vault (129 files) and its `AGENTS.md` still exists,
+  but that contract now governs **no running lane** — read it as history, not as a live space.
+  The absorbed copy lives in the yellowstone repo at `docs/fleet-model/`.
 - **Assistant space** `w1Z`, lane `assistant-leader`, cwd `~/Documents/Assistant`. It holds
   the operator's intent and preferences; this space holds the fleet's state.
 - Live workspace index: [README.md](README.md) in this directory.

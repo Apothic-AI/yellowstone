@@ -3,8 +3,7 @@
 This directory is the **system-administration space** for this machine. A lane whose cwd is here
 administers the box it runs on — packages, services, timers, disk, updates, health and the repairs
 that follow from them — and nothing else. Application work belongs to that application's space;
-harness configuration (modes, profiles, skills, hooks, extensions, `AGENTS.md` files) belongs to the
-self-improvement space.
+harness configuration (modes, profiles, skills, hooks, extensions, `AGENTS.md` files) belongs to the yellowstone space (`yellowstone-leader`; the self-improvement space was retired 2026-11-26).
 
 `~/AGENTS.md` is the fleet core and applies here in full. This file adds the administration
 contract; it does not restate the core's rules. `.pi/modes/{leader,worker}.json` carry the role

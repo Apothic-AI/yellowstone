@@ -1,15 +1,17 @@
+> **RETIRED 2026-11-26** -- the self-improvement space (Herdr w1K) was retired and its roles merged into `yellowstone-leader`. This file is history, not a live space. `~/Documents/Fleet` remains the operator Obsidian vault.
+
 # Fleet workspace
 
 cwd for fleet-level configuration and documentation. The fleet itself runs from `~/` and
 `~/Code/*`; this directory holds the **record** of how it is configured, not the running
 system. This `AGENTS.md` is loaded by every lane whose cwd is here. Anything that belongs to
-one role is not in it: that lives in `.pi/modes/`, which is cwd-scoped, and a lane receives
+one role is not in it: that lived in `.pi/modes/` (deleted with the space 2026-11-26), which was cwd-scoped, and a lane received
 only the definitions it was launched with.
 
 | Lane | Launch | Gets |
 |---|---|---|
-| leader | `PI_MODE=leader PI_PROFILE=leader PI_MODE_CONFIRM_PROJECT=1 pil` | the fleet `leader` contract **composed with** `.pi/modes/leader.json` |
-| worker | `PI_MODE=worker PI_PROFILE=worker PI_MODE_CONFIRM_PROJECT=1 pil` | the fleet `worker` contract **composed with** `.pi/modes/worker.json` |
+| leader | `PI_MODE=leader PI_PROFILE=leader PI_MODE_CONFIRM_PROJECT=1 pil` | the fleet `leader` contract **composed with** `.pi/modes/leader.json` (deleted 2026-11-26) |
+| worker | `PI_MODE=worker PI_PROFILE=worker PI_MODE_CONFIRM_PROJECT=1 pil` | the fleet `worker` contract **composed with** `.pi/modes/worker.json` (deleted 2026-11-26) |
 
 A file in `.pi/modes/` whose key matches a fleet mode and whose `promptStrategy` is `append`
 **composes** with it: the fleet text first, then the space text, resolved as one definition. A
@@ -29,12 +31,12 @@ new text simply takes effect on the next turn.
 
 ## Degraded start
 
-The space half of a lane's prompt comes from `.pi/modes/`, and it opens with these exact
+The space half of a lane's prompt comes from `.pi/modes/`, and until retirement it opened with these exact
 sentences:
 
-> You are the self-improvement leader of this space — the lane that owns the harness this fleet runs on: `pi`, `herdr`, the launcher and profiles, the modes, skills, hooks, and the fleet's configuration record in `pi-fleet-model/`.
+> You are the self-improvement leader of this space — the lane that owns the harness this fleet runs on: `pi`, `herdr`, the launcher and profiles, the modes, skills, hooks, and the fleet's configuration record in `pi-fleet-model/`.  *(retired 2026-11-26; the role now belongs to `yellowstone-leader`)*
 >
-> You are a worker in the fleet workspace, spawned by `self-improvement-leader` for one harness job.
+> You are a worker in the fleet workspace, spawned by `self-improvement-leader` for one harness job.  *(retired 2026-11-26)*
 
 If your prompt lacks the sentence for your role, the space half was dropped: you are running on
 the **native** prompt with no role contract at all, not on the fleet half alone. The footer is not
@@ -71,7 +73,7 @@ your first turn and ask for a relaunch carrying `PI_MODE_CONFIRM_PROJECT=1`.
 
 ## Conventions that apply in this directory
 
-- **A lane's identity is its herdr tab label.** `pil` derives it at spawn, so name the tab before starting. This space's lanes are `self-improvement-leader` and the workers it spawns.
+- **A lane's identity is its herdr tab label.** `pil` derives it at spawn, so name the tab before starting. This space's lanes were `self-improvement-leader` and the workers it spawned (retired 2026-11-26).
 - **Read the fleet's state; do not reconstruct it.** `behold roster` joins herdr topology, pi session state and extension data per lane in one read-only pass — the skill is **`behold-roster`** and it explains the `unknown` / `divergent` / stale vocabulary, so a missing measurement is never reported as a zero. `--markdown` for the whole fleet, `--lane`, `--filter`, `--sort`, `--full` to narrow. Hand-joining `herdr agent list` against session files is the failure mode this replaces.
 - **`/reload` re-imports extension code; a mode file is the exception.** `ResourceLoader.reload()`
   clears the extension factory cache (bumping its generation), so each extension module is re-imported
