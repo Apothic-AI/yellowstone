@@ -109,6 +109,7 @@ describe("discoverImplicitExtensions", () => {
 				root: pkg.root,
 				entries: [path.join(pkg.root, "index.ts")],
 				filteredOut: false,
+				deliberatelyDisabled: false,
 			},
 		]);
 	});
@@ -127,6 +128,7 @@ describe("discoverImplicitExtensions", () => {
 				root: pkg.root,
 				entries: [path.join(pkg.root, "dist", "index.js")],
 				filteredOut: false,
+				deliberatelyDisabled: false,
 			},
 		]);
 	});
@@ -337,7 +339,10 @@ describe("DiscoveredExtensions (pure discovery & selection)", () => {
 
 	it("reports a package whose settings filter disables every entry", async () => {
 		await addPackage("pi-multi", { extensions: ["./a.ts"] });
-		await setConfiguredPackages([{ source: "npm:pi-multi", extensions: [] }]);
+		// A non-empty filter that matches nothing: the filter was meant to select
+		// something and did not. Distinct from an explicit `extensions: []`, which
+		// Pi defines as a deliberate switch-off.
+		await setConfiguredPackages([{ source: "npm:pi-multi", extensions: ["missing.ts"] }]);
 		const extensions = await discoverExtensions({ cwd: fixture.cwd, agentDir: fixture.agentDir });
 
 		const result = await extensions.select(["pi-multi"]);
@@ -347,6 +352,52 @@ describe("DiscoveredExtensions (pure discovery & selection)", () => {
 		// wrong file — the pi-beads-extension incident.
 		expect(result.diagnostics?.[0].code).toBe("filtered-by-settings");
 		expect(result.diagnostics?.[0].message).toMatch(/filtered out by this package's settings entry/);
+	});
+
+	it("stays silent for an explicit empty extensions list, which is a deliberate disable", async () => {
+		await addPackage("pi-off", { extensions: ["./a.ts"] });
+		// Pi's `applyPackageFilter` treats `userPatterns.length === 0` as "disable
+		// every resource of this type" — the documented switch-off, not a broken
+		// filter. Warning on a chosen state teaches lanes to ignore the warnings that
+		// name real faults (pi-thinking-fold's `extensions: []`), so this reports
+		// nothing at all: silence is the accurate statement about intent.
+		await setConfiguredPackages([{ source: "npm:pi-off", extensions: [] }]);
+		const extensions = await discoverExtensions({ cwd: fixture.cwd, agentDir: fixture.agentDir });
+
+		const result = await extensions.select(["pi-off"]);
+		expect(result.entries).toEqual([]);
+		expect(result.diagnostics ?? []).toEqual([]);
+	});
+
+	it("does not read a generated instance's derived empty list as intent", async () => {
+		// pi-profile's generator writes `rewritten.extensions =
+		// packageExtensions.get(source) ?? []`, so inside a per-launch instance an
+		// empty list is *derived* — it records that discovery enabled nothing, not
+		// that anyone chose to disable the package. Reading it as deliberate would
+		// relabel the pi-beads-extension `"./src/index.ts"` fault as "not a fault",
+		// which is precisely the false negative this diagnostic exists to prevent.
+		const pkg = await addPackage("pi-beads", { extensions: ["./src/index.ts"] });
+		const instanceDir = path.join(fixture.profileSwitchDir, "instances", "launch-test");
+		await mkdir(instanceDir, { recursive: true });
+		// A real instance symlinks the npm root from the real agent dir rather than
+		// copying it, so mirror that here — otherwise the package is not installed
+		// from the instance's point of view and never reaches discovery at all.
+		await symlink(path.join(fixture.agentDir, "npm"), path.join(instanceDir, "npm"));
+		await writeFile(
+			path.join(instanceDir, "settings.json"),
+			JSON.stringify({
+				packages: [{ source: "npm:pi-beads", extensions: [], prompts: ["./prompts/*.md"] }],
+			}),
+		);
+		expect(pkg.root).toContain("pi-beads");
+
+		const extensions = await discoverExtensions({ cwd: fixture.cwd, agentDir: instanceDir });
+		const result = await extensions.select(["pi-beads"]);
+
+		expect(result.entries).toEqual([]);
+		// The point: silence is reserved for an authored empty list. A derived list must
+		// fall through to the filter diagnosis, which names the `./` prefix as the cause.
+		expect(result.diagnostics?.[0].code).toBe("filtered-by-settings");
 	});
 
 	it("selects multi-entry packages as a whole and by individual entry", async () => {
@@ -425,7 +476,10 @@ describe("local extension reference diagnostics", () => {
 		const result = await extensions.select(["ghost", "relative.ts", "relative/path.ts", "../relative.ts", missing, "empty-package", "zero-*", file]);
 		expect(result.entries).toEqual([{ id: file, entry: file, origin: "path" }]);
 		expect(result.unmatched).toEqual(["zero-*"]);
-		expect(result.diagnostics?.map((issue) => issue.reference)).toEqual(["ghost", "relative.ts", "relative/path.ts", "../relative.ts", missing, "empty-package", "zero-*"]);
+		// `empty-package` is absent by design: its settings entry declares an explicit
+		// empty list, which is a chosen switch-off rather than a failure, so it emits no
+		// diagnostic. It must still not fall through to the relative-base guess below.
+		expect(result.diagnostics?.map((issue) => issue.reference)).toEqual(["ghost", "relative.ts", "relative/path.ts", "../relative.ts", missing, "zero-*"]);
 		for (const issue of result.diagnostics ?? []) {
 			expect(issue.kind).toBe("extension");
 			expect(issue.message).toContain("not loaded");
@@ -446,7 +500,7 @@ describe("local extension reference diagnostics", () => {
 	it("diagnoses glob-selected packages with no usable entries while retaining usable matches", async () => {
 		await addPackage("pi-empty", { extensions: ["./a.ts"] });
 		await addPackage("pi-usable", { extensions: ["./b.ts"] });
-		await setConfiguredPackages([{ source: "npm:pi-empty", extensions: [] }, "npm:pi-usable"]);
+		await setConfiguredPackages([{ source: "npm:pi-empty", extensions: ["missing.ts"] }, "npm:pi-usable"]);
 		const extensions = await discoverExtensions({ cwd: fixture.cwd, agentDir: fixture.agentDir });
 		const result = await extensions.select(["pi-*"]);
 		expect(result.entries.map((entry) => entry.id)).toEqual(["pi-usable"]);
