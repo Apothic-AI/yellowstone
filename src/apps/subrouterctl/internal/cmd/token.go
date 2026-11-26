@@ -236,8 +236,9 @@ func newTokenListCommand() *cobra.Command {
 			}
 			tokens = api.FilterTokens(tokens, lf.search)
 			api.SortTokens(tokens, lf.sort, lf.desc())
+			writeTokenListWarning(w, flagShowSecrets)
 			if w.IsStructured() {
-				return w.Structured(tokens)
+				return w.Structured(tokenListOutput(tokens, flagShowSecrets))
 			}
 			rows := make([][]string, 0, len(tokens))
 			for _, t := range tokens {
@@ -273,6 +274,35 @@ func newTokenListCommand() *cobra.Command {
 	lf.add(cmd, "name")
 	cmd.Flags().StringVar(&kind, "kind", "all", "filter by kind: smart, official, shared, fixed or all")
 	return cmd
+}
+
+// tokenListWarning makes the secret-bearing list opt-in explicit before output.
+func tokenListWarning(showSecrets bool) string {
+	if !showSecrets {
+		return ""
+	}
+	return "--show-secrets is enabled: token list output contains unmasked API keys; handle this output as a secret"
+}
+
+func writeTokenListWarning(w *render.Writer, showSecrets bool) {
+	if warning := tokenListWarning(showSecrets); warning != "" {
+		w.Warn("%s", warning)
+	}
+}
+
+// tokenListOutput copies tokens and masks their serialized key field unless
+// the caller explicitly requested secret output.
+func tokenListOutput(tokens []api.Token, showSecrets bool) []api.Token {
+	out := append([]api.Token(nil), tokens...)
+	if showSecrets {
+		return out
+	}
+	for i := range out {
+		if out[i].Key != "" {
+			out[i].Key = render.MaskKey(out[i].FullKey())
+		}
+	}
+	return out
 }
 
 // fetchTokens loads keys, walking pages when a client side sort is needed.

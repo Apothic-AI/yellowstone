@@ -224,9 +224,11 @@ func (c *Client) GetSharedProvider(ctx context.Context, slug string) (any, error
 }
 
 // GetSharedProviders returns the shared-pool providers
-// (GET /api/marketplace/shared-providers).
-func (c *Client) GetSharedProviders(ctx context.Context) ([]MarketplaceProvider, error) {
-	var out []MarketplaceProvider
+// (GET /api/marketplace/shared-providers). The endpoint answers with its own
+// row shape, so it is decoded into SharedProvider rather than into the
+// directory's MarketplaceProvider.
+func (c *Client) GetSharedProviders(ctx context.Context) ([]SharedProvider, error) {
+	var out []SharedProvider
 	if err := c.GetPublic(ctx, "/api/marketplace/shared-providers", nil, &out); err != nil {
 		return nil, err
 	}
@@ -266,6 +268,27 @@ func FilterModels(models []MarketplaceModel, query string) []MarketplaceModel {
 	return out
 }
 
+// measured reports whether the platform measured the offer's speed at all.
+func measured(m MarketplaceModel) bool {
+	return m.OutputSpeedSamples > 0
+}
+
+// sortModelsBySpeed orders offers by their measured output speed. Offers
+// without a measurement sort last whatever the direction, and keep their
+// relative order.
+func sortModelsBySpeed(models []MarketplaceModel, desc bool) {
+	sort.SliceStable(models, func(i, j int) bool {
+		mi, mj := measured(models[i]), measured(models[j])
+		if mi != mj {
+			return mi
+		}
+		if desc {
+			return models[i].OutputTokensPerSecond > models[j].OutputTokensPerSecond
+		}
+		return models[i].OutputTokensPerSecond < models[j].OutputTokensPerSecond
+	})
+}
+
 // SortModels orders models by a field name in the given direction.
 func SortModels(models []MarketplaceModel, field string, desc bool) {
 	less := func(i, j int) bool { return false }
@@ -286,6 +309,14 @@ func SortModels(models []MarketplaceModel, field string, desc bool) {
 		}
 	case "availability":
 		less = func(i, j int) bool { return models[i].Availability < models[j].Availability }
+	case "tps", "speed", "output_tps", "output_tokens_per_second":
+		// Speed has its own ordering, because an offer the platform has not
+		// measured is not a slow offer: it sorts last in both directions, so
+		// that a speed ranking always starts with a real measurement.
+		sortModelsBySpeed(models, desc)
+		return
+	case "samples", "output_speed_samples":
+		less = func(i, j int) bool { return models[i].OutputSpeedSamples < models[j].OutputSpeedSamples }
 	case "latency":
 		less = func(i, j int) bool { return models[i].AvgLatency < models[j].AvgLatency }
 	case "ttft":
@@ -348,6 +379,10 @@ func SortProviders(providers []MarketplaceProvider, field string, desc bool) {
 		less = func(i, j int) bool { return providers[i].SubscriptionCount < providers[j].SubscriptionCount }
 	case "anomalies":
 		less = func(i, j int) bool { return providers[i].AnomalyModelCount < providers[j].AnomalyModelCount }
+	case "risk", "risk_model_count", "risk_models":
+		less = func(i, j int) bool { return providers[i].RiskModelCount < providers[j].RiskModelCount }
+	case "reports", "report_anomaly_count":
+		less = func(i, j int) bool { return providers[i].ReportAnomalyCount < providers[j].ReportAnomalyCount }
 	default:
 		return
 	}

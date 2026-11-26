@@ -56,30 +56,57 @@ func newProviderListCommand() *cobra.Command {
 			if w.IsStructured() {
 				return w.Structured(map[string]any{"total": len(providers), "items": providers})
 			}
-			rows := make([][]string, 0, len(providers))
-			for _, p := range providers {
-				rows = append(rows, []string{
-					p.Slug,
-					orDash(p.CompanyName),
-					p.StatusLabel(),
-					fmt.Sprintf("%.1f%%", p.Availability),
-					fmt.Sprintf("%.2f", p.Rating),
-					strconv.Itoa(p.ModelCount),
-					fmt.Sprintf("%.0f", p.CreditScore),
-					orDash(p.GuaranteeLevel),
-				})
-			}
-			w.Table([]render.Column{
-				{Title: "SLUG"}, {Title: "COMPANY"}, {Title: "STATUS"},
-				{Title: "UPTIME", Align: render.AlignRight}, {Title: "RATING", Align: render.AlignRight},
-				{Title: "MODELS", Align: render.AlignRight}, {Title: "CREDIT", Align: render.AlignRight},
-				{Title: "GUARANTEE"},
-			}, lf.applyLimit(rows))
+			w.Table(providerColumns(), lf.applyLimit(providerRows(providers)))
 			return nil
 		},
 	}
 	lf.add(cmd, "name")
 	return cmd
+}
+
+// providerColumns is the column layout of the provider directory.
+//
+// There is no TPS column here: the provider record carries no provider-level
+// generation speed. Speed is measured per model offer, so it appears on the
+// catalogue tables of 'provider show', 'provider models' and 'model list'.
+func providerColumns() []render.Column {
+	return []render.Column{
+		{Title: "SLUG"}, {Title: "COMPANY"}, {Title: "STATUS"},
+		{Title: "UPTIME", Align: render.AlignRight}, {Title: "RATING", Align: render.AlignRight},
+		{Title: "MODELS", Align: render.AlignRight}, {Title: "CREDIT", Align: render.AlignRight},
+		{Title: "RISK", Align: render.AlignRight}, {Title: "REPORTS", Align: render.AlignRight},
+		{Title: "GUARANTEE"},
+	}
+}
+
+// providerRows renders the directory rows.
+func providerRows(providers []api.MarketplaceProvider) [][]string {
+	rows := make([][]string, 0, len(providers))
+	for _, p := range providers {
+		rows = append(rows, []string{
+			p.Slug,
+			orDash(p.CompanyName),
+			p.StatusLabel(),
+			fmt.Sprintf("%.1f%%", p.Availability),
+			fmt.Sprintf("%.2f", p.Rating),
+			strconv.Itoa(p.ModelCount),
+			fmt.Sprintf("%.0f", p.CreditScore),
+			strconv.Itoa(p.RiskModelCount),
+			strconv.Itoa(p.ReportAnomalyCount),
+			orDash(p.GuaranteeLevel),
+		})
+	}
+	return rows
+}
+
+// creditInputs renders the parts of a provider's credit score, so that the
+// score can be explained rather than taken on faith.
+func creditInputs(p api.MarketplaceProvider) string {
+	return fmt.Sprintf("base $%.2f, paid users %d, review %+.2f (n=%d), report %+.2f (n=%d), social x%.2f",
+		p.CreditBaseSpendUSD, p.CreditPaidUserCount,
+		p.CreditReviewAdjustment, p.CreditReviewCount,
+		p.CreditReportAdjustment, p.CreditReportCount,
+		p.CreditSocialMultiplier)
 }
 
 // fetchProviders loads providers, walking pages when a local sort is asked for.
@@ -166,12 +193,18 @@ narrow the catalogue.`,
 				{Label: "Guarantee", Value: fmt.Sprintf("$%.0f (level %s)", p.GuaranteeUSD, p.GuaranteeLevel)},
 				{Label: "Max RPM", Value: strconv.Itoa(p.MaxRPM)},
 				{Label: "Subscribers", Value: strconv.Itoa(p.SubscriptionCount)},
+				{Label: "Anomaly models", Value: fmt.Sprintf("%d (same models: %d)", p.AnomalyModelCount, len(p.AnomalyModels))},
+				{Label: "Risk models", Value: strconv.Itoa(p.RiskModelCount)},
+				{Label: "Reported anomalies", Value: fmt.Sprintf("%d (listed: %d)", p.ReportAnomalyCount, len(p.ReportAnomalies))},
+				{Label: "Integrity", Value: orDash(detail.BazaarlinkSummary.IntegrityStatus)},
+				{Label: "Reviewed models", Value: fmt.Sprintf("%d of %d observed, %d tested, %d failed", detail.BazaarlinkSummary.AIReviewedModelCount, detail.BazaarlinkSummary.ObservedModelCount, detail.BazaarlinkSummary.TestedModelCount, detail.BazaarlinkSummary.FailedModelCount)},
+				{Label: "Credit inputs", Value: creditInputs(p)},
 				{Label: "Description", Value: orDash(p.Description)},
 			})
 			models := api.FilterModels(detail.Models, lf.search)
 			api.SortModels(models, lf.sort, lf.desc())
 			w.Plain("")
-			w.Table(modelColumns(), modelRows(models))
+			w.Table(modelColumns(), lf.applyLimit(modelRows(models)))
 			return nil
 		},
 	}
@@ -206,7 +239,7 @@ func newProviderModelsCommand() *cobra.Command {
 					"models":   models,
 				})
 			}
-			w.Table(modelColumns(), modelRows(models))
+			w.Table(modelColumns(), lf.applyLimit(modelRows(models)))
 			return nil
 		},
 	}
@@ -456,23 +489,46 @@ func newProviderSharedProvidersCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			providers = api.FilterProviders(providers, lf.search)
+			if lf.search != "" {
+				q := strings.ToLower(lf.search)
+				filtered := providers[:0]
+				for _, p := range providers {
+					hay := strings.ToLower(strings.Join([]string{p.Slug, p.CompanyName, p.Description, p.Vendor, p.Tier}, " "))
+					if strings.Contains(hay, q) {
+						filtered = append(filtered, p)
+					}
+				}
+				providers = filtered
+			}
 			if w.IsStructured() {
 				return w.Structured(providers)
 			}
 			rows := make([][]string, 0, len(providers))
 			for _, p := range providers {
+				state := "available"
+				if p.Subscribed {
+					state = "subscribed"
+				}
 				rows = append(rows, []string{
 					p.Slug,
 					orDash(p.CompanyName),
-					p.StatusLabel(),
-					fmt.Sprintf("%.1f%%", p.Availability),
+					orDash(p.Vendor),
+					orDash(p.Tier),
+					w.StatusColor(state),
+					orDash(p.PoolStatus.Health),
+					strconv.Itoa(p.PoolStatus.AvailableAccounts) + "/" + strconv.Itoa(p.PoolStatus.TotalAccounts),
+					strconv.Itoa(p.SupplyCount),
 					strconv.Itoa(p.ModelCount),
+					fmt.Sprintf("%.2f%%", float64(p.DefaultDiscountBps)/100),
+					fmt.Sprintf("%.1f%%", p.Availability),
 				})
 			}
 			w.Table([]render.Column{
-				{Title: "SLUG"}, {Title: "COMPANY"}, {Title: "STATUS"},
-				{Title: "UPTIME", Align: render.AlignRight}, {Title: "MODELS", Align: render.AlignRight},
+				{Title: "SLUG"}, {Title: "COMPANY"}, {Title: "VENDOR"}, {Title: "TIER"},
+				{Title: "STATE"}, {Title: "HEALTH"},
+				{Title: "ACCOUNTS", Align: render.AlignRight}, {Title: "SUPPLY", Align: render.AlignRight},
+				{Title: "MODELS", Align: render.AlignRight}, {Title: "DISCOUNT", Align: render.AlignRight},
+				{Title: "UPTIME", Align: render.AlignRight},
 			}, lf.applyLimit(rows))
 			return nil
 		},

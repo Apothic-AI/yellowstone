@@ -198,6 +198,19 @@ that is not given keeps the value of the stored key.
 
 ---
 
+## Listing and revealing API keys
+
+`token list` masks every key by default, in table, JSON, and YAML output. This
+keeps ordinary listings safe to print, pipe, or save. To deliberately retrieve
+the usable key values for an agent or script, pass the global `--show-secrets`
+flag. The command emits a warning to stderr when this flag is set; handle the
+result as a credential and do not send it to logs, chat, or evidence files.
+
+```bash
+subrouterctl -o json token list                 # keys are masked
+subrouterctl -o json token list --show-secrets  # explicit unmasked keys + stderr warning
+```
+
 ## Searching and sorting
 
 Every directory, log feed and task list takes the same three flags.
@@ -207,9 +220,17 @@ Every directory, log feed and task list takes the same three flags.
 | `-q, --search`    | Free text search. Matched against names, slugs and categories.  |
 | `--sort`          | Sort field, for example `price`, `rating`, `used`, `time`.      |
 | `--order`         | `asc` (default) or `desc`.                                      |
-| `--limit`         | Maximum rows to print. `0` prints everything.                    |
+| `--limit`         | Maximum table rows to print. `0` prints everything.              |
 | `--page`          | Page number for the server-side paged endpoints.                 |
 | `--page-size`     | Rows per page. `50` by default.                                 |
+
+`--limit` caps the **table**, not the payload. `-o json` and `-o yaml` return
+the whole result set the command fetched, so a script sees every row and does
+its own paging: `provider list --limit 1 -o json` returns every row of the
+page it read, and `token list --limit 1 -o json` returns all 50 rows of its
+page. `usage logs` is the exception, because there the limit is sent to the
+API as the page size rather than applied at render time, so it caps the
+structured output too.
 
 ```bash
 # cheapest routes for gpt models, most expensive first
@@ -217,6 +238,12 @@ subrouterctl model list --search gpt --sort price --order desc
 
 # best rated providers
 subrouterctl provider list --sort rating --order desc
+
+# fastest offers the platform has measured
+subrouterctl model list --sort tps --order desc
+
+# providers with the most risk-flagged models
+subrouterctl provider list --sort risk --order desc
 
 # the keys that burned the most quota
 subrouterctl token list --sort used --order desc
@@ -227,6 +254,13 @@ subrouterctl usage logs --model deepseek --sort cost --order desc
 
 `--sort` is applied locally, so the CLI fetches every matching page first.
 Search is pushed to the server where the endpoint supports it.
+
+Sort fields follow the payload, not a fixed list, so a field the API starts
+sending is sortable as soon as it is carried. The provider directory sorts on
+`slug`, `company`, `rating`, `availability`, `models`, `credit`, `deposit`,
+`subscribers`, `anomalies`, `risk` (risk-flagged models) and `reports`
+(published reports). The model catalogue adds `tps` and `samples` to the price,
+latency and uptime fields.
 
 ### Throughput
 
@@ -251,6 +285,69 @@ token.
 subrouterctl usage logs --sort tps --order desc
 subrouterctl usage logs --sort ttft --order asc
 ```
+
+### Platform-measured model speed
+
+The usage log above measures **your own** traffic. The model directory also
+carries the speed the platform itself measured for each provider's offer of a
+model, in `output_tokens_per_second`, with `output_speed_samples` telling you
+how many measurements the figure rests on. The catalogue tables show it as a
+`TPS` column:
+
+```bash
+$ subrouterctl model list --search deepseek --limit 3
+┌────────────────────┬──────────┬──────────┬────────┬────────┬──────┬────────┬────────┬─────────┬───────┐
+│ MODEL              │ PROVIDER │ CATEGORY │   IN/M │  OUT/M │  CCY │ UPTIME │ RATING │     CTX │   TPS │
+├────────────────────┼──────────┼──────────┼────────┼────────┼──────┼────────┼────────┼─────────┼───────┤
+│ deepseek-v4.1-fl…  │ PixStu…  │ chat     │ 0.1150 │ 0.4600 │  USD │  99.6% │   4.50 │  128000 │ 150.2 │
+│ deepseek-v4.1-fl…  │ Kriora   │ chat     │ 0.1150 │ 0.4600 │  USD │  98.1% │   4.10 │  128000 │ 165.6 │
+│ unmeasured-offer   │ Demo     │ chat     │ 0.1150 │ 0.4600 │  USD │   0.0% │   0.00 │  128000 │     - │
+└────────────────────┴──────────┴──────────┴────────┴────────┴──────┴────────┴────────┴─────────┴───────┘
+```
+
+A dash means the platform has not measured that offer; it does not mean zero
+tokens per second. The raw API payload omits both fields entirely for an
+unmeasured offer, but the CLI output does not: this package writes every JSON
+field it declares and uses `omitempty` nowhere, so an unmeasured offer arrives
+in `-o json` as `output_tokens_per_second: 0` together with
+`output_speed_samples: 0`. The sample count is the discriminator, because it is
+greater than zero exactly when the platform measured something and a measured
+offer at 0 tok/s was never observed:
+
+```json
+{"model_name": "unmeasured-offer", "output_tokens_per_second": 0,     "output_speed_samples": 0}
+{"model_name": "glm-5.3-fast",     "output_tokens_per_second": 142.2, "output_speed_samples": 3}
+```
+
+So read the pair, not the speed alone: `output_speed_samples > 0` means
+measured, and only then does `output_tokens_per_second` carry a figure.
+`--sort tps` ranks the measured offers and puts the unmeasured ones last in
+both directions, because an unmeasured offer is not a slow one.
+
+The speed appears on every table that shows model offers: `model list`,
+`provider show` (the catalogue under the provider) and `provider models`.
+
+```bash
+subrouterctl provider models demo --sort tps --order desc
+```
+
+There is no provider-level speed, so the provider directory has no `TPS`
+column and `provider list --sort tps` is not a sort field: the platform
+measures speed per offer, not per provider. To rank a provider's offers, read
+its catalogue (above) or `model list --provider-id`.
+
+### How a log row is identified
+
+`id` is not unique: on a 48-hour pull, 3,128 rows carried only 977
+`id` values, so de-duplicating on `id` merges unrelated requests. A request
+is identified by `request_id` together with `type`. The platform reuses one
+request id for the billed row (type 2) and the error row (type 5) of the same
+request, and those two can share a second, so both fields are needed.
+
+An unfiltered pull is the union of the per-type pulls, row for row. Older
+versions keyed a row on its second and request id only, which dropped the
+billed row of a billed+error pair; version 4 of the cache rebuilds itself so
+those rows are fetched again.
 
 One log in full, including every field the platform returned and the whole
 performance payload it sends in the `other` field:
@@ -318,22 +415,28 @@ Description      GLM-5.3 high speed inference version
 $ subrouterctl provider show demo
 Provider Demo
 ──────────────────────────
-Id            101
-Slug          demo
-Status        active
-Rating        5.00
-Uptime        99.62%
-Models        12 listed, 12 public
-Credit score  500
-Max RPM       100000
-Subscribers   666
-Description   Domestic Model-Openai
+Id                  101
+Slug                demo
+Status              active
+Rating              5.00
+Uptime              99.62%
+Models              12 listed, 12 public
+Credit score        500
+Max RPM             100000
+Subscribers         666
+Anomaly models      1 (same models: 1)
+Risk models         2
+Reported anomalies  0 (listed: 0)
+Integrity           verified
+Reviewed models     9 of 12 observed, 9 tested, 1 failed
+Credit inputs       base $250.00, paid users 7, review +1.50 (n=2), report -0.50 (n=1), social x1.20
+Description         Domestic Model-Openai
 
-┌─────────────────────┬──────────┬────────┬────────┐
-│ MODEL               │ PROVIDER │   IN/M │  OUT/M │
-├─────────────────────┼──────────┼────────┼────────┤
-│ deepseek-v4.1-flash │ Demo     │ 0.1150 │ 0.4600 │
-└─────────────────────┴──────────┴────────┴────────┘
+┌─────────────────────┬──────────┬────────┬────────┬───────┐
+│ MODEL               │ PROVIDER │   IN/M │  OUT/M │   TPS │
+├─────────────────────┼──────────┼────────┼────────┼───────┤
+│ deepseek-v4.1-flash │ Demo     │ 0.1150 │ 0.4600 │ 124.5 │
+└─────────────────────┴──────────┴────────┴────────┴───────┘
 ```
 
 `provider models <slug>` prints only the catalogue, and it accepts the same
@@ -342,6 +445,42 @@ search and sort flags:
 ```bash
 subrouterctl provider models demo --search deepseek --sort input --order desc
 ```
+
+`-o json` on any of these commands prints every field the endpoint sends, not
+only the ones the table has room for. See
+[What the provider payload carries](#what-the-provider-payload-carries).
+
+### What the provider payload carries
+
+The provider directory and the provider detail feed answer with more than a
+table can show. `subrouterctl` keeps all of it, so `-o json` and `-o yaml`
+return the same field set the API returned:
+
+| Group            | Fields                                                                                   |
+| ---------------- | ---------------------------------------------------------------------------------------- |
+| Identity         | `id`, `slug`, `company_name`, `description`, `logo`, `status`, `verified`                 |
+| Standing         | `rating`, `availability`, `model_count`, `subscription_count`, `max_rpm`, `guarantee_level`, `guarantee_amount_usd`, `deposit_usd` |
+| Credit           | `credit_score` plus its parts: `credit_base_spend_usd`, `credit_paid_user_count`, `credit_review_adjustment`, `credit_review_count`, `credit_report_adjustment`, `credit_report_count`, `credit_social_multiplier` |
+| Anomalies        | `anomaly_models[]`, `anomaly_model_count`, `report_anomalies[]`, `report_anomaly_count`   |
+| Risk             | `risk_models[]`, `risk_model_count`                                                       |
+| Integrity review | `bazaarlink_summary` (`provider show` only): `integrity_status`, `issues[]`, the observed, tested, reviewed, failed, running and skipped model counts, `period_days`, `period_start`, `period_end` |
+| Timestamps       | `created_time`, `updated_time`                                                            |
+
+A model row inside a provider's catalogue carries its own large field set: the
+price contract and the staged `pending_*` one, the cache prices, the official
+channel it is linked to, `probe_score` and `probe_results`, up to three uptime
+windows, the risk and authenticity flags, the provider roll-up the platform
+repeats on each row, and the platform-measured speed on
+`output_tokens_per_second` / `output_speed_samples`.
+
+`provider shared` reads a different endpoint with its own row shape, so it is
+modelled separately rather than squeezed into the directory row: `vendor`,
+`tier`, `source`, `supply_count`, `default_discount_bps`, `route_provider_key`,
+`shared_plan_id`, `platform_official`, `subscribed`, `probe_score*`, the plan's
+`models[]`, and a `pool_status` block with the live account pool
+(`health`, the per-state account counts, `total_concurrency`,
+`available_concurrency`, `next_recovery_at`, `last_synced_at`, and the same
+per model).
 
 ### Time filters
 
@@ -544,12 +683,22 @@ megabytes instead of hundreds.
 The platform hands out the full relay key of every key on the account, so a
 cached response would be a file full of live credentials. The cache is
 scrubbed on the way in: every secret value it holds is replaced by a
-placeholder of the same length, and the cached copy still decodes. The
-command itself is unaffected and still hands you the real key.
+placeholder of the same length, and the cached copy still decodes. Token
+listings also mask keys by default in table, JSON, and YAML output.
 
 ```console
-$ subrouterctl token list --limit 1          # prints the key, masked
-$ subrouterctl -o json token list --limit 1  # prints the key in full
+$ subrouterctl token list --limit 1          # key is masked
+$ subrouterctl -o json token list --limit 1  # key is masked in JSON too
+```
+
+To deliberately emit full keys for an agent or script that must use them, pass
+`--show-secrets`. This opt-in writes a warning to stderr; treat the resulting
+output as a credential and never send it to logs, chat, or an evidence bundle
+without an explicit need.
+
+```console
+$ subrouterctl -o json token list --show-secrets --limit 1
+! --show-secrets is enabled: token list output contains unmasked API keys; handle this output as a secret
 ```
 
 `--cache-clear` empties the cache, which is the way to drop the keys that a
@@ -674,7 +823,7 @@ make test-bindings # the Python and TypeScript tests
 
 ## Safety
 
-- Secrets are masked in every table by default. `--show-secrets` reveals them.
+- `token list` masks secrets by default in every output format. `--show-secrets` is an explicit, noisy opt-in that reveals full key values.
 - The on-disk cache never holds a secret. The values it scrubs are replaced by
   a placeholder, so a cached response cannot be read back as a live key.
 - Deleting a key, unsubscribing a provider and changing billing settings ask

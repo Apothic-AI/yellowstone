@@ -383,12 +383,19 @@ func settled(chunk cache.Span) cache.Span {
 }
 
 // logRowKey identifies a log row, so that the same row is not shown twice.
+//
+// request_id is not an identity on its own: the platform reuses it for the
+// billed row and the error row of one request, which share a second. Keying on
+// created_at and request_id alone therefore drops the billed row of every such
+// pair, which is spend. The type keeps the pair apart; created_at stays as a
+// tiebreaker for a request id the platform reused at another second.
 func logRowKey(e LogEntry, raw []byte) string {
+	typeKey := strconv.Itoa(e.Type)
 	if e.RequestID == "" {
 		sum := sha256.Sum256(raw)
-		return strconv.FormatInt(e.CreatedAt, 10) + "\x00" + hex.EncodeToString(sum[:])[:16]
+		return strconv.FormatInt(e.CreatedAt, 10) + "\x00" + typeKey + "\x00" + hex.EncodeToString(sum[:])[:16]
 	}
-	return strconv.FormatInt(e.CreatedAt, 10) + "\x00" + e.RequestID
+	return strconv.FormatInt(e.CreatedAt, 10) + "\x00" + e.RequestID + "\x00" + typeKey
 }
 
 // logChunkSeconds is the size of one parallel log fetch.

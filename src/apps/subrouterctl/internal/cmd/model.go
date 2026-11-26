@@ -157,6 +157,7 @@ func newModelShowCommand() *cobra.Command {
 				{Label: "Context length", Value: strconv.Itoa(m.ContextLength)},
 				{Label: "Availability", Value: fmt.Sprintf("%.1f%%", m.Availability)},
 				{Label: "Average latency", Value: fmt.Sprintf("%.0f ms", m.AvgLatency)},
+				{Label: "Output speed", Value: tpsDetail(m.OutputTokensPerSecond, m.OutputSpeedSamples)},
 				{Label: "Median TTFT", Value: fmt.Sprintf("%.0f ms", m.MedianTTFT)},
 				{Label: "Cache hit rate", Value: fmt.Sprintf("%.1f%%", m.CacheHitRate)},
 				{Label: "Rating", Value: fmt.Sprintf("%.2f", m.Rating)},
@@ -294,6 +295,7 @@ func modelColumns() []render.Column {
 		{Title: "IN/M", Align: render.AlignRight}, {Title: "OUT/M", Align: render.AlignRight},
 		{Title: "CCY"}, {Title: "UPTIME", Align: render.AlignRight},
 		{Title: "RATING", Align: render.AlignRight}, {Title: "CTX", Align: render.AlignRight},
+		{Title: "TPS", Align: render.AlignRight},
 	}
 }
 
@@ -311,7 +313,31 @@ func modelRows(models []api.MarketplaceModel) [][]string {
 			fmt.Sprintf("%.1f%%", m.Availability),
 			fmt.Sprintf("%.2f", m.Rating),
 			strconv.Itoa(m.ContextLength),
+			tpsCell(m.OutputTokensPerSecond, m.OutputSpeedSamples),
 		})
 	}
 	return rows
+}
+
+// tpsCell renders a platform-measured output speed in tokens per second.
+//
+// The platform reports no speed for an offer it has not measured, and then
+// both the figure and the sample count are absent. That is a dash, not 0.0:
+// an unmeasured offer is not a slow one.
+func tpsCell(tps float64, samples int) string {
+	if samples <= 0 && tps <= 0 {
+		return "-"
+	}
+	if tps <= 0 {
+		return fmt.Sprintf("0.0/%d", samples)
+	}
+	return fmt.Sprintf("%.1f", tps)
+}
+
+// tpsDetail renders the speed together with the number of samples behind it.
+func tpsDetail(tps float64, samples int) string {
+	if samples <= 0 && tps <= 0 {
+		return "not measured"
+	}
+	return fmt.Sprintf("%.1f tok/s from %d samples", tps, samples)
 }
