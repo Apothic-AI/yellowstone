@@ -1,0 +1,69 @@
+{
+  "anomaly_model_count": 1,
+  "anomaly_models": [
+    {
+      "category": "\u4e0a\u6e38\u8d85\u65f6",
+      "category_code": "connection_timeout",
+      "model_name": "deepseek-v4.1-flash-1017",
+      "occurred_at": 1795637139,
+      "provider_model_id": 19534,
+      "reason": "<trimmed>",
+      "reason_code": "connection_timeout"
+    }
+  ],
+  "availability": 99.5,
+  "blacklist_count": 1,
+  "company_name": "Demo Provider",
+  "created_time": 1774539426,
+  "credit_base_spend_usd": 250.0,
+  "credit_paid_user_count": 7,
+  "credit_report_adjustment": -0.5,
+  "credit_report_count": 1,
+  "credit_review_adjustment": 1.5,
+  "credit_review_count": 2,
+  "credit_score": 500.0,
+  "credit_social_multiplier": 1.2,
+  "deposit_usd": 10000,
+  "description": "A provider used by the test suite.",
+  "guarantee_amount_usd": 10000,
+  "guarantee_level": 3,
+  "id": "12",
+  "logo": "https://example.invalid/logo.webp",
+  "max_rpm": 500,
+  "model_count": 388,
+  "rating": 4.5,
+  "report_anomalies": [
+    {
+      "message": "<trimmed>",
+      "model_name": "gpt-6.2-sol",
+      "occurred_at": 1795526639,
+      "public_until": 1796131439,
+      "source": "report_compensation"
+    }
+  ],
+  "report_anomaly_count": 1,
+  "risk_model_count": 1,
+  "risk_models": [
+    {
+      "bad_window_count": 0,
+      "error_code": "capacity",
+      "error_count": 1,
+      "error_rate": 1,
+      "error_type": "openai_error",
+      "evaluated_window_count": 0,
+      "http_code": 524,
+      "latest_error_at": 1795656054,
+      "model_name": "llama-4-scout",
+      "observed_count": 1,
+      "provider_model_id": 28393,
+      "risk_level": "high",
+      "success_count": 0,
+      "window_minutes": 10
+    }
+  ],
+  "slug": "demo",
+  "status": "1",
+  "subscription_count": 623,
+  "updated_time": 1795173473,
+  "verified": true
+}

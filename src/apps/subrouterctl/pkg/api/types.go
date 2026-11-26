@@ -296,6 +296,123 @@ type MarketplaceModel struct {
 	IsPublic            bool           `json:"is_public"`
 	ParamsDoc           string         `json:"params_doc"`
 	AvailabilityWindow  []Availability `json:"availability_windows"`
+
+	// Platform-measured generation speed of this provider's offer of the
+	// model, in output tokens per second, and the number of measured samples
+	// it rests on. OutputTokensPerSecond is only meaningful when
+	// OutputSpeedSamples is greater than zero; the platform omits both for an
+	// offer it has not measured yet.
+	OutputTokensPerSecond float64 `json:"output_tokens_per_second"`
+	OutputSpeedSamples    int     `json:"output_speed_samples"`
+
+	// Probe detail behind ProbeScore. ProbeScoreAvailable reports whether the
+	// platform has a usable score, ProbeScoreBuiltin whether the built-in
+	// probe produced it, and ProbeScoreCount how many probes it averages.
+	// ProbeResults holds the per-probe records keyed by probe source.
+	ProbeScoreAvailable bool                   `json:"probe_score_available"`
+	ProbeScoreBuiltin   bool                   `json:"probe_score_builtin"`
+	ProbeScoreCount     int                    `json:"probe_score_count"`
+	ProbeResults        map[string]ProbeResult `json:"probe_results"`
+
+	// Uptime windows at three resolutions. AvailabilityWindows above is the
+	// default window list; these are the coarser and the realtime cuts of the
+	// same measurement.
+	Availability24h      []Availability `json:"availability_24h"`
+	Availability7d       []Availability `json:"availability_7d"`
+	AvailabilityRealtime []Availability `json:"availability_realtime"`
+
+	// Authenticity and review state of the model as the platform holds it.
+	AuthenticityScore          float64           `json:"authenticity_score"`
+	AuthenticityScoreAvailable bool              `json:"authenticity_score_available"`
+	AutoDelistLocked           bool              `json:"auto_delist_locked"`
+	IsOfficialLocked           bool              `json:"is_official_locked"`
+	ReviewReason               string            `json:"review_reason"`
+	RiskSummary                ProviderRiskModel `json:"risk_summary"`
+
+	// Current price contract of the row.
+	BillingExpr               string  `json:"billing_expr"`
+	IsTieredExpr              bool    `json:"is_tiered_expr"`
+	IsPerCall                 bool    `json:"is_per_call"`
+	PricingAuthoritative      bool    `json:"pricing_authoritative"`
+	PriceContractVersion      int     `json:"price_contract_version"`
+	PriceContractReference    string  `json:"price_contract_reference"`
+	PriceMultiplier           float64 `json:"price_multiplier"`
+	ReferenceContextLength    int     `json:"reference_context_length"`
+	CachePricingAuthoritative bool    `json:"cache_pricing_authoritative"`
+	CacheCreationPrice1h      float64 `json:"cache_creation_price_1h"`
+	CacheCreationPriceCustom  bool    `json:"cache_creation_price_custom"`
+	CacheCreationDiscount     float64 `json:"cache_creation_discount_rate"`
+	CacheCreation1hDiscount   float64 `json:"cache_creation_price_1h_discount_rate"`
+	CacheDiscountRate         float64 `json:"cache_discount_rate"`
+	CacheReadPriceCustom      bool    `json:"cache_read_price_custom"`
+	CacheReadDiscountRate     float64 `json:"cache_read_discount_rate"`
+
+	EffectiveCacheReadPrice       float64 `json:"effective_cache_read_price"`
+	EffectiveCacheCreationPrice   float64 `json:"effective_cache_creation_price"`
+	EffectiveCacheCreationPrice1h float64 `json:"effective_cache_creation_price_1h"`
+	CacheHitRateComputedAt        int64   `json:"cache_hit_rate_computed_at"`
+	CacheHitRateWindowSeconds     int     `json:"cache_hit_rate_window_seconds"`
+	SupportsCacheRead             bool    `json:"supports_cache_read"`
+	SupportsCacheCreation         bool    `json:"supports_cache_creation"`
+
+	// Pending price contract: a price change the platform has staged but not
+	// yet made authoritative. The field set mirrors the current contract.
+	PendingBillingMode               string  `json:"pending_billing_mode"`
+	PendingPricingStrategy           string  `json:"pending_pricing_strategy"`
+	PendingInputPrice                float64 `json:"pending_input_price"`
+	PendingOutputPrice               float64 `json:"pending_output_price"`
+	PendingFixedPrice                float64 `json:"pending_fixed_price"`
+	PendingPriceCurrency             string  `json:"pending_price_currency"`
+	PendingPriceContractVersion      int     `json:"pending_price_contract_version"`
+	PendingPriceEffectiveAt          int64   `json:"pending_price_effective_at"`
+	PendingPriceRequestedAt          int64   `json:"pending_price_requested_at"`
+	PendingPriceReviewStatus         int     `json:"pending_price_review_status"`
+	PendingCachePricingAuthoritative bool    `json:"pending_cache_pricing_authoritative"`
+	PendingCacheReadPrice            float64 `json:"pending_cache_read_price"`
+	PendingCacheCreationPrice        float64 `json:"pending_cache_creation_price"`
+	PendingCacheCreationPrice1h      float64 `json:"pending_cache_creation_price_1h"`
+	PendingEffectiveCacheReadPrice   float64 `json:"pending_effective_cache_read_price"`
+
+	PendingEffectiveCacheCreationPrice   float64 `json:"pending_effective_cache_creation_price"`
+	PendingEffectiveCacheCreationPrice1h float64 `json:"pending_effective_cache_creation_price_1h"`
+
+	// Official channel this offer is linked to, and the platform catalogue
+	// price it is referenced against.
+	OfficialChannelID           int                    `json:"official_channel_id"`
+	OfficialChannelName         string                 `json:"official_channel_name"`
+	OfficialModelID             int                    `json:"official_model_id"`
+	OfficialCacheReadPrice      float64                `json:"official_cache_read_price"`
+	OfficialCacheCreationPrice  float64                `json:"official_cache_creation_price"`
+	OfficialCacheCreation1h     float64                `json:"official_cache_creation_price_1h"`
+	OfficialPriceReference      OfficialPriceReference `json:"official_price_reference"`
+	OfficialSupplyKeyCount      int                    `json:"official_supply_key_count"`
+	OfficialSupplyProviderCount int                    `json:"official_supply_provider_count"`
+
+	// Provider roll-up the platform repeats on every row of a provider's
+	// catalogue, so that a row read on its own still carries it.
+	ProviderChannelID              int        `json:"provider_channel_id"`
+	ProviderCreditBaseSpendUSD     float64    `json:"provider_credit_base_spend_usd"`
+	ProviderCreditPaidUserCount    int        `json:"provider_credit_paid_user_count"`
+	ProviderCreditReviewAdjust     float64    `json:"provider_credit_review_adjustment"`
+	ProviderCreditReviewCount      int        `json:"provider_credit_review_count"`
+	ProviderCreditScore            float64    `json:"provider_credit_score"`
+	ProviderCreditSocialMultiplier float64    `json:"provider_credit_social_multiplier"`
+	ProviderDepositUSD             float64    `json:"provider_deposit_usd"`
+	ProviderDescription            string     `json:"provider_description"`
+	ProviderGuaranteeAmountUSD     float64    `json:"provider_guarantee_amount_usd"`
+	ProviderGuaranteeLevel         FlexString `json:"provider_guarantee_level"`
+	ProviderMaxRPM                 int        `json:"provider_max_rpm"`
+
+	// Routing and listing metadata.
+	DetailPath                 string `json:"detail_path"`
+	Protocol                   string `json:"protocol"`
+	RoutingRevision            int    `json:"routing_revision"`
+	PrimaryRouteID             int    `json:"primary_route_id"`
+	PlanID                     int    `json:"plan_id"`
+	SharedPlanID               int    `json:"shared_plan_id"`
+	PlatformOfficial           bool   `json:"platform_official"`
+	Subscribed                 bool   `json:"subscribed"`
+	ModelAnimationDemoEligible bool   `json:"model_animation_demo_eligible"`
 }
 
 // ProviderDetail is the response of GET /api/marketplace/providers/{slug}.
@@ -304,6 +421,136 @@ type ProviderDetail struct {
 	Models             []MarketplaceModel  `json:"models"`
 	PublicModelCount   int                 `json:"public_model_count"`
 	FilteredModelCount int                 `json:"filtered_model_count"`
+	BazaarlinkSummary  BazaarlinkSummary   `json:"bazaarlink_summary"`
+}
+
+// BazaarlinkSummary is the platform's integrity review of one provider: how
+// many of its models were observed, tested and reviewed, and over what
+// period. Issues carries the review findings; the platform sends an empty
+// list for a provider it has not reviewed, and the element shape of a
+// finding is not part of the payloads observed so far, so it is kept as the
+// platform sent it.
+type BazaarlinkSummary struct {
+	AIReviewedModelCount int    `json:"ai_reviewed_model_count"`
+	FailedModelCount     int    `json:"failed_model_count"`
+	IntegrityStatus      string `json:"integrity_status"`
+	Issues               []any  `json:"issues"`
+	ObservedModelCount   int    `json:"observed_model_count"`
+	PeriodDays           int    `json:"period_days"`
+	PeriodEnd            int64  `json:"period_end"`
+	PeriodStart          int64  `json:"period_start"`
+	ReviewingModelCount  int    `json:"reviewing_model_count"`
+	RiskModelCount       int    `json:"risk_model_count"`
+	RunningModelCount    int    `json:"running_model_count"`
+	SkippedModelCount    int    `json:"skipped_model_count"`
+	Source               string `json:"source"`
+	TestedModelCount     int    `json:"tested_model_count"`
+	TotalModelCount      int    `json:"total_model_count"`
+}
+
+// OfficialPriceReference is the platform catalogue price a provider offer is
+// referenced against.
+type OfficialPriceReference struct {
+	InputPrice            float64 `json:"input_price"`
+	OutputPrice           float64 `json:"output_price"`
+	FixedPrice            float64 `json:"fixed_price"`
+	CacheReadPrice        float64 `json:"cache_read_price"`
+	CacheCreationPrice    float64 `json:"cache_creation_price"`
+	CacheCreationPrice1h  float64 `json:"cache_creation_price_1h"`
+	PeakInputPrice        float64 `json:"peak_input_price"`
+	PeakOutputPrice       float64 `json:"peak_output_price"`
+	PeakCacheReadPrice    float64 `json:"peak_cache_read_price"`
+	SupportsCacheRead     bool    `json:"supports_cache_read"`
+	SupportsCacheCreation bool    `json:"supports_cache_creation"`
+	BillingMode           string  `json:"billing_mode"`
+	BillingExpr           string  `json:"billing_expr"`
+	Provider              string  `json:"provider"`
+	Model                 string  `json:"model"`
+	ModelVersion          string  `json:"model_version"`
+	Region                string  `json:"region"`
+	RateTier              string  `json:"rate_tier"`
+	Unit                  string  `json:"unit"`
+	Currency              string  `json:"currency"`
+	SourceURL             string  `json:"source_url"`
+	EffectiveAt           string  `json:"effective_at"`
+	VerifiedAt            string  `json:"verified_at"`
+}
+
+// ProbeResult is one probe record of a model offer. ProbeResults on
+// MarketplaceModel is keyed by the probe source (for example
+// bazaarlink_local), so one model can carry several recordings at once.
+type ProbeResult struct {
+	ID                      int     `json:"id"`
+	ProviderID              int     `json:"provider_id"`
+	ProviderModelID         int     `json:"provider_model_id"`
+	ProviderChannelID       int     `json:"provider_channel_id"`
+	ChannelID               int     `json:"channel_id"`
+	RouteID                 int     `json:"route_id"`
+	ModelName               string  `json:"model_name"`
+	UpstreamModel           string  `json:"upstream_model"`
+	DetectedModel           string  `json:"detected_model"`
+	DeclaredUpstreamModel   string  `json:"declared_upstream_model"`
+	Status                  string  `json:"status"`
+	Verdict                 string  `json:"verdict"`
+	Source                  string  `json:"source"`
+	ProbeBatchID            string  `json:"probe_batch_id"`
+	EnhancedAttempt         int     `json:"enhanced_attempt"`
+	EnhancedSampling        bool    `json:"enhanced_sampling"`
+	EnhancedRecheckRequired bool    `json:"enhanced_recheck_required"`
+	ModelReplacementRisk    bool    `json:"model_replacement_risk"`
+	Score                   float64 `json:"score"`
+	ScoreAvailable          bool    `json:"score_available"`
+	ScoreInvalidReason      string  `json:"score_invalid_reason"`
+	LatencyMs               int     `json:"latency_ms"`
+	PromptTokens            int     `json:"prompt_tokens"`
+	CompletionTokens        int     `json:"completion_tokens"`
+	Details                 string  `json:"details"`
+	Diagnostic              string  `json:"diagnostic"`
+	Error                   string  `json:"error"`
+	CreatedTime             int64   `json:"created_time"`
+	UpdatedTime             int64   `json:"updated_time"`
+}
+
+// ProviderRiskModel is one model the platform flagged as risky for a
+// provider, with the error window the flag rests on. The same shape is used
+// for the risk summary of a single model row.
+type ProviderRiskModel struct {
+	ProviderModelID      int     `json:"provider_model_id"`
+	ModelName            string  `json:"model_name"`
+	WindowMinutes        int     `json:"window_minutes"`
+	ErrorCount           int     `json:"error_count"`
+	SuccessCount         int     `json:"success_count"`
+	ObservedCount        int     `json:"observed_count"`
+	ErrorRate            float64 `json:"error_rate"`
+	BadWindowCount       int     `json:"bad_window_count"`
+	EvaluatedWindowCount int     `json:"evaluated_window_count"`
+	HTTPCode             int     `json:"http_code"`
+	ErrorType            string  `json:"error_type"`
+	ErrorCode            string  `json:"error_code"`
+	LatestErrorAt        int64   `json:"latest_error_at"`
+	RiskLevel            string  `json:"risk_level"`
+}
+
+// ProviderAnomaly is one anomaly the platform recorded against a provider
+// model.
+type ProviderAnomaly struct {
+	ProviderModelID int    `json:"provider_model_id"`
+	ModelName       string `json:"model_name"`
+	Category        string `json:"category"`
+	CategoryCode    string `json:"category_code"`
+	Reason          string `json:"reason"`
+	ReasonCode      string `json:"reason_code"`
+	OccurredAt      int64  `json:"occurred_at"`
+}
+
+// ProviderReportAnomaly is one published user report against a provider
+// model.
+type ProviderReportAnomaly struct {
+	Source      string `json:"source"`
+	Message     string `json:"message"`
+	ModelName   string `json:"model_name"`
+	OccurredAt  int64  `json:"occurred_at"`
+	PublicUntil int64  `json:"public_until"`
 }
 
 // Availability is one uptime bucket of a marketplace model.
@@ -337,6 +584,153 @@ type MarketplaceProvider struct {
 	SubscriptionCount int        `json:"subscription_count"`
 	CreatedTime       int64      `json:"created_time"`
 	UpdatedTime       int64      `json:"updated_time"`
+
+	// Model anomalies, published reports and risk flags the platform attaches
+	// to the provider. AnomalyModelCount and RiskModelCount are the lengths of
+	// AnomalyModels and RiskModels.
+	AnomalyModels      []ProviderAnomaly       `json:"anomaly_models"`
+	ReportAnomalies    []ProviderReportAnomaly `json:"report_anomalies"`
+	ReportAnomalyCount int                     `json:"report_anomaly_count"`
+	RiskModels         []ProviderRiskModel     `json:"risk_models"`
+	RiskModelCount     int                     `json:"risk_model_count"`
+
+	// Credit score inputs. The platform sends the parts of the score so that
+	// it can be explained: a base spend, a review adjustment and a report
+	// adjustment, with counts, and a social multiplier.
+	CreditBaseSpendUSD     float64 `json:"credit_base_spend_usd"`
+	CreditPaidUserCount    int     `json:"credit_paid_user_count"`
+	CreditReportAdjustment float64 `json:"credit_report_adjustment"`
+	CreditReportCount      int     `json:"credit_report_count"`
+	CreditReviewAdjustment float64 `json:"credit_review_adjustment"`
+	CreditReviewCount      int     `json:"credit_review_count"`
+	CreditSocialMultiplier float64 `json:"credit_social_multiplier"`
+}
+
+// SharedProvider is one row of GET /api/marketplace/shared-providers. It is a
+// provider pooled from subscribers' own plans rather than a provider account
+// of its own, so it has its own field set: a plan tier, a vendor, a supply
+// count, the plan's default discount and a live pool status. Models is the
+// plan's model list, a narrowed subset of MarketplaceModel: the platform
+// sends a price record per model, not the full directory row.
+type SharedProvider struct {
+	ID                     FlexString    `json:"id"`
+	Slug                   string        `json:"slug"`
+	CompanyName            string        `json:"company_name"`
+	Description            string        `json:"description"`
+	Vendor                 string        `json:"vendor"`
+	Tier                   string        `json:"tier"`
+	Source                 string        `json:"source"`
+	GuaranteeLevel         FlexString    `json:"guarantee_level"`
+	Rating                 float64       `json:"rating"`
+	Availability           float64       `json:"availability"`
+	ModelCount             int           `json:"model_count"`
+	SubscriptionCount      int           `json:"subscription_count"`
+	SupplyCount            int           `json:"supply_count"`
+	DefaultDiscountBps     int           `json:"default_discount_bps"`
+	CreditScore            float64       `json:"credit_score"`
+	CreditBaseSpendUSD     float64       `json:"credit_base_spend_usd"`
+	CreditPaidUserCount    int           `json:"credit_paid_user_count"`
+	CreditReviewAdjustment float64       `json:"credit_review_adjustment"`
+	CreditReviewCount      int           `json:"credit_review_count"`
+	CreditSocialMultiplier float64       `json:"credit_social_multiplier"`
+	ProbeScore             float64       `json:"probe_score"`
+	ProbeScoreAvailable    bool          `json:"probe_score_available"`
+	ProbeScoreBuiltin      bool          `json:"probe_score_builtin"`
+	ProbeScoreCount        int           `json:"probe_score_count"`
+	PoolStatus             PoolStatus    `json:"pool_status"`
+	RouteProviderKey       string        `json:"route_provider_key"`
+	SharedPlanID           int           `json:"shared_plan_id"`
+	PlatformOfficial       bool          `json:"platform_official"`
+	Subscribed             bool          `json:"subscribed"`
+	Models                 []SharedModel `json:"models"`
+	CreatedTime            int64         `json:"created_time"`
+	UpdatedTime            int64         `json:"updated_time"`
+}
+
+// PoolStatus is the live account pool behind a shared provider plan: how many
+// of its upstream accounts are usable now, how much concurrency they add up
+// to, and per model the same counts. The timestamps are RFC 3339 strings as
+// the platform sends them, kept as strings so that an empty value and an
+// unparseable one both survive the round trip.
+type PoolStatus struct {
+	Health                         string            `json:"health"`
+	TotalAccounts                  int               `json:"total_accounts"`
+	AvailableAccounts              int               `json:"available_accounts"`
+	RateLimitedAccounts            int               `json:"rate_limited_accounts"`
+	OverloadedAccounts             int               `json:"overloaded_accounts"`
+	TemporarilyUnavailableAccounts int               `json:"temporarily_unavailable_accounts"`
+	PausedAccounts                 int               `json:"paused_accounts"`
+	ErrorAccounts                  int               `json:"error_accounts"`
+	ExpiredAccounts                int               `json:"expired_accounts"`
+	UnsupportedAccounts            int               `json:"unsupported_accounts"`
+	UnavailableAccounts            int               `json:"unavailable_accounts"`
+	TotalConcurrency               int               `json:"total_concurrency"`
+	AvailableConcurrency           int               `json:"available_concurrency"`
+	NextRecoveryAt                 string            `json:"next_recovery_at"`
+	LastSyncedAt                   string            `json:"last_synced_at"`
+	Models                         []PoolModelStatus `json:"models"`
+}
+
+// PoolModelStatus is the pool state of one model inside a shared plan.
+type PoolModelStatus struct {
+	ModelName           string `json:"model_name"`
+	TotalAccounts       int    `json:"total_accounts"`
+	AvailableAccounts   int    `json:"available_accounts"`
+	RateLimitedAccounts int    `json:"rate_limited_accounts"`
+	NextRecoveryAt      string `json:"next_recovery_at"`
+}
+
+// SharedModel is one model of a shared provider plan. It carries the prices,
+// the platform-measured generation speed and the probe score of the offer, but
+// none of the provider or uptime fields of a full MarketplaceModel.
+type SharedModel struct {
+	ID                   FlexString `json:"id"`
+	ModelName            string     `json:"model_name"`
+	UpstreamModel        string     `json:"upstream_model"`
+	Protocol             string     `json:"protocol"`
+	BillingMode          string     `json:"billing_mode"`
+	BillingExpr          string     `json:"billing_expr"`
+	IsTieredExpr         bool       `json:"is_tiered_expr"`
+	IsPerCall            bool       `json:"is_per_call"`
+	PriceCurrency        string     `json:"price_currency"`
+	PriceMultiplier      float64    `json:"price_multiplier"`
+	PricingSource        string     `json:"pricing_source"`
+	InputPrice           float64    `json:"input_price"`
+	OutputPrice          float64    `json:"output_price"`
+	FixedPrice           float64    `json:"fixed_price"`
+	CacheReadPrice       float64    `json:"cache_read_price"`
+	CacheCreationPrice   float64    `json:"cache_creation_price"`
+	CacheCreationPrice1h float64    `json:"cache_creation_price_1h"`
+
+	EffectiveCacheReadPrice       float64 `json:"effective_cache_read_price"`
+	EffectiveCacheCreationPrice   float64 `json:"effective_cache_creation_price"`
+	EffectiveCacheCreationPrice1h float64 `json:"effective_cache_creation_price_1h"`
+	SupportsCacheRead             bool    `json:"supports_cache_read"`
+	SupportsCacheCreation         bool    `json:"supports_cache_creation"`
+
+	OfficialInputPrice         float64 `json:"official_input_price"`
+	OfficialOutputPrice        float64 `json:"official_output_price"`
+	OfficialFixedPrice         float64 `json:"official_fixed_price"`
+	OfficialDiscountPercent    float64 `json:"official_discount_percent"`
+	OfficialCacheReadPrice     float64 `json:"official_cache_read_price"`
+	OfficialCacheCreationPrice float64 `json:"official_cache_creation_price"`
+	OfficialCacheCreation1h    float64 `json:"official_cache_creation_price_1h"`
+
+	ContextLength int     `json:"context_length"`
+	CacheHitRate  float64 `json:"cache_hit_rate"`
+	MedianTTFT    float64 `json:"median_ttft"`
+
+	// Platform-measured generation speed of this plan's offer of the model, in
+	// output tokens per second, with the number of samples behind it.
+	OutputTokensPerSecond float64 `json:"output_tokens_per_second"`
+	OutputSpeedSamples    int     `json:"output_speed_samples"`
+
+	ProbeScore          float64    `json:"probe_score"`
+	ProbeScoreAvailable bool       `json:"probe_score_available"`
+	ProbeScoreBuiltin   bool       `json:"probe_score_builtin"`
+	ProbeScoreCount     int        `json:"probe_score_count"`
+	Status              FlexString `json:"status"`
+	PlanID              int        `json:"plan_id"`
 }
 
 // SubrouterModel is one smart-routing model with its provider offers.
