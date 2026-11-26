@@ -42,6 +42,12 @@ export interface DiscoveredPackage {
 	root: string;
 	/** Absolute paths of the package's enabled extension entries. */
 	entries: string[];
+	/** True when the package declares extension entries that exist on disk but
+	 *  none of them survived filtering (a settings package entry, or the
+	 *  manifest's own patterns). Distinguishes "every entry was filtered out"
+	 *  from "declares no extension entries" — the two failures have different
+	 *  causes and must not share one message. */
+	filteredOut: boolean;
 }
 
 export interface DiscoveredLocalExtension {
@@ -220,7 +226,7 @@ export class DiscoveredExtensions {
 					if (pkg !== undefined && pkg.name === name) {
 						const pkgEntries = this.#packageEntries(pkg);
 						if (pkgEntries.length === 0) {
-							diagnose(reference, "empty-package", `package "${pkg.name}" declares no extension entries; restore an entry or remove the reference`, pkg.root);
+							diagnose(reference, ...emptyPackageDiagnostic(pkg));
 						}
 						for (const pkgEntry of pkgEntries) add(pkgEntry, reference);
 					}
@@ -242,7 +248,8 @@ export class DiscoveredExtensions {
 			if (pkg !== undefined) {
 				const pkgEntries = this.#packageEntries(pkg);
 				if (pkgEntries.length === 0) {
-					diagnose(reference, "empty-package", `package "${reference}" declares no extension entries (missing on disk or filtered out by its settings package entry); restore an entry or remove the reference`);
+					const [code, cause] = emptyPackageDiagnostic(pkg);
+					diagnose(reference, code, cause);
 					continue;
 				}
 				for (const pkgEntry of pkgEntries) add(pkgEntry, reference);
@@ -285,6 +292,31 @@ export function packageNameFromSource(source: string): string {
 		if (versionAt !== -1) name = name.slice(0, versionAt);
 	}
 	return name;
+}
+
+/** Diagnostic code + cause for a package that resolved no entries.
+ *
+ *  Two causes were previously reported with one message, which read as a package-author
+ *  fault ("declares no extension entries") even when the package declared
+ *  `./src/index.ts` and a settings filter discarded it — the real fault in the
+ *  pi-beads-extension incident, where a `./`-prefixed filter never matched Pi's
+ *  package-root-relative paths and disabled the package's extension plus all 14
+ *  prompt templates for ~3 weeks behind a message that blamed the package.
+ *
+ *  A package only reaches `#packages` when some declared entry exists on disk, so
+ *  `filteredOut` means entries were found and then filtered. The remaining case is a
+ *  manifest whose globs match nothing — still author-fixable, but named accurately. */
+function emptyPackageDiagnostic(pkg: DiscoveredPackage): [code: string, cause: string] {
+	if (pkg.filteredOut) {
+		return [
+			"filtered-by-settings",
+			`package "${pkg.name}" declares extension entries, but every one is filtered out by this package's settings entry (or by its own manifest patterns); check that entry's filters — a "./"-prefixed path never matches Pi's package-root-relative paths`,
+		];
+	}
+	return [
+		"empty-package",
+		`package "${pkg.name}" declares no extension entries matching its manifest patterns; restore an entry or remove the reference`,
+	];
 }
 
 /** Selectable ID for a loose extension file: its path under the extensions
@@ -406,6 +438,10 @@ async function resolveImplicit(packageManager: PackageManager, agentDir: string)
 			source: group.source,
 			root: group.root,
 			entries: group.entries,
+			// `group.known` means some declared entry exists on disk, so an empty
+			// resolved list can only mean filtering removed every entry. A package
+			// that declares nothing never reaches here at all.
+			filteredOut: group.known && group.entries.length === 0,
 		});
 	}
 

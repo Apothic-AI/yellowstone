@@ -1407,7 +1407,7 @@ describe("single origin trace (FT54 S2 §3)", () => {
 		// package is reachable only by its source alias, and both entries carry
 		// the same identifier. An id-keyed map would merge them.
 		const extensions = new DiscoveredExtensions(
-			[{ name: "duo", source: "npm:duo", root: "/pkgs/duo", entries: ["/pkgs/duo/index.ts"] }],
+			[{ name: "duo", source: "npm:duo", root: "/pkgs/duo", entries: ["/pkgs/duo/index.ts"], filteredOut: false }],
 			[{ id: "duo", entry: "/agent/extensions/duo.ts" }],
 			[],
 		);

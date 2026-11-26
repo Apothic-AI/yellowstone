@@ -108,6 +108,7 @@ describe("discoverImplicitExtensions", () => {
 				source: "npm:pi-web-access",
 				root: pkg.root,
 				entries: [path.join(pkg.root, "index.ts")],
+				filteredOut: false,
 			},
 		]);
 	});
@@ -125,6 +126,7 @@ describe("discoverImplicitExtensions", () => {
 				source: "npm:pi-web-access",
 				root: pkg.root,
 				entries: [path.join(pkg.root, "dist", "index.js")],
+				filteredOut: false,
 			},
 		]);
 	});
@@ -340,7 +342,11 @@ describe("DiscoveredExtensions (pure discovery & selection)", () => {
 
 		const result = await extensions.select(["pi-multi"]);
 		expect(result.entries).toEqual([]);
-		expect(result.diagnostics?.[0].message).toMatch(/declares no extension entries/);
+		// The package declares an entry and it exists on disk; a settings filter
+		// removed it. Naming the package as the cause would send the reader to the
+		// wrong file — the pi-beads-extension incident.
+		expect(result.diagnostics?.[0].code).toBe("filtered-by-settings");
+		expect(result.diagnostics?.[0].message).toMatch(/filtered out by this package's settings entry/);
 	});
 
 	it("selects multi-entry packages as a whole and by individual entry", async () => {
@@ -444,7 +450,23 @@ describe("local extension reference diagnostics", () => {
 		const extensions = await discoverExtensions({ cwd: fixture.cwd, agentDir: fixture.agentDir });
 		const result = await extensions.select(["pi-*"]);
 		expect(result.entries.map((entry) => entry.id)).toEqual(["pi-usable"]);
-		expect(result.diagnostics).toContainEqual(expect.objectContaining({ code: "empty-package", reference: "pi-*", message: expect.stringContaining("pi-empty") }));
+		expect(result.diagnostics).toContainEqual(
+			expect.objectContaining({ code: "filtered-by-settings", reference: "pi-*", message: expect.stringContaining("pi-empty") }),
+		);
+	});
+
+	it("names the filter as the cause when a dot-slash-prefixed settings entry matches nothing", async () => {
+		// The real incident: a declared `./src/index.ts` filter never matches Pi's
+		// package-root-relative paths, so the package resolved no entries and the
+		// diagnostic blamed the package instead of the filter.
+		await addPackage("pi-dotprefixed", { extensions: ["./a.ts"] });
+		await setConfiguredPackages([{ source: "npm:pi-dotprefixed", extensions: ["./a.ts"] }]);
+		const extensions = await discoverExtensions({ cwd: fixture.cwd, agentDir: fixture.agentDir });
+
+		const result = await extensions.select(["pi-dotprefixed"]);
+		expect(result.entries).toEqual([]);
+		expect(result.diagnostics?.[0].code).toBe("filtered-by-settings");
+		expect(result.diagnostics?.[0].message).toContain("\"./\"-prefixed path never matches");
 	});
 
 	it("does not hide unexpected stat failures as missing references", async () => {
