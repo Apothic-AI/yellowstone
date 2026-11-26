@@ -38,8 +38,8 @@ So the wait is this tool's, and the reconciliation is `reconcile-mode.py`'s:
 Proof is therefore the delegated run's own row, which this tool quotes into its result file.
 
 Usage
-  defer-mode-reapprove.py --pane w1K:p1 [--timeout 86400] [--result PATH]
-  defer-mode-reapprove.py --pane w1K:p1 --status        # read the durable result
+  defer-mode-reapprove.py --pane w17:p1 [--timeout 86400] [--result PATH]
+  defer-mode-reapprove.py --pane w17:p1 --status        # read the durable result
 """
 from __future__ import annotations
 

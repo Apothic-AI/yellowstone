@@ -1,6 +1,22 @@
 #!/usr/bin/env bash
-# land-mode-fixes — replace the two verified-false sentences in this space's mode file,
-# then relaunch this lane, so the new definition digest is confirmed at startup.
+# land-mode-fixes — SPENT ONE-SHOT, retained as history.
+#
+# STATE AS OF 2026-11-26 (measured, not assumed): the lane names and the assertion were swept
+# from self-improvement-leader to yellowstone-leader, but TWO independent blockers remain, so the
+# retarget is cosmetic and the tool is unrunnable in every direction:
+#
+#   A. the CWD guard permits only */Documents/Fleet; a yellowstone CWD exits 3.
+#   B. none of OLD_RELOAD / NEW_RELOAD / OLD_BEADS / NEW_BEADS appears in yellowstone's
+#      systemPrompt (checked against the parsed JSON), so even with the guard opened it exits 1
+#      on 'TARGET TEXT NOT FOUND - refusing to guess'. The sentences it patched were SI-era.
+#
+# The guard is LEFT CLOSED deliberately: opening it would replace a refusal with a different
+# refusal one step later, which reads as a working tool right up to the confusing point. If this
+# capability is wanted for yellowstone it needs a NEW Old/New pair taken from yellowstone's own
+# text, not this file with its guard removed.
+#
+# Original purpose: replace the two verified-false sentences in this space's mode file, then
+# relaunch this lane, so the new definition digest is confirmed at startup.
 #
 # Why the two steps are one script: editing a mode file changes its digest, and this lane's
 # session recorded the old digest, so the next request is governed by the DRIFT policy — which is
@@ -62,7 +78,7 @@ case "$CWD" in
     exit 3 ;;
 esac
 
-LANE="${LANE:-self-improvement-leader}"
+LANE="${LANE:-yellowstone-leader}"
 # No default: w1K:p1 was retired 2026-11-26 and the workspace removed. A default naming a dead pane
 # would make the final self-restart target a lane that cannot exist. Refuse instead, loudly.
 if [ -z "${PANE:-}" ]; then
@@ -136,7 +152,7 @@ blob = json.dumps(d, indent=2, ensure_ascii=False) + "\n"
 check = json.loads(blob)
 assert check["schemaVersion"] == 2 and check["key"] == "leader"
 assert check["promptStrategy"] in ("append", "replace_base"), check["promptStrategy"]
-assert "You are the self-improvement leader of this space" in check["systemPrompt"]
+assert "You are the yellowstone leader of this space" in check["systemPrompt"]
 
 if dry:
     print(f"\ndry run: {len(edits)} edit(s) validated, nothing written")

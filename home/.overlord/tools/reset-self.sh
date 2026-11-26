@@ -34,7 +34,7 @@ case "${1:-}" in
 esac
 set -uo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
-lane=self-improvement-leader
+lane=yellowstone-leader
 log=/tmp/context-ritual.log
 cont="$here/../continuations/$lane.md"
 
