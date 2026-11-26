@@ -1,5 +1,14 @@
 # Execution record — fleet migration
 
+**Provenance, added 2026-11-26.** This file is tracked at
+`Code/yellowstone/docs/fleet-model/EXECUTION-RECORD.md`, and that copy is CANONICAL. The copy at
+`Documents/Fleet/pi-fleet-model/EXECUTION-RECORD.md` is written FROM it, one way: edit the tracked copy, then
+copy it over the Fleet one. An edit made in the Fleet copy is silently overwritten by the next mirror and leaves
+no trace, so it is not a second draft — it is a render. The invariant to preserve between the two is `diff -q`
+silence, not equal line counts, because a line count grows with every legitimate edit while `diff -q` silent can
+only be true of identical bytes. (§57 rule 3 is the same point one level down, about gates that name their
+artifact.)
+
 ## FT-77 — the git-subrepo skill now reaches both roles — 2026-11-17
 
 - **What existed.** The operator's skill was installed globally
