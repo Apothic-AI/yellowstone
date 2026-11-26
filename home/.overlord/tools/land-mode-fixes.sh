@@ -21,7 +21,26 @@ case "${1:-}" in
     exit 0
     ;;
 esac
+# land-mode-fixes — FLEET-ERA ARTIFACT (self-improvement-leader, retired 2026-11-26).
+#
+# THIS SCRIPT HAS ALREADY DONE ITS WORK AND MUST NOT BE RUN AGAINST YELLOWSTONE.
+# It was a one-shot patch: it rewrote two exact sentences in the SI mode file. Measured
+# 2026-11-26: neither the OLD nor the NEW form of either sentence exists in
+# ~/Code/yellowstone/.pi/modes/leader.json (0 hits), and the assertion below is on SI's
+# own opening line, which Yellowstone does not carry. Retargeting its defaults to
+# yellowstone would produce a tool that edits a live lane's role contract with SI-era
+# text and then refuses on its own assertion — a half-applied write in flight.
+# Kept as history, with a hard guard so it cannot be pointed at the wrong mode file.
 set -uo pipefail
+
+# Only the Fleet (SI) mode file may be edited. Anything else is a mistake, not a target.
+case "${CWD:-/home/bitnom/Documents/Fleet}" in
+  */Documents/Fleet|*/Documents/Fleet/) ;;
+  *)
+    echo "land-mode-fixes: REFUSED — Fleet-era artifact, will not edit $CWD". >&2
+    echo "  This script patched SI's mode file and has no meaning for any other space." >&2
+    exit 3 ;;
+esac
 
 LANE="${LANE:-self-improvement-leader}"
 PANE="${PANE:-w1K:p1}"

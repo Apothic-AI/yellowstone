@@ -43,14 +43,14 @@ Usage
 Job spec (JSON)
 ---------------
   {
-    "workspace": "w1K",
+    "workspace": "w17",
     "concurrency": 3,
     "timeout": 2700,
     "root": "/home/bitnom/.local/state/si-batch-20261117",
-    "doc": "/home/bitnom/Documents/Assistant/Fleet TODOs.md",
+    "doc": "/home/bitnom/Documents/Assistant/Fleet TODOs.md",   <- SI-era doc; retarget to the yellowstone queue
     "jobs": [
       {"slug": "ft74", "label": "si-ft74-build",
-       "cwd": "/home/bitnom/Documents/Fleet",
+       "cwd": "/home/bitnom/Code/yellowstone",
        "repo": "/home/bitnom/Code/yellowstone",     <- the repository it may write
        "commits": true,                              <- true requires "repo"
        "heading": "FT-74", "intent": "..."}
@@ -285,7 +285,7 @@ def write_brief(root: Path, doc: str, job: Job) -> Path:
 
     text = f"""# {job.heading} — worker brief
 
-You are `{job.label}`, a worker in the self-improvement space. One issue, end to end.
+You are `{job.label}`, a worker in the yellowstone space. One issue, end to end.
 
 ## The item
 
@@ -396,7 +396,7 @@ def run(spec: dict, args) -> int:
     root.mkdir(parents=True, exist_ok=True)
     log = Log(root)
     doc = spec.get("doc") or DEFAULT_DOC
-    workspace = spec.get("workspace", "w1K")
+    workspace = spec.get("workspace", "w17")
     concurrency = int(args.concurrency or spec.get("concurrency", 3))
     timeout = int(args.timeout or spec.get("timeout", 45 * 60))
     spawn_cmd = args.spawn or spec.get("spawn") or DEFAULT_SPAWN

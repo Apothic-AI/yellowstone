@@ -1,4 +1,13 @@
 #!/usr/bin/env bash
+# reset-self — FLEET-ERA ARTIFACT (self-improvement-leader, retired 2026-11-26).
+#
+# This was the SI lane's own context ritual: land the pending mode fix, relaunch itself, then
+# reorient the fresh session at its continuation. Every clause is SI-specific — `lane=` below is
+# hardcoded, and its continuation path is SI's. After retirement there is no such lane to reset.
+# Kept as history. Do NOT wire it to yellowstone-leader: yellowstone-leader relaunches through
+# `restart-fleet --only w17:p1` (which takes the keepalive-hold) and its continuation chain lives
+# at a different path. Reusing this would relaunch the wrong lane with the wrong continuation.
+#
 # reset-self — the context ritual and the pending mode fix, as one detached action.
 #
 # Why detached: this lane relaunching itself means its own pi process must die. A script
