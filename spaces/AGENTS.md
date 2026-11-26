@@ -29,7 +29,7 @@ working state, it does not live here.
 |---|---|---|
 | `pi-rooms`, `pi-pretty-tui`, `pi-modes`, `unblock`, `mycord` | **transitional** — a lane runs in the **yellowstone** space/worktree; these directories are not the destination for new work | **yes, for now** |
 | `herdr-voice` | as above, but this directory exists **only on branch `space/herdr-voice`** — not on `master` | **on that branch only** |
-| `assistant`, `comms`, `overlord`, `self-improvement`, `sysops`, `personal` | `~/Documents/*`, `~/.overlord`, `~/.sysops` | **no, permanently** |
+| `assistant`, `comms`, `overlord`, `sysops`, `personal` | `~/Documents/*`, `~/.overlord`, `~/.sysops` | **no, permanently** |
 
 The reason is not tidiness. Those spaces carry **fleet-specific data we do not want in git** — continuity
 files, coordination logs, personal notes, lane history — and a lane that keeps working state inside a

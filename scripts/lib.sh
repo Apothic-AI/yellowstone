@@ -440,18 +440,18 @@ ensure_workspace() {
   fi
 }
 
-# The seven spaces the fleet must have on any machine, in the operator's order.
+# The six spaces the fleet must have on any machine, in the operator order. (self-improvement / w1K retired 2026-11-26; its roles merged into yellowstone.)
 # `label|path` — the path is where a lane in that space starts, and it is the same
 # path its scaffolding is installed to, so the two cannot drift apart.
 #
 # THE LABELS ARE MATCHED EXACTLY AS THE OPERATOR CREATED THEM, including the ones
 # that are capitalised: `Assistant`, `Comms` and `Personal` are title case while
-# `overlord`, `self-improvement`, `sysops` and `yellowstone` are lower. Normalising
+# `overlord`, `sysops` and `yellowstone` are lower. Normalising
 # them would make the lookup miss an existing space and create a second one with a
 # near-identical name at the same cwd — the exact failure ensure_workspace guards
 # against, since `herdr workspace create` does not deduplicate. Verified against
 # `herdr workspace list` on 2026-11-09: w1Z Assistant · w1T Comms · wE overlord ·
-# w1K self-improvement · w19 sysops · w17 yellowstone · w1M Personal.
+# w19 sysops · w17 yellowstone · w1M Personal.
 #
 # yellowstone's path is the repo root: that space's scaffolding *is* this tree, which
 # is why test/verify-space-scaffold.sh deliberately omits it from its own table.
@@ -460,7 +460,6 @@ fleet_space_paths() {
     "Assistant|$HOME/Documents/Assistant" \
     "Comms|$HOME/Documents/Comms" \
     "overlord|$OVERLORD_DIR" \
-    "self-improvement|$HOME/Documents/Fleet" \
     "sysops|$SYSOPS_DIR" \
     "yellowstone|$REPO_ROOT" \
     "Personal|$HOME/Documents/Personal"

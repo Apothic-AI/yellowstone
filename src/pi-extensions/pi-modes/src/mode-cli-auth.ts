@@ -40,7 +40,7 @@ export const DEFAULT_SECRET_FILE = join(homedir(), ".pi", "agent", "secrets", "p
 /** The sentence that turns a wall into a handoff; tests assert on it. */
 export const ESCALATION =
   "The pi-modes CLI is restricted to approved leaders. If you need it, ask the " +
-  "self-improvement leader (or the operator) to run it for you or to grant access.";
+  "yellowstone leader (or the operator) to run it for you or to grant access.";
 
 export type AuthOutcome = { ok: true; enforced: boolean } | { ok: false; message: string };
 
