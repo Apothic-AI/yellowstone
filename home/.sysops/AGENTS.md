@@ -29,6 +29,7 @@ proactive**. The two halves are not in tension:
 - rebooting, restarting a lane that is mid-turn, or changing a systemd unit or timer;
 - anything that costs money or touches an account the operator owns;
 - a change whose blast radius you cannot state in one sentence.
+- A worker's ask goes to its leader, not to the operator.
 
 ## Never
 

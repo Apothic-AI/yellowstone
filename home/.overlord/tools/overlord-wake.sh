@@ -39,7 +39,7 @@ DRY_RUN=0
 
 PANE="${OVERLORD_PANE:-wE:p1}"
 HERDR="${HERDR_BIN_PATH:-$HOME/.local/bin/herdr}"
-LOG="$HOME/.local/state/overlord/hourly-wake.log"
+LOG="$HOME/.local/state/overlord/periodic-wake.log"
 mkdir -p "$(dirname "$LOG")"
 say() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >>"$LOG"; }
 # In a dry run a would-be skip is reported and then ignored: nothing is sent either way, and

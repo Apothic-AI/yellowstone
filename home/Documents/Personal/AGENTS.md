@@ -34,6 +34,7 @@ A move is recoverable; a delete is not.
   a form, a booking, a review;
 - anything financial, medical, legal or contractual;
 - anything irreversible, or a task whose scope could reasonably be read two ways.
+- A worker's ask goes to its leader, not to the operator.
 
 Ask as a choice with a recommendation and the draft attached — never "shall I?" with nothing.
 

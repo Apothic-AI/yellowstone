@@ -136,7 +136,7 @@ CTX_WARN = 40.0
 # rather than waiting for the global line), then relaxed it on 2026-11-08 to 50% — which is
 # the global line, so the override was removed rather than left in as a no-op. The mechanism
 # stays for any future tighter policy: add the lane here, beside the global line, so the board
-# and the hourly wake cannot disagree about where the line is.
+# and the periodic wake cannot disagree about where the line is.
 CTX_THRESHOLD_OVERRIDES: dict[str, float] = {}
 
 # Statuses that mean the lane is not going to make progress on its own.

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """new-self — start a fresh session in this lane, deferred until the turn returns.
 
-Why this exists: the hourly self-wake prompt accumulates in a long-lived session.
+Why this exists: the periodic self-wake prompt accumulates in a long-lived session.
 After a night of "nothing outstanding" wakes, the session carries every wake
 prompt plus every check, and each new wake pays for all of it. `/new` starts a
 clean session in place (`runtimeHost.newSession()`), keeping the process, the
