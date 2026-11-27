@@ -27,6 +27,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 #: The digest script. Overridable for tests and for a worktree checkout.
@@ -43,6 +44,78 @@ TIMEOUT_SECONDS = 20
 #: composition once, and a subprocess per field would make the read expensive enough that
 #: nobody would use it.
 _CACHE: dict[tuple[str, str], dict[str, Any]] = {}
+
+
+def prewarm(specs, *, permit=None, workers: int = 8, timeout: int = TIMEOUT_SECONDS) -> dict:
+    """Warm the per-process composition cache for many lanes at once.
+
+    A roster asks for one composition per lane, and each one is a `node` process whose
+    ~0.5 s is module load rather than work: 29 lanes was ~23 s of `select.poll`, measured
+    with cProfile. The calls are independent and share nothing but ``_CACHE`` (a dict whose
+    writes are atomic under the GIL), so warming them in a pool turns the roster's cost
+    from a SUM into a MAX.
+
+    ``specs`` is ``(cwd, key, recorded_path, recorded_digest)``. The drift check asks for
+    the plain composition first, and only re-asks WITH the recorded path when the digests
+    disagree (a launcher lane's digest was taken over its own materialised copy, so the
+    path is part of the fingerprint). Warming both keys for every lane cost 58 spawns
+    where 44 were needed, so the second wave is generated from the first wave's answers.
+
+    Deliberately NOT threaded here: the lane build itself. The build touches the SQLite
+    reporter cache, and a pool over it raises ``sqlite3.ProgrammingError: SQLite objects
+    created in a thread can only be used in that same thread``. Only the subprocesses run
+    concurrently.
+
+    Returns a receipt: pairs warmed in each wave, and how many could not be.
+    """
+    plain = []
+    seen = set()
+    for spec in specs:
+        cwd, key = spec[0], spec[1]
+        if not cwd or not key:
+            continue
+        ident = (os.path.abspath(cwd), key, "")
+        if ident in seen:
+            continue
+        seen.add(ident)
+        recorded_path = spec[2] if len(spec) > 2 else None
+        recorded_digest = spec[3] if len(spec) > 3 else None
+        plain.append((ident, recorded_path, recorded_digest))
+    if not plain:
+        return {"warmed": 0, "failed": 0, "plain": 0, "override": 0}
+
+    def warm(cwd, key, recorded_path):
+        try:
+            return composed_digest(cwd, key, recorded_path=recorded_path, permit=permit,
+                                   timeout=timeout)
+        except Exception:  # a warm-up that raises is a miss, never a verdict
+            return None
+
+    def run(batch):
+        if not batch:
+            return []
+        if workers <= 1 or len(batch) == 1:
+            return [warm(*item) for item in batch]
+        with ThreadPoolExecutor(max_workers=max(1, min(workers, len(batch))),
+                                thread_name_prefix="composed-warm") as pool:
+            return list(pool.map(lambda item: warm(*item), batch))
+
+    first = run([(ident[0], ident[1], None) for ident, _, _ in plain])
+    # Second wave: only the lanes whose plain digest did not reproduce the recorded one.
+    # Those are exactly the lanes `_verify_composed` re-asks for with the recorded path.
+    overrides = []
+    for (ident, recorded_path, recorded_digest), result in zip(plain, first):
+        if not recorded_path or not recorded_digest:
+            continue
+        if not result or not result.get("available"):
+            continue
+        if result.get("digest") != recorded_digest:
+            overrides.append((ident[0], ident[1], recorded_path))
+    second = run(overrides)
+    outcomes = first + second
+    return {"warmed": sum(1 for r in outcomes if r and r.get("available")),
+            "failed": sum(1 for r in outcomes if not r or not r.get("available")),
+            "plain": len(first), "override": len(second)}
 
 
 def agent_dir(env: dict[str, str] | None = None) -> str:

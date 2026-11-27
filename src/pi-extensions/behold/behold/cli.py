@@ -28,13 +28,14 @@ import hashlib
 import os
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, Sequence
 
 from . import cache as cache_mod
 from . import field as F
 from . import guard, identity, lane as lane_mod, render, util, watch
 from . import admission
-from .sources import Paths, SourceError, fleet_state, herdr, herdr_capture, pi_state, pil_roles
+from .sources import Paths, SourceError, fleet_state, herdr, herdr_capture, pi_state, pil_roles, mode_composed
 
 EXIT_OK = 0
 EXIT_USAGE = 2
@@ -51,6 +52,66 @@ RUN_MODES = ("fixture", "snapshot", "live")
 #: A topology read from a file is called stale once it is older than this. The file's
 #: mtime is weak provenance, so the roster says "stale" rather than "current".
 TOPOLOGY_STALE_S = 300.0
+
+
+#: Lanes built concurrently. Each lane's mode-drift check spawns a `node` one-liner whose
+#: ~450 ms is almost entirely TypeScript strip + script parse, so the roster's cost used to
+#: be the SUM of those waits — 29 lanes measured ~30 s of `select.poll` in cProfile
+#: (swarm-6hd). The lanes are independent, so the cost is a MAX instead. One worker is the
+#: safe floor: BEHOLD_BUILD_WORKERS=1 restores the old sequential path exactly.
+DEFAULT_BUILD_WORKERS = 12
+BUILD_WORKERS_ENV = "BEHOLD_BUILD_WORKERS"
+
+
+def build_workers(count: int) -> int:
+    """How many lanes to build at once, clamped to what there is to do."""
+    raw = os.environ.get(BUILD_WORKERS_ENV)
+    try:
+        wanted = int(raw) if raw else DEFAULT_BUILD_WORKERS
+    except ValueError:
+        # A bad value is not worth failing a roster over; the default is the safe reading.
+        wanted = DEFAULT_BUILD_WORKERS
+    return max(1, min(max(1, wanted), max(1, count)))
+
+
+def composed_specs(agents: Sequence[Any], ctx: Any) -> list[tuple[str, str, str | None, str | None]]:
+    """Every (cwd, key) the roster will ask the composition digests for.
+
+    Best-effort by design: a lane whose identity cannot be resolved here is simply not
+    warmed and pays its subprocess during the build, as it always did. A miss costs time,
+    never a verdict, so this must never raise into the roster.
+    """
+    specs: list[tuple[str, str]] = []
+    for agent in agents:
+        try:
+            pane_id = agent.get("pane_id") if isinstance(agent.get("pane_id"), str) else None
+            tab_id = agent.get("tab_id") if isinstance(agent.get("tab_id"), str) else None
+            name, _ = herdr.pane_name(agent, ctx.snapshot.pane(pane_id), ctx.snapshot.tab(tab_id))
+            ident = identity.resolve(
+                agent,
+                policy=ctx.policy,
+                pil=ctx.pil,
+                proc_root=ctx.paths.proc_root,
+                loader=ctx.load_session,
+                leaf_hint=ctx.leaf_hint,
+                name_hint=name,
+                read_sessions=ctx.read_sessions,
+            )
+            view = ident.session
+            mode = view.mode_state() if view is not None else None
+            if not mode or mode.get("customType") != "pi-mode-state.v3":
+                continue
+            state = mode.get("state") or {}
+            cwd = view.header_cwd
+            for key, recorded in (state.get("fingerprints") or {}).items():
+                if not isinstance(recorded, dict):
+                    continue
+                path, digest = recorded.get("path"), recorded.get("digest")
+                specs.append((cwd, key, path if isinstance(path, str) else None,
+                              digest if isinstance(digest, str) else None))
+        except Exception:  # an unresolvable lane is a cache miss, never an error
+            continue
+    return specs
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -577,6 +638,18 @@ class Runner:
             selection = lane_mod.select_agents(agents, self.snapshot, self.args.lane)
             self.lane_selection = selection
             agents = selection.agents
+        # One `node` process per lane, ~0.5 s each of module load, so the roster's cost
+        # used to be their SUM (29 lanes measured ~30 s of `select.poll` in cProfile,
+        # swarm-6hd). Warm them concurrently, then build single-threaded: the build
+        # touches the SQLite reporter cache, which must not cross a thread.
+        warm_started = time.perf_counter()
+        prewarm = mode_composed.prewarm(
+            composed_specs(agents, ctx),
+            permit=lambda cmd: guard.permit_spawn(cmd, purpose="mode-composed-digest"),
+            workers=build_workers(len(agents)),
+        )
+        ctx.time("composed_prewarm", warm_started)
+        self.composed_prewarm = prewarm
         built = [lane_mod.build_lane(agent, ctx) for agent in agents]
         lanes = [b.to_dict() for b in built]
         lanes = render.apply_filters(lanes, self.args.filter)
