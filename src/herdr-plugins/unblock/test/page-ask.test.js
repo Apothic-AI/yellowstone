@@ -204,7 +204,19 @@ test('a sandboxed page posts as Origin: null and is accepted; a foreign origin i
     assert.equal(after.body.status, 'answered')
     assert.equal(after.body.answers.plan, 'null-origin')
 
-    // The allowance is narrow: a null origin anywhere else is still refused.
+    // The allowance is a PATH REGEX, so its BOUNDARY is what can widen silently: the next
+    // person to add a suffix to that alternation widens the hole and no accepted-URL assertion
+    // notices. Pin the near misses, one step off each permitted suffix.
+    for (const near of ['draft', 'page.htmlx', 'submit/extra', 'answer']) {
+      const refused = await fetch(`${base}/u/${token}/api/asks/${ticket}/${near}`, {
+        method: 'POST',
+        headers: { Origin: 'null', 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'a=1',
+      })
+      assert.equal(refused.status, 403, `null is refused one step off the submit paths: ${near}`)
+    }
+
+    // And the allowance is narrow: a null origin anywhere else is still refused.
     const elsewhere = await fetch(`${base}/api/asks`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Origin: 'null', ...auth },
