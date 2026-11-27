@@ -14,6 +14,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { applyConfig, daemonRoot } from './config.js'
 import { createLivedocApprovals } from './scope-approvals.js'
 import { APPROVAL_PURPOSES, normalizeOrigin, optionalScrub, validateAsk, validateUpdate, ValidationError } from './schema.js'
+import { parseSubmission } from './page-submit.js'
 import { SecretStore } from './secrets.js'
 import { defaultReadKey, mintVoiceToken, mintXaiToken, mintOpenAiToken, buildLiveSession, connectLiveCall } from './voice-token.js'
 import { createSpendLedger, rateFor } from './voice-spend.js'
@@ -702,6 +703,108 @@ async function answerAsk(ticket, values, reply, fieldContext, fieldBounce, revis
    * a trusted proxy already identified the viewer, in which case the page uses
    * the plain /api routes and there is no token anywhere in the URL.
    */
+/** Where a page ask's attachments land: one directory per ticket. */
+function pageAttachmentsDir(ticket) {
+  return join(stateDir(), 'page-attachments', String(ticket).replace(/[^A-Za-z0-9_]/g, '_'))
+}
+
+function escapeHtmlText(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
+}
+
+/**
+ * The shell around an agent-authored page. The agent's HTML runs in a sandboxed iframe
+ * whose URL is per-ticket, so a RELATIVE action="submit" inside the page resolves to that
+ * ticket's submit endpoint without the agent having to know the daemon's URL. The
+ * allow-same-origin token is deliberately absent: with it the page would share this
+ * daemon's origin on the human's browser and could read the session and the whole queue.
+ */
+function serveAskPageShell(res, ask, base) {
+  const title = escapeHtmlText(ask.title)
+  const html = '<!doctype html>\n<html lang="en"><head><meta charset="utf-8">' +
+    '<meta name="viewport" content="width=device-width, initial-scale=1">' +
+    '<title>' + title + '</title>' +
+    '<style>html,body{margin:0;height:100%;background:#0d1117;color:#c9d1d9;' +
+    'font:15px/1.5 ui-sans-serif,system-ui,-apple-system,sans-serif}' +
+    'header{display:flex;gap:.75rem;align-items:baseline;padding:.6rem 1rem;border-bottom:1px solid #21262d}' +
+    'header strong{font-weight:600}header span{color:#8b949e;font-size:.85rem}' +
+    'iframe{width:100%;height:calc(100% - 3rem);border:0;background:#fff}</style></head><body>' +
+    '<header><strong>' + title + '</strong><span>' + escapeHtmlText(ask.ticket) +
+    ' - written by the agent that filed this ask</span></header>' +
+    '<iframe sandbox="allow-forms allow-scripts" referrerpolicy="no-referrer" ' +
+    'src="' + escapeHtmlText(base) + 'page.html" title="' + title + '"></iframe>' +
+    '</body></html>'
+  return sendText(res, 200, html, 'text/html; charset=utf-8')
+}
+
+/**
+ * The agent's page itself. The CSP sandbox repeats the iframe's tokens so that opening
+ * this URL directly is still an opaque origin rather than an agent-authored document
+ * running on the daemon's origin.
+ */
+function serveAskPageHtml(res, ask) {
+  const body = ask.html || '<!doctype html><meta charset="utf-8"><p>This ask carries no page.</p>'
+  res.writeHead(200, {
+    'Content-Type': 'text/html; charset=utf-8',
+    'Content-Security-Policy': 'sandbox allow-forms allow-scripts',
+    'X-Content-Type-Options': 'nosniff',
+    'Cache-Control': 'no-store',
+  })
+  return res.end(body)
+}
+
+function pageConfirmation(res, ask, parsed, status = 200) {
+  const count = parsed ? Object.keys(parsed.fields).length : 0
+  const files = parsed ? parsed.files.length : 0
+  const html = '<!doctype html>\n<html lang="en"><head><meta charset="utf-8">' +
+    '<meta name="viewport" content="width=device-width, initial-scale=1"><title>Answer sent</title>' +
+    '<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0d1117;color:#c9d1d9;' +
+    'font:16px/1.6 ui-sans-serif,system-ui,sans-serif}main{max-width:32rem;padding:2rem}' +
+    'h1{font-size:1.25rem;margin:0 0 .75rem}p{color:#8b949e;margin:.35rem 0}</style></head><body><main>' +
+    '<h1>Answer sent</h1><p>' + escapeHtmlText(ask.title) + '</p>' +
+    '<p>' + count + ' field' + (count === 1 ? '' : 's') + (files ? ' and ' + files + ' attachment' + (files === 1 ? '' : 's') : '') +
+    ' recorded against ' + escapeHtmlText(ask.ticket) + '.</p>' +
+    '<p>The agent is being woken with this answer; you can close this tab.</p>' +
+    '</main></body></html>'
+  return sendText(res, status, html, 'text/html; charset=utf-8')
+}
+
+/**
+ * Accept whatever the page posted. No field is validated by name: the agent wrote the
+ * form and only the agent knows what its inputs mean, so the submission IS the answer.
+ * The body is streamed by page-submit.js, which is why MAX_BODY_BYTES does not apply.
+ */
+async function submitAskPage(req, res, ask, answeredVia) {
+  if (ask.status !== 'open') return pageConfirmation(res, ask, null, 409)
+  let parsed
+  try {
+    parsed = await parseSubmission(req, {
+      contentType: req.headers['content-type'] || '',
+      attachmentsDir: pageAttachmentsDir(ask.ticket),
+    })
+  } catch (error) {
+    return sendJson(res, error.status || 400, { error: error.message, code: error.code || 'BAD_SUBMISSION' })
+  }
+  const values = { ...parsed.fields }
+  if (parsed.files.length) {
+    values._attachments = parsed.files.map((file) => ({
+      field: file.field, filename: file.filename, path: file.path, size: file.size, contentType: file.contentType,
+    }))
+  }
+  values._submitted_at = new Date().toISOString()
+  const result = await answerAsk(ask.ticket, values, undefined, undefined, undefined, ask.revision, answeredVia)
+  if (!result) return notFound(res)
+  emitAsk(result.ask, result.ask.status)
+  emitQueue()
+  const accept = String(req.headers.accept || '')
+  if (accept.includes('application/json') && !accept.includes('text/html')) {
+    return sendJson(res, 200, {
+      ticket: ask.ticket, status: result.ask.status,
+      fields: Object.keys(parsed.fields), attachments: parsed.files.length, bytes: parsed.bytes,
+    })
+  }
+  return pageConfirmation(res, ask, parsed)
+}
   function servePanel(res, token, who) {
     let html
     try {
@@ -777,6 +880,20 @@ async function answerAsk(ticket, values, reply, fieldContext, fieldBounce, revis
       if (result.complete) store.burnLink(token)
       emitQueue()
       return sendJson(res, 200, result)
+    }
+
+    // A page ask reached through a link token: the same three endpoints with the token as
+    // the capability. The shell's iframe URL keeps the token prefix, so the page's relative
+    // action="submit" lands back here and never has to know the daemon's base path.
+    const pageMatch = /^\/api\/asks\/([^/]+)\/(page\.html|page|submit)$/.exec(tail)
+    if (pageMatch && (req.method === 'GET' || req.method === 'POST')) {
+      const pageTicket = decodeURIComponent(pageMatch[1])
+      if (scopedAsk && pageTicket !== scopedAsk.ticket) return sendJson(res, 403, { error: 'link is scoped to another ask' })
+      const pageAsk = store.get(pageTicket)
+      if (!pageAsk || pageAsk.kind !== 'page') return notFound(res)
+      if (req.method === 'POST') return submitAskPage(req, res, pageAsk, `share-link:${link.minted_by}`)
+      if (pageMatch[2] === 'page.html') return serveAskPageHtml(res, pageAsk)
+      return serveAskPageShell(res, pageAsk, `/u/${encodeURIComponent(token)}/api/asks/${encodeURIComponent(pageAsk.ticket)}/`)
     }
 
     notFound(res)
@@ -1091,6 +1208,25 @@ async function answerAsk(ticket, values, reply, fieldContext, fieldBounce, revis
      * think — a choice clicked, a note written — and can ask the obvious
      * follow-up through unblock_update while they are still on the page.
      */
+    // An agent-authored page ask: the shell, the page itself, and the forgiving submit
+    // endpoint the page's own forms post to. A form with no action attribute posts to the
+    // page URL itself, so POST is accepted there too rather than 405-ing the human.
+    ticket = routeTicket(pathname, '/page') || routeTicket(pathname, '/page.html')
+    if (ticket && (req.method === 'GET' || req.method === 'POST')) {
+      const ask = store.get(ticket)
+      if (!ask || ask.kind !== 'page') return notFound(res)
+      if (req.method === 'POST') return submitAskPage(req, res, ask, humanVia(req) || 'page-submit')
+      if (pathname.endsWith('/page.html')) return serveAskPageHtml(res, ask)
+      return serveAskPageShell(res, ask, `/api/asks/${encodeURIComponent(ask.ticket)}/`)
+    }
+
+    ticket = routeTicket(pathname, '/submit')
+    if (ticket && req.method === 'POST') {
+      const ask = store.get(ticket)
+      if (!ask || ask.kind !== 'page') return notFound(res)
+      return submitAskPage(req, res, ask, humanVia(req) || 'page-submit')
+    }
+
     ticket = routeTicket(pathname, '/events')
     if (ticket && req.method === 'GET') {
       const ask = store.get(ticket)
@@ -1361,6 +1497,10 @@ async function answerAsk(ticket, values, reply, fieldContext, fieldBounce, revis
         return sendJson(res, 409, { error: error.message, code: error.code, draft_rev: error.draft_rev })
       }
       const status = error.status || 500
+      // An internal error used to leave no trace at all: the client got 'internal server
+      // error' and the daemon's own log said nothing, so a 500 was undiagnosable without
+      // a debugger. Log the stack once, keep the body opaque.
+      if (status === 500) console.error(`unblock: ${req.method} ${req.url} failed: ${error?.stack || error?.message || error}`)
       sendJson(res, status, { error: status === 500 ? 'internal server error' : error.message })
     })
   })

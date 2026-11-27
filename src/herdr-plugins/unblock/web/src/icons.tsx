@@ -39,6 +39,7 @@ export function Icon({ name, size = 18 }: { name: Name; size?: number }) {
 export function stateOf(ask: Ask, draft = false): { name: Name; label: string } {
   if (draft) return { name: 'draft', label: 'Draft' }
   if (ask.origin.detected) return { name: 'detected', label: 'Stalled' }
+  if (ask.kind === 'page') return { name: 'decision', label: 'Page' }
   if (ask.kind === 'park') return { name: 'park', label: 'Agent stopped' }
   return ask.purpose === 'decision'
     ? { name: 'decision', label: 'Decision' }

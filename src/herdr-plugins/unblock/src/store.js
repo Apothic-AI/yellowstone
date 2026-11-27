@@ -242,6 +242,9 @@ export class Store {
       ['consent_blocked_by', 'TEXT'], ['receipt_json', 'TEXT'], ['revision', 'INTEGER NOT NULL DEFAULT 1']]) this.#addColumn('asks', name, type)
     for (const [name, type] of [['summary', 'TEXT'], ['minutes', 'INTEGER'], ['after', 'TEXT'],
       ['blocks_json', "TEXT NOT NULL DEFAULT '[]'"], ['permission_json', 'TEXT']]) this.#addColumn('asks', name, type)
+    // A page ask's whole UI, written by the agent that filed it. NULL for every
+    // other kind, so nothing that reads fields has to special-case it.
+    this.#addColumn('asks', 'html', 'TEXT')
     this.#addColumn('answers', 'answered_via', 'TEXT')
     this.#addColumn('links', 'minted_by', "TEXT NOT NULL DEFAULT 'local'")
     this.#addColumn('asks', 'draft_rev', 'INTEGER NOT NULL DEFAULT 0')
@@ -421,9 +424,9 @@ export class Store {
 
     this.#db
       .prepare(
-        `INSERT INTO asks (id, ticket, kind, purpose, project, level, status, title, why, fields_json, steps_json,
+        `INSERT INTO asks (id, ticket, kind, purpose, project, level, status, title, why, html, fields_json, steps_json,
                            links_json, tried_json, only_you, origin_json, agent_key, created_at, expires_at, plan_json, spend_json, message_json, consent_blocked_by, revision, summary, minutes, after, blocks_json, permission_json)
-         VALUES (?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
@@ -434,6 +437,7 @@ export class Store {
         body.level ?? null,
         body.title,
         body.why,
+        body.html ?? null,
         JSON.stringify(body.fields),
         JSON.stringify(body.steps),
         JSON.stringify(body.links),
@@ -543,6 +547,7 @@ export class Store {
       gating: row.kind === 'park' && row.status === 'open',
       title: row.title,
       why: row.why,
+      html: row.html ?? undefined,
       fields: JSON.parse(row.fields_json),
       steps: JSON.parse(row.steps_json),
       links: JSON.parse(row.links_json),
@@ -716,6 +721,9 @@ export class Store {
     if (CLOSED_TO_ANSWERS.includes(ask.status)) throw finished(ask)
 
     const known = new Set(ask.fields.map((f) => f.name))
+    // A page ask has no fields, so its submission IS the answer: every name the page
+    // posted is kept, because the agent wrote those names and only it knows them.
+    if (ask.kind === 'page') for (const name of Object.keys(values || {})) known.add(name)
     const secretFields = new Set(ask.fields.filter((f) => f.type === 'secret').map((f) => f.name))
 
     // Per-field send-back: the human rejected THIS question rather than the

@@ -9,6 +9,7 @@ import readline from 'node:readline'
 
 import { daemonRoot } from './config.js'
 import { ONLY_YOU_REASONS } from './schema.js'
+import { register, watcher } from '../hooks/lib.js'
 
 const PROTOCOL_VERSION = '2025-06-18'
 const SERVER_INFO = { name: 'unblock', version: '0.1.0' }
@@ -136,6 +137,11 @@ const askProperties = {
   // MUST carry recommend {value, why}. The daemon rejects a mismatch, so this
   // is a real contract, not a hint.
   purpose: { type: 'string', enum: ['blocker', 'decision', 'consent', 'spend', 'message', 'question', 'permission'], default: 'blocker' },
+  // A page ask carries an agent-authored HTML page INSTEAD of fields: the page is the
+  // question. Set kind 'page' and put the whole document in `html`; the human answers on
+  // that page and the submission comes back as the answer, with no polling on your side.
+  kind: { type: 'string', enum: ['file', 'park', 'page'], description: "Usually left unset (the tool you called sets it). 'page' files an agent-authored web page as the ask and requires `html`." },
+  html: { type: 'string', maxLength: 262144, description: "The complete HTML page the human will see, for kind 'page'. Forms inside it post to the daemon automatically: use action=\"submit\" and enctype=\"multipart/form-data\", any input names, file inputs allowed. The page is sandboxed (no top navigation, no same-origin access)." },
   // The project this ask files under — the queue page groups and filters by
   // it. One short name per workstream, reused across asks. Defaults to
   // $UNBLOCK_PROJECT when unset.
@@ -212,12 +218,12 @@ const TOOLS = [
   { name: 'unblock_keep', description: 'Keep an open ask in today’s queue and claim its liveness.', inputSchema: { type: 'object', properties: { ticket: { type: 'string' } }, required: ['ticket'] } },
   {
     name: 'unblock_file',
-    description: 'Only for what only the human can do: their credential or sign-in, a click in their own account, spend, a message to a real person, or a product call. Clicks in a signed-in site are consent asks; signing in or out is never consent. Try the CLI, API, computer use and docs first and list those attempts in `tried`.',
+    description: 'Only for what only the human can do: their credential or sign-in, a click in their own account, spend, a message to a real person, or a product call. Clicks in a signed-in site are consent asks; signing in or out is never consent. Try the CLI, API, computer use and docs first and list those attempts in `tried`. For a question that needs a richer surface than fields — a form of your own design, formatted information, media, a chart, an embedded artefact — file a PAGE ask instead: set kind: \'page\' and pass the whole document in `html`. The answer arrives through unblock_check like any other; you do not need to watch it.',
     inputSchema: askSchema,
   },
   {
     name: 'unblock_park',
-    description: 'Only for what only the human can do: their credential or sign-in, a click in their own account, spend, a message to a real person, or a product call. Clicks in a signed-in site are consent asks; signing in or out is never consent. Try the CLI, API, computer use and docs first and list those attempts in `tried`.',
+    description: 'Only for what only the human can do: their credential or sign-in, a click in their own account, spend, a message to a real person, or a product call. Clicks in a signed-in site are consent asks; signing in or out is never consent. Try the CLI, API, computer use and docs first and list those attempts in `tried`. With kind: \'page\' and the whole document in `html`, this parks on an agent-authored web page — you build the form, they fill it in, and this call returns their submission when it arrives (no monitor, no polling).',
     inputSchema: askSchema,
   },
   {
@@ -380,9 +386,11 @@ function draftText(ask) {
 
 async function createAsk(kind, args, identity) {
   const project = identity.UNBLOCK_PROJECT || undefined
+  // An explicit `kind` in the arguments wins, so a page ask can be filed with either tool.
+  const { kind: requestedKind, ...rest } = args
   return daemonFetch('/asks', {
     method: 'POST',
-    body: JSON.stringify({ ask: { project, ...args, kind }, origin: origin(identity) }),
+    body: JSON.stringify({ ask: { project, ...rest, kind: requestedKind || kind }, origin: origin(identity) }),
   })
 }
 
@@ -418,7 +426,21 @@ export class McpConnection {
         }
         throw error
       }
-      return textResult(`Filed ${ask.ticket}. Keep working; call unblock_check later.`, { ticket: ask.ticket })
+      // A filed ask needs something WATCHING it: pane-wake.js is the process that
+      // delivers the answer into this pane, and it is spawned from a registry entry naming
+      // the pane. Nothing created one for an MCP-filed ask, so the answer could sit in the
+      // queue while the agent waited — which is why the contract promises the answer arrives
+      // without any agent-side monitor. A failure here must never lose the ask: it is filed
+      // already, and unblock_check still collects it.
+      let delivery = ''
+      if (identity?.HERDR_PANE_ID) {
+        try {
+          register(ask.ticket, String(identity.HERDR_PANE_ID), 'filed')
+          watcher(ask.ticket)
+          delivery = ' Your answer will be delivered into this pane.'
+        } catch { /* filed either way; unblock_check still works */ }
+      }
+      return textResult(`Filed ${ask.ticket}. Keep working; call unblock_check later.${delivery}`, { ticket: ask.ticket })
     }
 
     if (name === 'unblock_keep') {

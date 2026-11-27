@@ -15,7 +15,16 @@ export { LEVELS }
 
 export const FIELD_TYPES = ['text', 'secret', 'choice', 'confirm', 'paste']
 
-export const ASK_KINDS = ['file', 'park']
+export const ASK_KINDS = ['file', 'park', 'page']
+
+/**
+ * A page ask carries an agent-authored HTML document INSTEAD of fields: the page is the
+ * question, so there is nothing for the field validator to check and nothing for the
+ * answer path to match by name. The cap is generous because the page may hold inline
+ * data visualisations or embedded artefacts, and small enough that the ask row stays a
+ * row rather than a document store.
+ */
+export const MAX_PAGE_HTML = 256 * 1024
 
 /**
  * Why the agent is asking. The test is: does the agent already know what
@@ -363,6 +372,14 @@ export function validateAsk(raw) {
   }
   const purpose = raw.purpose ?? 'blocker'
   enumValue('kind', raw.kind ?? 'file', ASK_KINDS)
+  const isPage = (raw.kind ?? 'file') === 'page'
+  if (isPage) {
+    if (raw.fields !== undefined && !(Array.isArray(raw.fields) && raw.fields.length === 0)) {
+      fail('fields', 'omitted for a page ask; the page is the question')
+    }
+    if (typeof raw.html !== 'string' || raw.html.trim() === '') fail('html', 'the HTML the human will see')
+    else if (raw.html.length > MAX_PAGE_HTML) fail('html', `at most ${MAX_PAGE_HTML} characters of HTML`)
+  }
   enumValue('purpose', purpose, ASK_PURPOSES)
   if (raw.level !== undefined) enumValue('level', raw.level, LEVELS)
   string('title', raw.title, MAX_TITLE)
@@ -421,7 +438,7 @@ export function validateAsk(raw) {
       }
       check(() => approvalData({ ...raw, fields: undefined }, approvalPurpose))
     }
-  } else {
+  } else if (!isPage) {
     if (!Array.isArray(raw.fields) || !raw.fields.length || raw.fields.length > MAX_FIELDS) fail('fields', `1 to ${MAX_FIELDS} field objects`)
     if (Array.isArray(raw.fields)) {
       const seen = new Set()
@@ -544,8 +561,11 @@ function validateAskFirst(raw) {
   // origin (workspace, repo, cwd) for grouping, so old clients keep working.
   const project = optionalStr(raw.project, 'project', { max: 64 })
 
-  const inputFields = APPROVAL_PURPOSES.includes(purpose) ? approvalFields(purpose) : raw.fields
-  if (!Array.isArray(inputFields) || inputFields.length === 0) {
+  const isPageAsk = (raw.kind ?? 'file') === 'page'
+  const inputFields = APPROVAL_PURPOSES.includes(purpose)
+    ? approvalFields(purpose)
+    : (isPageAsk ? [] : raw.fields)
+  if (!isPageAsk && (!Array.isArray(inputFields) || inputFields.length === 0)) {
     throw new ValidationError('an ask needs at least one field — say what you need', 'fields')
   }
   if (inputFields.length > MAX_FIELDS) {
@@ -627,6 +647,7 @@ function validateAskFirst(raw) {
     closes_on: closes_on?.length ? closes_on : undefined,
     kind,
     purpose,
+    html: isPageAsk ? raw.html : undefined,
     only_you,
     tried,
     project,

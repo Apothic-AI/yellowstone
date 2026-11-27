@@ -191,6 +191,37 @@ Writing it:
 When you tell the human about an ask, send the title and its one link, nothing
 else. Do not repeat the questions in chat.
 
+## Page asks (kind: page)
+
+When the answer needs more than fields — a form of your own design, formatted
+context, an image, a chart, a link out, an embedded artefact — file a PAGE ask:
+you write the whole page, the human answers on it, and the submission is the
+answer. `unblock_park` with `kind: "page"` holds until it arrives and returns it;
+`unblock_file` with `kind: "page"` files it and delivers the answer into your pane
+when it comes. Neither needs a monitor of yours.
+
+```json
+{ "kind": "page", "purpose": "decision", "title": "Pick the rollout plan",
+  "project": "checkout", "why": "Two plans, one call.",
+  "html": "<!doctype html><form method=post action=submit enctype=multipart/form-data>…" }
+}
+```
+
+The contract for `html`:
+
+- It is a document you own: write the markup, the styles and any script you like.
+- Forms post back automatically. Use a RELATIVE action with multipart encoding:
+  `<form method="post" action="submit" enctype="multipart/form-data">`. Any input
+  names are accepted, because you invented them and only you can read them back.
+  File inputs work; attachments arrive in the answer as `_attachments`.
+- A form with no `action` posts to the page URL itself, which is also accepted.
+- The page runs in a sandboxed iframe: forms and scripts work, but there is no
+  top-level navigation and no same-origin access to the daemon. A link that must
+  open elsewhere needs `target="_blank"`.
+- Cap: 256 KB of HTML. Nothing in the submission is validated for you — whatever
+  the page posts is recorded as the answer — so name your inputs well, because
+  those names are the shape of what comes back.
+
 ## While they answer
 
 Every keystroke drafts to the daemon. `unblock_peek {ticket}` (or `unblock peek

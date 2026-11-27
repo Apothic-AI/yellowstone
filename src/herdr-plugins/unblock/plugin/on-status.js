@@ -3,7 +3,7 @@
 import { readFileSync } from 'node:fs'
 import { api } from './paths.js'
 import { paneOrigin, notify } from './herdr.js'
-import { entries, plainify, register, remove, request } from '../hooks/lib.js'
+import { entries, plainify, register, remove, request, watcher } from '../hooks/lib.js'
 import { validateAsk } from '../src/schema.js'
 
 const event = readEvent()
@@ -66,6 +66,12 @@ try {
   validateAsk(ask)
   const filed = await api('/api/asks', { ask, origin: { ...origin, agent, detected: true, kind: process.env.UNBLOCK_ORIGIN_KIND } })
   register(filed.ticket, String(paneId), 'detected')
+  // Registering is only half of the wake path: pane-wake.js is the process that
+  // delivers the answer into the pane, and NOTHING spawned it for an ask filed this
+  // way. The Claude hooks call watcher() after register(); this path did not, so an
+  // ask detected here was answered into a registry entry that nobody was reading and
+  // the agent waited for a delivery that never came. Spawn it here too.
+  watcher(filed.ticket)
 } catch {
   // Never let a hook failure disturb the session.
 }

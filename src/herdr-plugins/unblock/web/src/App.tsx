@@ -6,6 +6,7 @@ import { ago, askKind, groupOf, hideProducts, projectCounts, sortAsks, todayAsks
 import { Icon } from './icons'
 import { ChipText, PlainText } from './ChipText'
 import { SoloCard, type SendRecovery } from './SoloCard'
+import { PageAsk } from './PageAsk'
 import { TalkButton, VoiceBar } from './VoiceBar'
 import type { TranscriptLine, VoiceState } from './lib/voice-live'
 import { prepareAudio } from './lib/voice-audio'
@@ -480,6 +481,11 @@ export default function App() {
                 <i style={{ width: `${((currentIndex + 1) / asks.length) * 100}%` }} />
               </div>
             )}
+            {selected.kind === 'page' ? (
+              // A page ask has no fields: the agent wrote the whole surface, so the card is a
+              // frame around its HTML rather than a form of ours.
+              <PageAsk key={selected.ticket} ask={selected} onFinished={() => finish(selected.ticket)} />
+            ) : (
             <SoloCard
               key={selected.ticket} ask={selected}
               onFinished={() => finish(selected.ticket)} onReload={load}
@@ -489,6 +495,7 @@ export default function App() {
               onVoiceDetailsApplied={consumeVoiceDetails} onVoiceFillApplied={consumeVoiceFill}
               voiceCallActive={voiceState?.name === 'connecting' || voiceState?.name === 'listening' || voiceState?.name === 'speaking'}
             />
+            )}
           </section>
         </main>
       ) : showAnswered ? (

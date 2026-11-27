@@ -49,12 +49,14 @@ export interface Field {
 export interface Ask {
   ticket: string
   revision: number
-  kind: 'file' | 'park'
+  kind: 'file' | 'park' | 'page'
   purpose: 'blocker' | 'decision' | 'question' | 'consent' | 'spend' | 'message' | 'permission'
   gating: boolean
   status: string
   title: string
   why: string
+  /** Present only for kind 'page': the agent-authored HTML the human answers on. */
+  html?: string
   project?: string
   fields: Field[]
   steps?: string[]
