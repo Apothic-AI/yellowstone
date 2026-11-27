@@ -55,6 +55,16 @@ research/*
 # added afterwards is missing from both the copy and its manifest. That second question needs a set
 # comparison of manifest paths against `find` output (comm on the sorted lists), and it is the one whose
 # absence is silent. Snapshot last extended 2026-11-27.
+#
+# A snapshot's coverage gap runs AGAINST file age, in the worst direction: the newest notes are exactly
+# the ones a snapshot cannot include, and version control only covers the two deliberately published
+# files (three of the four that were missing were untracked), so the least-copied work is the newest
+# work. '132 OK' was true and reassuring while the four newest files were unprotected — a file missing
+# from the list cannot weaken a check over the list, so the report gets stronger as the gap widens.
+#
+# That gap also cannot be re-measured once it is closed: after the copy includes the new files, a count
+# of copies outside this tree reflects the fix rather than the risk. Record coverage as of a snapshot
+# date, and re-run the comparison when the snapshot is extended — do not re-derive it from the tree later.
 
 # Python bytecode from the overlord tools, created by merely running them
 __pycache__/
