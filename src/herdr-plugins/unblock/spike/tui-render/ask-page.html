@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Pick the rollout window</title>
+<style>
+  :root { color-scheme: dark; }
+  body { font: 16px/1.45 system-ui, -apple-system, sans-serif; margin: 0; padding: 24px;
+         background: #0b0f14; color: #e6edf3; }
+  h1 { font-size: 20px; margin: 0 0 6px; }
+  p.note { color: #9aa7b6; margin: 0 0 8px; }
+  label { display: block; margin: 18px 0 6px; color: #c9d5e1; }
+  input[type=text] { width: 420px; padding: 14px 16px; font-size: 16px;
+         border: 2px solid #2d3a4a; border-radius: 8px; background: #111823; color: #fff; }
+  input[type=text]:focus { outline: none; border-color: #2f81f7; }
+  button { margin-top: 20px; padding: 16px 28px; font-size: 16px; border: 0;
+         border-radius: 8px; background: #2f81f7; color: #fff; }
+</style>
+</head>
+<body>
+<h1>Pick the rollout window</h1>
+<p class="note">Spike page: one field, one button. Its geometry is fixed so a click has a known target.</p>
+<form method="post" action="submit" enctype="multipart/form-data">
+  <label for="when">Window (free text)</label>
+  <input id="when" name="when" type="text" autofocus placeholder="e.g. Tuesday 02:00 UTC">
+  <button type="submit">Send answer</button>
+</form>
+</body>
+</html>
