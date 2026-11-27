@@ -27,6 +27,7 @@ SPACES=(
   "self-improvement:Documents/Fleet"
   "sysops:.sysops"
   "personal:Documents/Personal"
+  "pleroma:Unity/Projects/Pleroma"
 )
 
 is_declared() {  # $1 = path relative to home/, e.g. .overlord/AGENTS.md
