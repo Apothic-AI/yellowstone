@@ -45,6 +45,16 @@ npm-debug.log*
 research/*
 !research/si-into-yellowstone-merge-plan.md
 !research/tui-render-spike-findings.md
+#
+# These rules change what `git status` ANSWERS, so it is no longer the instrument for 'is there
+# untracked research output?' — it returns a confident zero for that question whether the tree is
+# empty or merely ignored. The instruments that do answer it:
+#   enumerate:  find research/ -type f
+#   integrity:  (cd ~/.local/state/yellowstone/research-sole-copies-<stamp> && sha256sum -c MANIFEST.sha256)
+# The second answers 'is the copy intact', NOT 'is every live note copied': it is a snapshot, so a note
+# added afterwards is missing from both the copy and its manifest. That second question needs a set
+# comparison of manifest paths against `find` output (comm on the sorted lists), and it is the one whose
+# absence is silent. Snapshot last extended 2026-11-27.
 
 # Python bytecode from the overlord tools, created by merely running them
 __pycache__/
