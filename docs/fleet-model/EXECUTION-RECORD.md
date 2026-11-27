@@ -7357,3 +7357,18 @@ caught a false STALE; and a malformed test was caught only because it contradict
 beside it. An absent tell cannot be found by attention at all — it can only be found by disagreement. Two
 instruments that agree are evidence only if their failures are INDEPENDENT; two that disagree are the only
 way a silent error ever surfaces.
+
+**Rule 4 has a second class, and it is the one nobody re-checks: a number that is CORRECT while the pattern
+that produced it is narrower than the noun it names.** The four zeros above are wrong or uncheckable.
+`grep -cE '^## §'` returning 11 against 168 `##` headings is arithmetically correct and narrower than the
+noun — a subset of the same headings — so a true value arrives wearing a false one's clothes, near enough to
+a contradiction that a careful reader reports it as one. Nobody is motivated to re-check a number that
+agrees with expectation, or to widen a pattern that produced a plausible count, which is why this class
+survives the attention that catches the others.
+
+**And the rule applies to the instrument used to record the claim.** A recorded magnitude — a line count, a
+byte count, a hash — is a claim whose value changes on every legitimate edit, so a record line stating one
+is true when written and false within the hour; updating it feels like maintenance and deleting it feels
+like loss, which is why the third revision is still a confident lie. Name the STABLE REFERENT instead — the
+commit that carries the change — and give the command that produces the rest. A section commit does not
+move; a byte count always does.
