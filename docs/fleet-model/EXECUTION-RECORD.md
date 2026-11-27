@@ -7347,3 +7347,13 @@ when it is wrong — not in proportion to how confidently it reports. Each rule 
 satisfied while the object it described was not the object the operation used, and in each case the tell
 was *absent* rather than *contradicting* — which is why none of them could be caught by reading the output
 more carefully.
+
+**The operational form of that property: a claim is checkable only if a second instrument can contradict
+it.** Every catch recorded above was a second instrument, and none was a harder look — the hash caught the
+bad restore, a narrower pattern (`^## §`, which matches 11 of the 168 `##` headings) caught a count that
+looked like news, because a pattern is part of the number and the narrower one measured a subset of the
+same noun; a filtered re-query caught a `ps | grep` that matched its own command line; a session mtime
+caught a false STALE; and a malformed test was caught only because it contradicted the `sha256` printed
+beside it. An absent tell cannot be found by attention at all — it can only be found by disagreement. Two
+instruments that agree are evidence only if their failures are INDEPENDENT; two that disagree are the only
+way a silent error ever surfaces.
