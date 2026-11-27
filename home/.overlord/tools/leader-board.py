@@ -370,6 +370,7 @@ def held_rows(doc: dict) -> list[dict]:
             "goal_elapsed": None,
             "ctx": None,            # never 0.0%: nothing was read
             "session_bytes": None,  # never 0: no session was opened
+            "session_age": None,    # never 0: no session was opened
             "mode": None, "profile": None, "rooms": None, "model": None, "thinking": None,
             "why": [f"{reason} — identity and content withheld by policy; the row "
                     f"is listed so a held lane cannot vanish from the board"],
@@ -404,6 +405,14 @@ def collect() -> list[dict]:
             session_bytes = os.path.getsize(session_path) if session_path else None
         except OSError:
             session_bytes = None
+        # The progress signal: how long since this lane last WROTE to its session.
+        # A wedged lane's session mtime freezes; a lane in a long legitimate turn
+        # keeps writing. Time-in-status alone cannot tell those apart, so it is
+        # never used alone -- see the STALE note below.
+        try:
+            session_age = int(time.time() - os.path.getmtime(session_path)) if session_path else None
+        except OSError:
+            session_age = None
         def nested(value, *keys):
             for key in keys:
                 if isinstance(value, dict):
@@ -437,6 +446,7 @@ def collect() -> list[dict]:
             "goal_elapsed": int(goal_state["elapsed_s"]) if isinstance(goal_state, dict) and isinstance(goal_state.get("elapsed_s"), (int, float)) else None,
             "ctx": field_value(lane, "T-3"),
             "session_bytes": session_bytes,
+            "session_age": session_age,
             **rig,
             "why": [w for w in (field_why(lane, code) for code in
                                 ("H-5", "G-1", "T-1", "T-2", "T-3", "M-1", "M-3", "M-5", "P-5")) if w],
@@ -612,8 +622,23 @@ def render(rows: list[dict], freshness_secs: int, ctx_reset: float = CTX_RESET) 
             notes.append(note)
         # The wedge signal: held in `working` past the threshold. Any other
         # status sitting still is correct behaviour and must not be flagged.
+        #
+        # Time-in-status cannot separate a wedge from a long turn: both stay in
+        # `working` for as long as they last, so the threshold is a PROXY and on its
+        # own it manufactures a false positive on every legitimately long turn. It
+        # therefore only RAISES the question; the session's mtime answers it. A
+        # wedged lane stops writing, a working lane does not. When the session is
+        # advancing the row says `long-run` and names how long ago it wrote, so the
+        # reader is handed a measurement rather than a verdict -- and STALE keeps the
+        # meaning it was built for. An unreadable session falls back to the old
+        # (stricter) reading, because "I could not check" must never look healthy.
         if row["status"] == "working" and (row.get("secs") or 0) >= freshness_secs:
-            notes.append(f"STALE>{human(freshness_secs)}")
+            age = row.get("session_age")
+            if age is None or age >= freshness_secs:
+                why = "" if age is None else f" (no session write {human(age)})"
+                notes.append(f"STALE>{human(freshness_secs)}{why}")
+            else:
+                notes.append(f"long-run {human(row['secs'])} (wrote {human(age)} ago)")
         if row.get("resumed"):
             notes.append("resumed")
         if row.get("changed") and not row.get("resumed"):
