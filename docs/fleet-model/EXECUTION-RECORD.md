@@ -7284,3 +7284,66 @@ builds. The five in the same shape:
 **Guard:** apply the rule's own test to the rule — name the measurement that would show you have over-corrected,
 and check it exists. A reflex warning is not a licence to invert the reflex; the instruction is *check which
 builds differ*, not *assume they do not*.
+
+## §58 — Instruments that cannot lie quietly (2026-11-27)
+
+Seven rules from a night spent measuring a new feature, its renderer, and the guards in front of both.
+§57 states the obligations a claim carries — re-read the target, avoid magnitudes, state the term, name
+the falsifier. This section states what follows when an instrument is *load-bearing*: a check is itself a
+claim, and its failure modes are asymmetric, because the ones that matter are the ones that report green.
+
+**1. A check names every object the operation touches — the operand list, not just the pair.**
+A `sha256` taken before a transform and after it was compared and satisfied, and then the *restore* read
+`/tmp/daemon.bak` — an object no hash ever described. The pair was green while the operation was wrong.
+The failure mode is a pair silently extended to a triple: enumerate what the operation touches, and require
+the check to name each one.
+
+**2. Three questions need three instruments.** A hash answers *did anything change*; a diff answers *did
+the right thing change*; a recorded expected value answers *is it right*. None substitutes for another.
+The hash is what caught a restore from a stale backup; the diff is what said which version had been
+restored to. Both were needed, and neither alone would have found the fault.
+
+**3. An identity needs its epoch, and the epoch must be a field.** `(pid, starttime)` is unique only
+within one boot — `starttime` counts ticks since boot — so identity across a reboot needs the epoch, and
+`/proc/sys/kernel/random/boot_id` is that epoch as a *field* rather than as prose in a footnote, which is
+what stops it being forgotten separately from the identity. An instruction to state the epoch goes stale;
+a value carried by the same command that produces the identity does not.
+
+**4. A zero has three terms: the query, the population, and the window.** They fail differently. A missing
+query gives a wrong number — you counted something else, and it usually looks wrong. A missing population
+gives a right number about the wrong set, which at least has a discoverable denominator. A missing window
+gives a right number about the right set at an *unknown time*: correct in every other respect, and
+therefore producing no signal at all. That is why the window is the one that drops — the query is what you
+typed, the population is what you chose, the window is what happened to you, and nobody thinks to name a
+circumstance. The instance is recorded: four confident zeros in one session — a legend line, a JSON list
+shape, a success grep, and a `ps | grep` that matched its own command line — every number correct and not
+one of them checkable.
+
+**5. A guard's branches fail asymmetrically: a broken DENY is loud, a broken ALLOW is silent.** The branch
+to test on purpose is the one that says yes, because a deny's failure surfaces within a minute and an
+allow's failure surfaces as everything continuing to work — including the thing that should have been
+refused. Measured: an origin guard whose only exercised branch was *absent → allow*, because every test
+fetched with no `Origin` header at all. A real browser then posted `Origin: null` — what a CSP-`sandbox`ed
+document can only ever send — and was refused 403. The suite was green **by construction**: no header-less
+client can reach the branch that reads the header, so no amount of re-running could have found it.
+
+**6. Make the allowance the data, and generate its boundary from it.** Near misses written by hand inherit
+the author's memory, and the person who widens an alternation is precisely the person not thinking about
+its edge. So the permitted set is exported, the guard's regex is built from it, and the test derives both
+the permitted probes and their near misses from that same list — a new suffix brings its own boundary cases
+by construction. The set is additionally pinned against its literal, so widening the *allow* fails loudly,
+and the assertion text says which kind of failure it is (*adding one is a security change*) — the message
+is the triage instruction, not a complaint.
+
+**7. A failed stage behind a green successor is invisible.** An edit ran `sed 's|…|…|'` whose delimiter
+clashed with the `|` inside the pattern; sed did nothing, the file was unchanged, and the test passed — on
+an unmodified file. A failed stage followed by a green stage reads exactly like a successful check; it is
+the PIPESTATUS family in new clothes. The repair is to capture the stage's own status, or to hash the target
+before and after; and when validating an instrument against a known-bad state, assert that the known-bad
+state *took effect* before trusting either colour.
+
+**The property underneath all seven:** an instrument is trustworthy in proportion to how loudly it fails
+when it is wrong — not in proportion to how confidently it reports. Each rule above is a check that was
+satisfied while the object it described was not the object the operation used, and in each case the tell
+was *absent* rather than *contradicting* — which is why none of them could be caught by reading the output
+more carefully.
