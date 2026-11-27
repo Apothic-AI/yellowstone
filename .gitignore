@@ -29,3 +29,22 @@ Thumbs.db
 # Node, if anyone runs a tool here
 node_modules/
 npm-debug.log*
+
+# research/ is sole-copy working notes, not a publication channel. Only deliberately published
+# findings are tracked; everything else stays on disk (a verified safety copy lives outside the
+# publication tree). Rules make the accident unavailable rather than relying on remembering not to
+# 'git add -A' a 21 MB tree.
+#
+# It MUST be 'research/*' and not 'research/': git never descends into an ignored DIRECTORY, so with
+# 'research/' every negation below is inert (measured in a throwaway repo: 'research/' matched even
+# the file named by a following '!research/keep.md'). Matching the contents instead lets a negation
+# through, which is what makes publishing a finding a one-line change.
+#
+# A negated file inside a SUBDIRECTORY needs its directory re-included first ('!research/<dir>/'
+# before '!research/<dir>/<file>'); a bare nested negation stays ignored.
+research/*
+!research/si-into-yellowstone-merge-plan.md
+!research/tui-render-spike-findings.md
+
+# Python bytecode from the overlord tools, created by merely running them
+__pycache__/
