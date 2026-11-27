@@ -255,9 +255,28 @@ function isLoopbackHost(req) {
   return host === HOST || host === 'localhost' || host === '::1'
 }
 
+/**
+ * The page-ask surfaces a CSP-sandboxed document is allowed to post to. A sandboxed
+ * document has an OPAQUE origin, so a form it submits carries `Origin: null` — and the
+ * sandbox is the point: it is what stops an agent-authored page from reading this origin.
+ * Missing the consequence would have made every real page ask unanswerable, which no
+ * header-less test noticed (measured: a browser's POST to /submit arrived as null and was
+ * refused 403 while the same POST without an Origin header passed).
+ */
+function isSandboxedSubmitPath(req) {
+  if (req.method !== 'POST') return false
+  const path = String(req.url || '').split('?')[0]
+  return /\/api\/asks\/[^/]+\/(?:page|page\.html|submit)$/.test(path)
+}
+
 function validateOriginHeader(req, port) {
   const origin = req.headers.origin
   if (!origin) return true
+  // `null` is only ever a sandboxed (or file://) document, and a form post cannot set an
+  // Authorization header, so a null-origin request here is either carrying the per-ticket
+  // link token in its path or is already past the bearer check above. Every other route
+  // keeps the same-origin rule.
+  if (origin === 'null') return isSandboxedSubmitPath(req)
   try {
     const parsed = new URL(origin)
     if (parsed.protocol === 'http:' && parsed.hostname === HOST && parsed.port === String(port)) {

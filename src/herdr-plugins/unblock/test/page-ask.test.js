@@ -174,3 +174,45 @@ test('a scoped link renders the agent page directly, and answers it without the 
   }
 })
 
+
+test('a sandboxed page posts as Origin: null and is accepted; a foreign origin is not', async () => {
+  const daemon = await startDaemon({ port: 0 })
+  const base = `http://127.0.0.1:${daemon.port}`
+  try {
+    const filed = await file(base, pageAsk({ title: 'Null origin' }))
+    const ticket = filed.body.ticket
+    const minted = await json(base, '/api/links', { method: 'POST', body: JSON.stringify({ ticket }) })
+    const token = minted.body.token
+    const submit = `${base}/u/${token}/api/asks/${ticket}/submit`
+
+    // The guard still refuses a page from somewhere else.
+    const foreign = await fetch(submit, {
+      method: 'POST',
+      headers: { Origin: 'http://evil.example', 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'plan=stolen',
+    })
+    assert.equal(foreign.status, 403, 'a foreign origin is refused')
+
+    // A CSP-sandboxed document has an opaque origin, so this is the ONLY Origin a real
+    // browser can send from the page we serve. Refusing it made every page ask unanswerable
+    // while every header-less test passed.
+    const form = new FormData()
+    form.set('plan', 'null-origin')
+    const accepted = await fetch(submit, { method: 'POST', headers: { Origin: 'null' }, body: form })
+    assert.equal(accepted.status, 200)
+    const after = await json(base, `/api/asks/${ticket}`)
+    assert.equal(after.body.status, 'answered')
+    assert.equal(after.body.answers.plan, 'null-origin')
+
+    // The allowance is narrow: a null origin anywhere else is still refused.
+    const elsewhere = await fetch(`${base}/api/asks`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: 'null', ...auth },
+      body: JSON.stringify({ ask: pageAsk({ title: 'Sneaky' }) }),
+    })
+    assert.equal(elsewhere.status, 403, 'null is only accepted on the page-ask submit paths')
+  } finally {
+    await daemon.close()
+  }
+})
+
