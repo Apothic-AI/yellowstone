@@ -13,7 +13,7 @@ process.env.UNBLOCK_STATE_DIR = stateDir
 process.env.UNBLOCK_CONFIG_DIR = join(stateDir, 'config')
 process.env.UNBLOCK_SECRET_BACKEND = 'env'
 
-const { startDaemon, loadOrCreateSecret } = await import('../src/daemon.js')
+const { startDaemon, loadOrCreateSecret, SANDBOXED_SUBMIT_SUFFIXES } = await import('../src/daemon.js')
 const authSecret = loadOrCreateSecret()
 const auth = { Authorization: `Bearer ${authSecret}` }
 
@@ -204,16 +204,30 @@ test('a sandboxed page posts as Origin: null and is accepted; a foreign origin i
     assert.equal(after.body.status, 'answered')
     assert.equal(after.body.answers.plan, 'null-origin')
 
-    // The allowance is a PATH REGEX, so its BOUNDARY is what can widen silently: the next
-    // person to add a suffix to that alternation widens the hole and no accepted-URL assertion
-    // notices. Pin the near misses, one step off each permitted suffix.
-    for (const near of ['draft', 'page.htmlx', 'submit/extra', 'answer']) {
-      const refused = await fetch(`${base}/u/${token}/api/asks/${ticket}/${near}`, {
-        method: 'POST',
-        headers: { Origin: 'null', 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: 'a=1',
-      })
-      assert.equal(refused.status, 403, `null is refused one step off the submit paths: ${near}`)
+    // The permitted surface is pinned as DATA. Widening it has to touch this line, which is the
+    // only thing that makes a widening visible in review: a hand-written list of near misses
+    // inherits the author's memory, and the person who widens the alternation is precisely the
+    // person not thinking about its edge.
+    assert.deepEqual([...SANDBOXED_SUBMIT_SUFFIXES], ['page', 'page.html', 'submit'],
+      'the sandboxed submit surface is exactly these suffixes; adding one is a security change')
+
+    // The boundary is GENERATED from that same list, so a new suffix brings its own near misses
+    // by construction rather than by anyone remembering to write them.
+    const boundary = await file(base, pageAsk({ title: 'Boundary' }))
+    const boundaryTicket = boundary.body.ticket
+    const boundaryToken = (await json(base, '/api/links', {
+      method: 'POST', body: JSON.stringify({ ticket: boundaryTicket }),
+    })).body.token
+    const probe = (suffix) => fetch(`${base}/u/${boundaryToken}/api/asks/${boundaryTicket}/${suffix}`, {
+      method: 'POST',
+      headers: { Origin: 'null', 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'a=1',
+    })
+    for (const suffix of SANDBOXED_SUBMIT_SUFFIXES) {
+      assert.notEqual((await probe(suffix)).status, 403, `null is permitted on ${suffix}`)
+      for (const near of [`${suffix}x`, `${suffix}/extra`]) {
+        assert.equal((await probe(near)).status, 403, `null is refused one step off ${suffix}: ${near}`)
+      }
     }
 
     // And the allowance is narrow: a null origin anywhere else is still refused.

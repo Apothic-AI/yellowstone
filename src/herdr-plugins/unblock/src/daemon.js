@@ -263,10 +263,23 @@ function isLoopbackHost(req) {
  * header-less test noticed (measured: a browser's POST to /submit arrived as null and was
  * refused 403 while the same POST without an Origin header passed).
  */
+/**
+ * The suffixes a CSP-sandboxed page may post to. This array is the SOURCE OF TRUTH for the
+ * guard and for the test that pins its boundary: widening the allowance is then a one-line
+ * edit a reviewer sees, and the boundary cases are GENERATED from the list rather than
+ * remembered by whoever widened it — the person who widens a regex is precisely the person
+ * not thinking about its edge.
+ */
+export const SANDBOXED_SUBMIT_SUFFIXES = Object.freeze(['page', 'page.html', 'submit'])
+
+const escapeSuffix = (suffix) => suffix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const SANDBOXED_SUBMIT_PATH = new RegExp(
+  `/api/asks/[^/]+/(?:${SANDBOXED_SUBMIT_SUFFIXES.map(escapeSuffix).join('|')})$`,
+)
+
 function isSandboxedSubmitPath(req) {
   if (req.method !== 'POST') return false
-  const path = String(req.url || '').split('?')[0]
-  return /\/api\/asks\/[^/]+\/(?:page|page\.html|submit)$/.test(path)
+  return SANDBOXED_SUBMIT_PATH.test(String(req.url || '').split('?')[0])
 }
 
 function validateOriginHeader(req, port) {
