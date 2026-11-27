@@ -841,6 +841,12 @@ async function submitAskPage(req, res, ask, answeredVia) {
     const scopedAsk = link.ask_id ? store.get(link.ask_id) : null
 
     if (tail === '' && req.method === 'GET') {
+      // A page ask needs no panel: a scoped link renders the agent's own page, so the
+      // human can answer from a plain link with no React build in the way. Every other
+      // kind still gets the panel, which is what a queue view needs.
+      if (scopedAsk?.kind === 'page') {
+        return serveAskPageShell(res, scopedAsk, `/u/${encodeURIComponent(token)}/api/asks/${encodeURIComponent(scopedAsk.ticket)}/`)
+      }
       return servePanel(res, token, null)
     }
 

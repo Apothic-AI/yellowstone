@@ -137,3 +137,40 @@ test('a page ask is rejected without html, or when it carries fields', async () 
     await daemon.close()
   }
 })
+
+test('a scoped link renders the agent page directly, and answers it without the panel', async () => {
+  const daemon = await startDaemon({ port: 0 })
+  const base = `http://127.0.0.1:${daemon.port}`
+  try {
+    const filed = await file(base, pageAsk({ title: 'Answer me from a link' }))
+    const ticket = filed.body.ticket
+    const minted = await json(base, '/api/links', {
+      method: 'POST',
+      body: JSON.stringify({ ticket }),
+    })
+    assert.equal(minted.response.status, 201, JSON.stringify(minted.body))
+    const token = minted.body.token
+
+    // The link opens the agent page itself, not the React panel: the panel is not built
+    // in a checkout, and a page ask must not depend on that build to be answerable.
+    const opened = await fetch(`${base}/u/${token}`)
+    assert.equal(opened.status, 200)
+    const openedText = await opened.text()
+    assert.match(openedText, /sandbox="allow-forms allow-scripts"/, 'the link serves the page shell')
+    assert.doesNotMatch(openedText, /id="root"/, 'and not the panel shell')
+    assert.match(openedText, new RegExp(`/u/${token}/api/asks/${ticket}/page\\.html`), 'the iframe stays under the token')
+
+    // A form with no action posts to the page URL, which is under the token too.
+    const form = new FormData()
+    form.set('decision', 'go with plan B')
+    const submitted = await fetch(`${base}/u/${token}/api/asks/${ticket}/page`, { method: 'POST', body: form })
+    assert.equal(submitted.status, 200)
+    const after = await json(base, `/api/asks/${ticket}`)
+    assert.equal(after.body.status, 'answered')
+    assert.equal(after.body.answers.decision, 'go with plan B')
+    assert.equal(after.body.answered_via, 'share-link:local', 'the answer records the link it came through')
+  } finally {
+    await daemon.close()
+  }
+})
+
