@@ -15,6 +15,8 @@ import { applyConfig, daemonRoot } from './config.js'
 import { createLivedocApprovals } from './scope-approvals.js'
 import { APPROVAL_PURPOSES, normalizeOrigin, optionalScrub, validateAsk, validateUpdate, ValidationError } from './schema.js'
 import { parseSubmission } from './page-submit.js'
+import { PAGE_FILE, renderPageTemplate } from './page-template.js'
+import { resolveOembed } from './oembed.js'
 import { SecretStore } from './secrets.js'
 import { defaultReadKey, mintVoiceToken, mintXaiToken, mintOpenAiToken, buildLiveSession, connectLiveCall } from './voice-token.js'
 import { createSpendLedger, rateFor } from './voice-spend.js'
@@ -277,9 +279,25 @@ const SANDBOXED_SUBMIT_PATH = new RegExp(
   `/api/asks/[^/]+/(?:${SANDBOXED_SUBMIT_SUFFIXES.map(escapeSuffix).join('|')})$`,
 )
 
-function isSandboxedSubmitPath(req) {
-  if (req.method !== 'POST') return false
-  return SANDBOXED_SUBMIT_PATH.test(String(req.url || '').split('?')[0])
+// The page's oEmbed client fetches through the daemon from an opaque origin, so that GET is
+// null-origin too. It is named separately from the submit suffixes because it is a different
+// capability: POST writes an answer to one ask, GET returns public embed HTML for a provider
+// URL. Widening one must not silently widen the other.
+export const SANDBOXED_OEMBED_SUFFIX = 'oembed'
+const SANDBOXED_OEMBED_PATH = new RegExp(`/api/asks/[^/]+/${SANDBOXED_OEMBED_SUFFIX}$`)
+
+/** True for a request from the sandboxed page itself (its Origin is the opaque `null`). */
+function isSandboxedNullOriginPath(req) {
+  const path = String(req.url || '').split('?')[0]
+  if (req.method === 'POST') return SANDBOXED_SUBMIT_PATH.test(path)
+  if (req.method === 'GET') return SANDBOXED_OEMBED_PATH.test(path)
+  return false
+}
+
+// Tests must never touch the network; production leaves this as the global fetch.
+let oembedTransport = (url, init) => fetch(url, init)
+export function setOembedTransport(transport) {
+  oembedTransport = typeof transport === 'function' ? transport : (url, init) => fetch(url, init)
 }
 
 function validateOriginHeader(req, port) {
@@ -289,7 +307,7 @@ function validateOriginHeader(req, port) {
   // Authorization header, so a null-origin request here is either carrying the per-ticket
   // link token in its path or is already past the bearer check above. Every other route
   // keeps the same-origin rule.
-  if (origin === 'null') return isSandboxedSubmitPath(req)
+  if (origin === 'null') return isSandboxedNullOriginPath(req)
   try {
     const parsed = new URL(origin)
     if (parsed.protocol === 'http:' && parsed.hostname === HOST && parsed.port === String(port)) {
@@ -740,6 +758,35 @@ function pageAttachmentsDir(ticket) {
   return join(stateDir(), 'page-attachments', String(ticket).replace(/[^A-Za-z0-9_]/g, '_'))
 }
 
+/**
+ * The per-ask authoring directory: <state>/pages/<ticket>/. The ticket is the directory
+ * name on purpose — one identifier for the ask and its files, so there is no second id for
+ * an agent (or a human) to track or get wrong.
+ */
+function pageDir(ticket) {
+  const safe = String(ticket ?? '').replace(/[^A-Za-z0-9_]/g, '_')
+  return join(stateDir(), 'pages', safe)
+}
+
+function pageFile(ticket) {
+  return join(pageDir(ticket), PAGE_FILE)
+}
+
+/**
+ * Create the directory and its starter page. Idempotent: filing a revise or re-entering
+ * after a restart must never overwrite an agent's work, so the template is written only
+ * when the file is absent.
+ */
+function ensurePageDir(ask) {
+  const dir = pageDir(ask.ticket)
+  const file = pageFile(ask.ticket)
+  mkdirSync(dir, { recursive: true, mode: 0o700 })
+  if (!existsSync(file)) {
+    writeFileSync(file, renderPageTemplate({ title: ask.title, why: ask.why, ticket: ask.ticket }), { mode: 0o600 })
+  }
+  return { dir, file }
+}
+
 function escapeHtmlText(value) {
   return String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
 }
@@ -775,7 +822,16 @@ function serveAskPageShell(res, ask, base) {
  * running on the daemon's origin.
  */
 function serveAskPageHtml(res, ask) {
-  const body = ask.html || '<!doctype html><meta charset="utf-8"><p>This ask carries no page.</p>'
+  const file = pageFile(ask.ticket)
+  if (!existsSync(file)) {
+    return sendText(
+      res, 404,
+      '<!doctype html><meta charset="utf-8"><p>This page ask has no page yet. It is authored at ' +
+        escapeHtmlText(file) + '</p>',
+      'text/html; charset=utf-8',
+    )
+  }
+  const body = readFileSync(file)
   res.writeHead(200, {
     'Content-Type': 'text/html; charset=utf-8',
     'Content-Security-Policy': 'sandbox allow-forms allow-scripts',
@@ -783,6 +839,68 @@ function serveAskPageHtml(res, ask) {
     'Cache-Control': 'no-store',
   })
   return res.end(body)
+}
+
+const PAGE_ASSET_TYPES = Object.freeze({
+  '.html': 'text/html; charset=utf-8', '.htm': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8',
+  '.txt': 'text/plain; charset=utf-8', '.md': 'text/plain; charset=utf-8', '.csv': 'text/csv; charset=utf-8',
+  '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp',
+  '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.avif': 'image/avif',
+  '.woff': 'font/woff', '.woff2': 'font/woff2', '.ttf': 'font/ttf',
+  '.mp4': 'video/mp4', '.webm': 'video/webm', '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.pdf': 'application/pdf',
+})
+
+/**
+ * Relative assets for a page ask: the page is served at .../<ticket>/page, so a src of
+ * "chart.png" resolves to .../<ticket>/chart.png and lands here. Only KNOWN asset extensions
+ * are served, which is also what keeps this fallback from swallowing the daemon's own ticket
+ * routes (they carry no extension) - a rule that stays true when a route is added later.
+ */
+function servePageAsset(res, ask, relative) {
+  let decoded
+  try {
+    decoded = decodeURIComponent(relative)
+  } catch {
+    return notFound(res)
+  }
+  if (!decoded || decoded.includes('\u0000')) return notFound(res)
+  const dir = pageDir(ask.ticket)
+  const target = resolve(dir, decoded)
+  // The page is agent-authored and may link ../../..; the daemon must refuse to follow it.
+  if (target !== dir && !target.startsWith(dir + sep)) return notFound(res)
+  let info
+  try {
+    info = statSync(target)
+  } catch {
+    return notFound(res)
+  }
+  if (!info.isFile()) return notFound(res)
+  const type = PAGE_ASSET_TYPES[extname(target).toLowerCase()]
+  if (!type) return notFound(res)
+  const headers = { 'Content-Type': type, 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store' }
+  // A linked .html file is a document like any other: without the same sandbox it would run
+  // on the daemon's origin and could read the API.
+  if (type.startsWith('text/html')) headers['Content-Security-Policy'] = 'sandbox allow-forms allow-scripts'
+  res.writeHead(200, headers)
+  return res.end(readFileSync(target))
+}
+
+async function serveOembed(res, target) {
+  // The page's origin is OPAQUE (CSP sandbox), so its fetch is cross-origin and the browser
+  // will not hand the JSON to page script without this. Every Node-side test passed before
+  // this header existed, because Node's fetch enforces no CORS — the only instrument that
+  // could find it was a real browser. The body is public embed HTML for a provider URL, so
+  // `*` exposes nothing a caller could not fetch from the provider directly.
+  res.setHeader('Access-Control-Allow-Origin', '*')
+  if (!target) return sendJson(res, 400, { error: 'url is required', code: 'NO_URL' })
+  const result = await resolveOembed(target, { fetchImpl: oembedTransport })
+  if (!result.ok) {
+    // Unsupported is the common, expected case: the page leaves the link alone. A provider
+    // that was reachable and refused is a different answer, so it gets a different status.
+    return sendJson(res, result.reason === 'unsupported' ? 404 : 502, { error: result.reason, provider: result.provider ?? null })
+  }
+  return sendJson(res, 200, result)
 }
 
 function pageConfirmation(res, ask, parsed, status = 200) {
@@ -934,6 +1052,18 @@ async function submitAskPage(req, res, ask, answeredVia) {
       return serveAskPageShell(res, pageAsk, `/u/${encodeURIComponent(token)}/api/asks/${encodeURIComponent(pageAsk.ticket)}/`)
     }
 
+    // A share-link page resolves its relative oEmbed call and its assets under the same
+    // token-scoped ticket path, so the panel works exactly as the direct page does.
+    const scopedTicket = /^\/api\/asks\/([^/]+)\/(oembed|.+)$/.exec(tail)
+    if (scopedTicket && req.method === 'GET') {
+      const scopedId = decodeURIComponent(scopedTicket[1])
+      if (scopedAsk && scopedId !== scopedAsk.ticket) return sendJson(res, 403, { error: 'link is scoped to another ask' })
+      const scopedPageAsk = store.get(scopedId)
+      if (!scopedPageAsk || scopedPageAsk.kind !== 'page') return notFound(res)
+      if (scopedTicket[2] === 'oembed') return serveOembed(res, url.searchParams.get('url'))
+      return servePageAsset(res, scopedPageAsk, scopedTicket[2])
+    }
+
     notFound(res)
   }
 
@@ -1034,6 +1164,10 @@ async function submitAskPage(req, res, ask, answeredVia) {
       // Built panel assets carry nothing secret; the page itself is gated by
       // its link token, which is checked in handleTokenRoute.
       staticAsset(pathname) !== null ||
+      // The sandboxed page fetches its embeds from an OPAQUE origin, which sends no cookie, so
+      // this GET cannot be session-authenticated. The ticket in the path is the capability and
+      // the response is public embed HTML for a provider the table chose — never ask content.
+      (req.method === 'GET' && SANDBOXED_OEMBED_PATH.test(pathname)) ||
       pathname.startsWith('/u/')
     if (!isPublic && !relay && !isAuthorized(req, authSecret)) {
       return sendJson(res, 401, { error: 'unauthorized', code: 'UNAUTHORIZED' })
@@ -1069,6 +1203,13 @@ async function submitAskPage(req, res, ask, answeredVia) {
       }
       const ask = store.create(validateAsk(body.ask), await verifiedOrigin(origin))
       emitQueue()
+      // A page ask is authored in a directory, so filing it must hand the agent the path it
+      // will edit. The directory and the template are created here, on the daemon side, because
+      // the state dir is the daemon's to know — a client guessing it would be a second source of truth.
+      if (ask.kind === 'page') {
+        const page = ensurePageDir(ask)
+        return sendJson(res, 201, { ...ask, page: { dir: page.dir, file: page.file, ready: ask.status !== 'draft' } })
+      }
       return sendJson(res, 201, ask)
     }
 
@@ -1228,9 +1369,18 @@ async function submitAskPage(req, res, ask, answeredVia) {
     ticket = routeTicket(pathname, '/update')
     if (ticket && req.method === 'POST') {
       const body = await readJson(req)
+      const { ready, ...patch } = body
       const ask = await withTicket(ticket, () => {
-        const existing = store.get(ticket)
-        return existing ? store.update(ticket, validateUpdate(existing, body)) : null
+        let existing = store.get(ticket)
+        if (!existing) return null
+        // A page ask is filed as a draft, out of the operator's queue and unanswerable, while
+        // the agent writes the page. Marking it ready is the only way out of draft, and it is
+        // idempotent: a second make-ready is a no-op, not an error.
+        if (ready === true) existing = store.setReady(ticket) ?? existing
+        // A ready-only call is a complete update. An EMPTY one is not: it still has to reach the
+        // schema, which is what refuses it — that refusal is a contract other callers rely on.
+        if (ready === true && Object.keys(patch).length === 0) return existing
+        return store.update(ticket, validateUpdate(existing, patch))
       })
       if (!ask) return notFound(res)
       emitAsk(ask, 'updated')
@@ -1263,6 +1413,28 @@ async function submitAskPage(req, res, ask, answeredVia) {
       const ask = store.get(ticket)
       if (!ask || ask.kind !== 'page') return notFound(res)
       return submitAskPage(req, res, ask, humanVia(req) || 'page-submit')
+    }
+
+    // The page's relative oEmbed call: <ticket>/page + 'oembed' lands here. Also available
+    // bare, for anything that already holds the daemon's bearer token.
+    ticket = routeTicket(pathname, '/oembed')
+    if (ticket && req.method === 'GET') {
+      const ask = store.get(ticket)
+      if (!ask || ask.kind !== 'page') return notFound(res)
+      return serveOembed(res, url.searchParams.get('url'))
+    }
+
+    // oEmbed for anything already holding the daemon bearer token.
+    if (req.method === 'GET' && pathname === '/api/oembed') {
+      return serveOembed(res, url.searchParams.get('url'))
+    }
+
+    // Relative assets: only a path with a known asset extension, which is what keeps this
+    // fallback from swallowing the ticket routes above and any route added later.
+    const assetMatch = /^\/api\/asks\/([^/]+)\/(.+)$/.exec(pathname)
+    if (assetMatch && req.method === 'GET') {
+      const assetAsk = store.get(decodeURIComponent(assetMatch[1]))
+      if (assetAsk && assetAsk.kind === 'page') return servePageAsset(res, assetAsk, assetMatch[2])
     }
 
     ticket = routeTicket(pathname, '/events')

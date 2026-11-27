@@ -420,13 +420,16 @@ export class Store {
     const id = randomUUID()
     const ticket = newTicket()
     const created = nowMs()
+    // A page ask is authored after it is filed: it starts in draft, out of the operator's
+    // queue and unanswerable, until the agent marks it ready.
+    const status = body.kind === 'page' ? 'draft' : 'open'
     const expires = body.ttl_seconds ? created + body.ttl_seconds * 1000 : null
 
     this.#db
       .prepare(
         `INSERT INTO asks (id, ticket, kind, purpose, project, level, status, title, why, html, fields_json, steps_json,
                            links_json, tried_json, only_you, origin_json, agent_key, created_at, expires_at, plan_json, spend_json, message_json, consent_blocked_by, revision, summary, minutes, after, blocks_json, permission_json)
-         VALUES (?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
@@ -435,6 +438,7 @@ export class Store {
         body.purpose ?? 'blocker',
         body.project ?? null,
         body.level ?? null,
+        status,
         body.title,
         body.why,
         body.html ?? null,
@@ -613,6 +617,16 @@ export class Store {
    * The queue view. `profile` filters using herdr's own visibility rule;
    * pass '*' for everything. Gating asks always sort first.
    */
+  /**
+   * The draft -> open transition for a page ask. Until this runs the ask is filed but not
+   * in the operator's queue and every submit is refused: the page is still being written.
+   * Idempotent, and a no-op for anything that is not a draft page ask.
+   */
+  setReady(ticket) {
+    this.#db.prepare("UPDATE asks SET status = 'open' WHERE ticket = ? AND kind = 'page' AND status = 'draft'").run(ticket)
+    return this.get(ticket)
+  }
+
   list({ profile = '*', status = ['open', 'answered', 'bounced'], agentKey: key, includeClosed = false, project } = {}) {
     const statuses = includeClosed ? null : status
     const rows = this.#db.prepare('SELECT * FROM asks ORDER BY created_at ASC').all()

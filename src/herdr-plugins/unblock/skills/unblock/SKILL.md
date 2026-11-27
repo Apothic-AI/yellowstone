@@ -194,20 +194,39 @@ else. Do not repeat the questions in chat.
 ## Page asks (kind: page)
 
 When the answer needs more than fields — a form of your own design, formatted
-context, an image, a chart, a link out, an embedded artefact — file a PAGE ask:
-you write the whole page, the human answers on it, and the submission is the
+context, an image, a chart, a link out, an embedded artefact — file a PAGE ask.
+You do not pass HTML: the tool creates a directory for the ticket and returns its
+path, you write the page there, and the human answers on it. The submission IS the
 answer. `unblock_park` with `kind: "page"` holds until it arrives and returns it;
 `unblock_file` with `kind: "page"` files it and delivers the answer into your pane
 when it comes. Neither needs a monitor of yours.
 
 ```json
 { "kind": "page", "purpose": "decision", "title": "Pick the rollout plan",
-  "project": "checkout", "why": "Two plans, one call.",
-  "html": "<!doctype html><form method=post action=submit enctype=multipart/form-data>…" }
-}
+  "project": "checkout", "why": "Two plans, one call." }
 ```
 
-The contract for `html`:
+The call returns the ask plus the path to author:
+
+```json
+{ "ticket": "ub_ff3k9a",
+  "page": { "dir": "<state>/pages/ub_ff3k9a", "file": "<dir>/index.html", "ready": false } }
+```
+
+The flow:
+
+1. **File** with `kind: "page"`. The ask is a DRAFT: out of the human's queue and
+   not answerable. The directory and a starter `index.html` already exist, with the
+   form wired and this contract in a comment at the top of the file.
+2. **Author** by editing that file in place and putting assets in the same
+   directory. Reference them RELATIVELY (`src="chart.png"`, `href="style.css"`): the
+   daemon serves the page and every asset from the ticket directory. `curl` anything
+   you need into that directory — nothing external is fetched for you.
+3. **Mark ready** with `unblock_update {ticket, ready: true}`. Only then does it
+   enter the queue. Idempotent.
+4. **Collect** the answer like any other ask: `unblock_check`, or the park call.
+
+The page contract:
 
 - It is a document you own: write the markup, the styles and any script you like.
 - Forms post back automatically. Use a RELATIVE action with multipart encoding:
@@ -218,9 +237,15 @@ The contract for `html`:
 - The page runs in a sandboxed iframe: forms and scripts work, but there is no
   top-level navigation and no same-origin access to the daemon. A link that must
   open elsewhere needs `target="_blank"`.
-- Cap: 256 KB of HTML. Nothing in the submission is validated for you — whatever
-  the page posts is recorded as the answer — so name your inputs well, because
-  those names are the shape of what comes back.
+- **Embedding a video or a post**: put the URL in the page — inside a container
+  marked `data-embed`, or as a plain `<a href>` — and the page's oEmbed client asks
+  the daemon to resolve it server-side. YouTube, Vimeo and Twitter/X are supported;
+  a provider with no oEmbed support, or a failed fetch, leaves the link a plain
+  link. Do not hand-write embed code and do not call provider endpoints from the
+  page itself: a sandboxed document's fetches are cross-origin and get refused.
+- Nothing in the submission is validated for you — whatever the page posts is
+  recorded as the answer — so name your inputs well, because those names are the
+  shape of what comes back.
 
 ## While they answer
 

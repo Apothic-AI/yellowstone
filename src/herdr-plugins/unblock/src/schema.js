@@ -24,6 +24,8 @@ export const ASK_KINDS = ['file', 'park', 'page']
  * data visualisations or embedded artefacts, and small enough that the ask row stays a
  * row rather than a document store.
  */
+// Kept as a name for what a page MAY be, no longer a field cap: the document lives on
+// disk, not in a tool call. A page ask carries no html argument at all.
 export const MAX_PAGE_HTML = 256 * 1024
 
 /**
@@ -377,8 +379,10 @@ export function validateAsk(raw) {
     if (raw.fields !== undefined && !(Array.isArray(raw.fields) && raw.fields.length === 0)) {
       fail('fields', 'omitted for a page ask; the page is the question')
     }
-    if (typeof raw.html !== 'string' || raw.html.trim() === '') fail('html', 'the HTML the human will see')
-    else if (raw.html.length > MAX_PAGE_HTML) fail('html', `at most ${MAX_PAGE_HTML} characters of HTML`)
+    // The page is a file the daemon creates and the agent edits, so there is nothing inline
+    // to validate — and accepting html here would recreate the one-shot authoring this
+    // design replaced.
+    if (raw.html !== undefined) fail('html', 'not accepted; this tool creates the page directory and returns its path')
   }
   enumValue('purpose', purpose, ASK_PURPOSES)
   if (raw.level !== undefined) enumValue('level', raw.level, LEVELS)

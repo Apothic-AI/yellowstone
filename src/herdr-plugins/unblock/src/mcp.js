@@ -138,10 +138,9 @@ const askProperties = {
   // is a real contract, not a hint.
   purpose: { type: 'string', enum: ['blocker', 'decision', 'consent', 'spend', 'message', 'question', 'permission'], default: 'blocker' },
   // A page ask carries an agent-authored HTML page INSTEAD of fields: the page is the
-  // question. Set kind 'page' and put the whole document in `html`; the human answers on
+  // question. Set kind 'page' and the tool creates a page DIRECTORY the agent then edits; the human answers on
   // that page and the submission comes back as the answer, with no polling on your side.
-  kind: { type: 'string', enum: ['file', 'park', 'page'], description: "Usually left unset (the tool you called sets it). 'page' files an agent-authored web page as the ask and requires `html`." },
-  html: { type: 'string', maxLength: 262144, description: "The complete HTML page the human will see, for kind 'page'. Forms inside it post to the daemon automatically: use action=\"submit\" and enctype=\"multipart/form-data\", any input names, file inputs allowed. The page is sandboxed (no top navigation, no same-origin access)." },
+  kind: { type: 'string', enum: ['file', 'park', 'page'], description: "Usually left unset (the tool you called sets it). 'page' files an agent-authored web page as the ask: the tool creates a per-ticket directory with a starter index.html, returns its path, and the ask stays in draft until unblock_update ready: true." },
   // The project this ask files under — the queue page groups and filters by
   // it. One short name per workstream, reused across asks. Defaults to
   // $UNBLOCK_PROJECT when unset.
@@ -218,12 +217,12 @@ const TOOLS = [
   { name: 'unblock_keep', description: 'Keep an open ask in today’s queue and claim its liveness.', inputSchema: { type: 'object', properties: { ticket: { type: 'string' } }, required: ['ticket'] } },
   {
     name: 'unblock_file',
-    description: 'Only for what only the human can do: their credential or sign-in, a click in their own account, spend, a message to a real person, or a product call. Clicks in a signed-in site are consent asks; signing in or out is never consent. Try the CLI, API, computer use and docs first and list those attempts in `tried`. For a question that needs a richer surface than fields — a form of your own design, formatted information, media, a chart, an embedded artefact — file a PAGE ask instead: set kind: \'page\' and pass the whole document in `html`. The answer arrives through unblock_check like any other; you do not need to watch it.',
+    description: 'Only for what only the human can do: their credential or sign-in, a click in their own account, spend, a message to a real person, or a product call. Clicks in a signed-in site are consent asks; signing in or out is never consent. Try the CLI, API, computer use and docs first and list those attempts in `tried`. For a question that needs a richer surface than fields — a form of your own design, formatted information, media, a chart, an embedded artefact — file a PAGE ask instead: set kind: \'page\' set kind: \'page\'. The tool creates a per-ticket directory and a starter index.html and returns the path; edit that file in place, put assets beside it, then call unblock_update with ready: true to put it in the human\'s queue. The answer arrives through unblock_check like any other; you do not need to watch it.',
     inputSchema: askSchema,
   },
   {
     name: 'unblock_park',
-    description: 'Only for what only the human can do: their credential or sign-in, a click in their own account, spend, a message to a real person, or a product call. Clicks in a signed-in site are consent asks; signing in or out is never consent. Try the CLI, API, computer use and docs first and list those attempts in `tried`. With kind: \'page\' and the whole document in `html`, this parks on an agent-authored web page — you build the form, they fill it in, and this call returns their submission when it arrives (no monitor, no polling).',
+    description: 'Only for what only the human can do: their credential or sign-in, a click in their own account, spend, a message to a real person, or a product call. Clicks in a signed-in site are consent asks; signing in or out is never consent. Try the CLI, API, computer use and docs first and list those attempts in `tried`. With kind: \'page\' this parks on an agent-authored web page: the tool returns a directory to build it in, you call unblock_update ready: true when the page is done, and this call returns their submission when it arrives — you build the form, they fill it in, and this call returns their submission when it arrives (no monitor, no polling).',
     inputSchema: askSchema,
   },
   {
@@ -264,6 +263,9 @@ const TOOLS = [
         consent_blocked_by: askProperties.consent_blocked_by,
         // Same field shape as unblock_file, validated by the same schema — a
         // revision can never reach a shape a fresh ask could not.
+        // The draft -> ready transition for a page ask: until it is set the ask is not in
+        // the operator's queue and cannot be answered, because the page is still being written.
+        ready: { type: 'boolean', description: 'For a page ask: mark the page finished so it enters the human queue. Idempotent; ignored for other kinds.' },
         add_fields: askProperties.fields,
         remove_fields: { type: 'array', items: { type: 'string' }, maxItems: 12 },
         replace_fields: askProperties.fields,
