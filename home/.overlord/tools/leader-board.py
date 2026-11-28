@@ -387,6 +387,16 @@ def annotate_occupancy(rows: list[dict], reset: float = CTX_RESET) -> None:
         )
         row["occ_flagged"] = flagged
         row["ctx_live"] = None
+        # Two meanings, one guard — and the second is a SAFETY boundary, not a budget
+        # (swarm-7oe). occupancy_flag needs `ctx`, so a WITHHELD row can never be flagged:
+        # the roster hands a held workspace over as 59/59 fields `held`, value None,
+        # including T-3. Such a row therefore never reaches the read below. That matters
+        # because `held` is withheld at the RECORD layer only, NOT in the pane transport:
+        # `herdr agent read <pane id> --source visible` answers for a held pane. So a refactor
+        # that reads footers "for every row" — the shape this design started as — would cross
+        # the operator's held-workspace policy silently, with every test still green. Keep the
+        # read behind this predicate: test_footer_reads_are_bounded_by_the_flagged_count
+        # asserts the budget, and test_a_withheld_row_is_never_read asserts this boundary.
         if not flagged or not row.get("pane_id"):
             continue
         row["ctx_live"] = pane_footer(row["pane_id"])[3]
