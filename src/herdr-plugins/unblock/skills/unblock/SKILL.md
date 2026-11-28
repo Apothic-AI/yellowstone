@@ -187,14 +187,24 @@ Writing it:
 - `fields`: one per thing you need back. `secret` for keys (never `text`),
   `confirm` for "I did it", `choice` for real options, `text` for names and
   URLs, `paste` for output only their machine can produce.
+  For anything beyond a single question that gains nothing from a page — context
+  to show, options to compare, an answer that deserves room of its own — file a
+  page ask (see Page asks below).
 
 When you tell the human about an ask, send the title and its one link, nothing
 else. Do not repeat the questions in chat.
 
 ## Page asks (kind: page)
 
-When the answer needs more than fields — a form of your own design, formatted
-context, an image, a chart, a link out, an embedded artefact — file a PAGE ask.
+A PAGE ask is the DEFAULT for anything you put in front of the human: a form of
+your own design, formatted context, an image, a chart, a link out, an embedded
+artefact — and equally a single question whose answer deserves the room. Keep
+structured fields only for a simple single question that gains nothing from a
+page: one thing back, a name, a value, a yes. A page costs you real authoring
+effort — the ticket's page is a directory you edit, with assets to write or
+fetch — so this is a default, not a ban: spending that effort when the page
+carries the question better is the point, and reaching for fields only to skip
+it is the mistake.
 You do not pass HTML: the tool creates a directory for the ticket and returns its
 path, you write the page there, and the human answers on it. The submission IS the
 answer. `unblock_park` with `kind: "page"` holds until it arrives and returns it;
