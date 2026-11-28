@@ -2,6 +2,7 @@
 import readline from 'node:readline'
 import { api, hasSession, login } from './paths.js'
 import { activeProfile } from './herdr.js'
+import { PIXEL_APP, kittyGraphics, openPagePane, pixelHint, resolvePixel } from './open-page.js'
 import { applyKey, initialValues, missingFor, redactValue, sortAsks } from './queue-model.js'
 import { DISMISS_NOTE, levelOf } from '../src/queue-model.js'
 import { APPROVAL_PURPOSES } from '../src/schema.js'
@@ -330,9 +331,12 @@ function footerLines(width) {
   // A hidden passphrase prompt owns every key; the keymap would lie. So does
   // a dismiss confirmation, which is answered with x or anything else.
   if (passphrasePrompt || dismissPrompt) return [rule, ...line]
+  // Only a page ask has a page to open, and a chip that does nothing is worse
+  // than no chip: the list is built per-ask, so the action appears per-ask.
+  const openPageChip = ask?.kind === 'page' ? [keyChip('o', 'open page')] : []
   const keys = expanded === ask?.ticket
-    ? [keyChip('tab', 'fields'), keyChip('␣/←/→', 'answer'), keyChip('s', 'send answer'), keyChip('xx', 'dismiss'), keyChip('↑↓', 'scroll'), keyChip('esc', 'fold'), keyChip('q', 'quit')]
-    : [keyChip('j/k', 'move'), keyChip('⏎', 'open'), keyChip('xx', 'dismiss'), keyChip('↑↓', 'scroll'), keyChip('r', 'refresh'), keyChip('p', 'scope'), keyChip('l', 'link'), keyChip('q', 'quit')]
+    ? [keyChip('tab', 'fields'), keyChip('␣/←/→', 'answer'), keyChip('s', 'send answer'), ...openPageChip, keyChip('xx', 'dismiss'), keyChip('↑↓', 'scroll'), keyChip('esc', 'fold'), keyChip('q', 'quit')]
+    : [keyChip('j/k', 'move'), keyChip('⏎', 'open'), ...openPageChip, keyChip('xx', 'dismiss'), keyChip('↑↓', 'scroll'), keyChip('r', 'refresh'), keyChip('p', 'scope'), keyChip('l', 'link'), keyChip('q', 'quit')]
   return [rule, ...line, ...chipLines(keys, width)]
 }
 
@@ -595,6 +599,62 @@ async function mintLink() {
   render()
 }
 
+/**
+ * Open a page ask in a pixel pane beside the queue.
+ *
+ * Three gates, and every one of them ends by printing the link: pixel is
+ * optional (a 282 MB patched Electron, never installed by the product), kitty
+ * graphics is not universal (pixel's fallback is a half-block ANSI render of an
+ * HTML page, which this feature must never emit), and herdr may not answer.
+ * A person at a keyboard always gets something to act on.
+ */
+async function openPage() {
+  const ask = selectedAsk()
+  // Only a page ask has a page. Anything else is a no-op: no mint, no footer,
+  // nothing to explain — `o` did not fail, it does not apply.
+  if (!ask || ask.kind !== 'page') return
+  let link
+  try {
+    // Ticket-scoped, like `l` but narrowed to this ask, so the pane holds a
+    // capability for this page and nothing else. 3600s is the same hour the
+    // link key uses.
+    link = await api('/api/links', { ticket: ask.ticket, ttl_seconds: 3600 })
+  } catch (error) { writeError(error); return }
+  const pageUrl = `${link.url}/api/asks/${encodeURIComponent(ask.ticket)}/page`
+  const pixel = resolvePixel()
+  if (!pixel.path) {
+    setFooter(`${pageUrl}  ·  ${pixel.reason} — ${pixelHint()}`)
+    return render()
+  }
+  const graphics = kittyGraphics()
+  if (!graphics.supported) {
+    setFooter(`${pageUrl}  ·  page pane needs kitty graphics: ${graphics.reason}`)
+    return render()
+  }
+  busy = true
+  setFooter('opening page…')
+  render()
+  try {
+    const opened = await openPagePane({
+      url: pageUrl,
+      pixel: pixel.path,
+      app: PIXEL_APP,
+      cwd: ask.origin?.cwd || process.cwd(),
+    })
+    setFooter(
+      opened.ok
+        ? `opened page in pane ${opened.paneId} · ${pageUrl}`
+        : `${pageUrl}  ·  could not open a pane: ${opened.error}`,
+      opened.ok ? 'ok' : 'error',
+    )
+  } catch (error) {
+    setFooter(`${pageUrl}  ·  could not open a pane: ${error.message}`, 'error')
+  } finally {
+    busy = false
+    render()
+  }
+}
+
 function finishEditingSoon() {
   isEditing = true
   clearTimeout(finishEditingSoon.timer)
@@ -719,6 +779,7 @@ stdin.on('keypress', async (_text, key) => {
     fieldIndex = 0
     manualScroll = null
   } else if (key.name === 's') return void submit()
+  else if (key.name === 'o') return void openPage()
   else if (key.name === 'x') return void confirmDismiss()
   else if (key.name === 'r') return void refresh()
   else if (key.name === 'p') { profile = profile === '*' ? (activeScope || '*') : '*'; return void refresh() }

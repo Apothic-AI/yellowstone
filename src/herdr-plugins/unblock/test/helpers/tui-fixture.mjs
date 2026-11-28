@@ -28,6 +28,9 @@ export const LONG_ASK = {
 
 export async function bootFixtureDaemon({
   ask = LONG_ASK,
+  // A page ask is filed as a draft (out of the queue) until its author marks it
+  // ready; the TUI only deals open asks, so a page fixture says so here.
+  ready = false,
   // What the daemon would have collected from herdr (plugin/herdr.js paneOrigin).
   // Defaults to the sparse shape an old ask or a stock build carries, so the
   // fallback rendering is what an existing test sees.
@@ -52,6 +55,15 @@ export async function bootFixtureDaemon({
     }),
   })
   if (!filed.ok) throw new Error(await filed.text())
+  const body = await filed.json()
+  if (ready) {
+    const marked = await fetch(`${base}/api/asks/${body.ticket}/update`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth}` },
+      body: JSON.stringify({ ready: true }),
+    })
+    if (!marked.ok) throw new Error(await marked.text())
+  }
 
   return {
     env: {
@@ -64,5 +76,10 @@ export async function bootFixtureDaemon({
       UNBLOCK_AUTH: auth,
     },
     close: () => daemon.close?.(),
+    // For tests that need to talk to the same throwaway daemon themselves (e.g.
+    // to fetch a URL the TUI printed).
+    base,
+    auth,
+    ticket: body.ticket,
   }
 }
