@@ -327,7 +327,7 @@ for rel, sentence, decoded in CONTROLS:
     else:
         ok(f"{rel}: control intact — {sentence[:60]!r}")
 
-print("\n== 4. nothing else moved (each changed file is base + exactly these insertions)")
+print("\n== 4. nothing else moved (every recorded insertion is still in place, and nothing is uncommitted)")
 changed_files = []
 for site in SITES:
     if site["file"] not in changed_files:
@@ -347,18 +347,25 @@ for rel in changed_files:
         if base.count(before) != 1:
             fail(f"{site['tag']}: pre-change anchor appears {base.count(before)} times "
                  f"in {rel} at base (expected 1) — is this still the same site?")
-    rebuilt = base
+    # A commit AFTER the insertion base may edit these files on purpose — 2f38fec99
+    # ("act means drive it through a lane") changed the global leader, sysops leader and
+    # global AGENTS.md on the operator's instruction. That is allowed and is not this
+    # script's business. What is NOT allowed is a recorded insertion disappearing, a
+    # trigger count rising (section 1) or a control moving (section 3) — so reconstruct
+    # nothing, and assert the insertions survive plus the file is the committed one.
+    now = text_of(rel)
     for site in sites:
-        before = site["old"] if site["old"] is not None else site["pointer"]
-        if rebuilt.count(before) != 1:
-            fail(f"{site['tag']}: pre-change anchor not unique while reconstructing {rel}")
-            continue
-        rebuilt = rebuilt.replace(before, site["new"])
-    if rebuilt != text_of(rel):
-        fail(f"{rel}: working copy is not base + the recorded insertions "
-             f"(some other edit is in the file)")
+        if now.count(site["new"]) != 1:
+            fail(f"{site['tag']}: the recorded insertion is present "
+                 f"{now.count(site['new'])} times in {rel} (expected 1) — a later edit "
+                 "removed or duplicated it")
+    uncommitted = subprocess.run(
+        ["git", "-C", ROOT, "diff", "--quiet", "HEAD", "--", rel]
+    ).returncode != 0
+    if uncommitted:
+        fail(f"{rel}: working copy differs from the committed blob (uncommitted edit)")
     else:
-        ok(f"{rel}: base + {len(sites)} insertion(s), nothing else")
+        ok(f"{rel}: {len(sites)} recorded insertion(s) present; working copy matches HEAD")
 
 print("\n== 5. tree and machine agree (repo copies vs installed live files)")
 home = os.path.expanduser("~")
