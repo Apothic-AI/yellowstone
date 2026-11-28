@@ -7444,6 +7444,17 @@ why a measurement failed, check that the measurement happened. Baselines follow 
 a commit you chose or a blob you hashed, never by position, because "HEAD is the state before my change"
 is false in a worktree, in a component subrepo, and in a mirror, for a different reason each time.
 
-**The instrument underneath all eight:** a check must be able to fail, and the object it can fail about must
+**9. A claim with a hedge inside it cannot fail — quote exactly, or search a distinctive fragment.**
+A section of this record was reported as carrying two quoted sentences "almost verbatim", and when it was
+checked one of them was not in the record at all: it lived in a durable memory entry, and the attribution had
+been carried from memory to the record without searching. The hedge is the defect, not a courtesy — "almost
+verbatim" concedes the difference in advance, so no discovery can refute the claim, and it converts a
+checkable citation into an opinion, which is what every rule here exists to replace. The repair is
+arithmetic: quote the exact string, or search a distinctive fragment and report what the search returned.
+The same failure produces the manufactured absence — a path that was never verified returns "not found",
+and reporting that as evidence about the artefact makes a fact about the guess look like a fact about the
+record. A guessed location has no authority: run `find` before reporting that something is not there.
+
+**The instrument underneath all nine:** a check must be able to fail, and the object it can fail about must
 be the object the claim is about. Identity instead of exit codes, counts instead of presence, constructed
 states instead of samples, content instead of position, and a known-good input for anything revived.
