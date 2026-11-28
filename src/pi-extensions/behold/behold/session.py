@@ -102,6 +102,25 @@ def _usage(raw: Any) -> tuple[dict[str, float] | None, dict[str, float] | None, 
     return (usage or None), cost, from_provider
 
 
+def _usage_total(usage: dict[str, float] | None) -> float:
+    """Tokens a usage record reports: the provider total, else the sum of its parts.
+
+    One definition, used both to decide whether a record is a measurement at all and to
+    return its value, so the predicate and the returned number cannot disagree.
+    """
+    if not usage:
+        return 0.0
+    total = usage.get("totalTokens")
+    if total is None:
+        total = (
+            usage.get("input", 0)
+            + usage.get("output", 0)
+            + usage.get("cacheRead", 0)
+            + usage.get("cacheWrite", 0)
+        )
+    return total
+
+
 def _skills_from_section(text: str) -> list[tuple[str, str]]:
     """Extract (name, location) pairs from the ``<available_skills>`` listing only."""
     out: list[tuple[str, str]] = []
@@ -466,19 +485,28 @@ class SessionView:
         return self._totals(self.entries)
 
     def context_tokens(self) -> tuple[float | None, str | None, float | None]:
+        """The newest assistant record that actually measured the context, with its timestamp.
+
+        A zero total is not a reading: taking one as "the last" replaces a real
+        measurement with 0, which is how T-1 (and T-3, and the board's ``occ%``) reported
+        0.0% for a lane that was at 37-40%. When every assistant record on the branch is
+        zero the field stays absent, as it always has, rather than claiming 0 tokens.
+        """
         last = None
         for entry in self.chain:
-            if entry.type == "message" and entry.role == "assistant" and entry.usage:
+            if entry.type == "message" and entry.role == "assistant":
+                # Skip a record whose usage total is zero. A census over one live 96 MB lane
+                # session counted 257 all-zero records among 10,033 assistant usage records
+                # (2.6%) -- and every record in both sets has entry type "message". The
+                # OCCASION is a synthetic `context_edit` turn; the CARRIER is an ordinary
+                # assistant message. A predicate written as "skip type == 'context_edit'"
+                # therefore excludes nothing: the total is the predicate, not the type.
+                if _usage_total(entry.usage) == 0:
+                    continue
                 last = entry
-        if last is None or not last.usage:
+        if last is None:
             return None, None, None
-        u = last.usage
-        value = u.get("totalTokens")
-        if value is None:
-            value = (
-                u.get("input", 0) + u.get("output", 0) + u.get("cacheRead", 0) + u.get("cacheWrite", 0)
-            )
-        return value, last.ts_raw, last.ts
+        return _usage_total(last.usage), last.ts_raw, last.ts
 
     def cache_stats(self) -> dict[str, Any] | None:
         totals = self.totals()
