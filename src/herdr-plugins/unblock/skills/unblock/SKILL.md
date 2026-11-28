@@ -247,6 +247,14 @@ The page contract:
   recorded as the answer — so name your inputs well, because those names are the
   shape of what comes back.
 
+**How the human opens it.** In the TUI, `o` on a page ask opens the page in a pane
+beside the queue (`pixel`), or prints a ticket-scoped link when pixel is not
+installed or the terminal cannot do kitty graphics. That is the human's side, not
+yours: file the ask, mark it ready, and collect the answer as usual. Optional
+install, the fallbacks and herdr's `terminal.kitty_graphics` switch are in the
+repo's `docs/tui-open-page.md` (not shipped in the package; the behaviour here is
+the whole contract you need).
+
 ## While they answer
 
 Every keystroke drafts to the daemon. `unblock_peek {ticket}` (or `unblock peek
