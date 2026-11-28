@@ -7372,3 +7372,78 @@ is true when written and false within the hour; updating it feels like maintenan
 like loss, which is why the third revision is still a confident lie. Name the STABLE REFERENT instead — the
 commit that carries the change — and give the command that produces the rest. A section commit does not
 move; a byte count always does.
+
+## §59 — Success without change: refs, artefacts, and gates that decline their own motivating case (2026-11-28)
+
+Eight rules from a night spent fixing an occupancy field, wiring a dead parser, and answering a safety
+report. §58 said a check is itself a claim, and that the failure modes that matter report green. This
+section is what those green failures turned out to be, sorted by what they are actually a claim about.
+
+**1. A successful command is a statement about a REF, not about a FILE — a publish must assert identity changed.**
+A publish ran to completion: edit in the worktree, merge, push, copy to the live path. Every command exited
+0 and printed success. Nothing had been committed, so the merge legitimately had nothing to merge
+("Already up to date"), the push legitimately had nothing to push ("Everything up-to-date"), and the copy
+legitimately wrote the OLD file over the live one. The tree was right, the live file was right, and the
+change was absent. The assertion that survives this is not an exit code: capture the published artefact's
+digest BEFORE, compare AFTER, and require them to differ. Identity is the only thing a successful command
+cannot fake.
+
+**2. An optimisation's correctness test is mute about its own removal — make the cost an assertion.**
+The board reads one pane footer per FLAGGED row, never per lane. Its tests proved the annotation; none
+proved the read count, so deleting the bound would have left them green. The fix was to assert the count
+itself, measured with a shim that logs calls: 2 `herdr` calls total for a 20-lane board, exactly one of them
+`agent read`, and 0/0 for the pre-fix module. A cost that is not asserted is a cost that will be refunded.
+
+**3. Dead code reads as coverage — its failure mode is identical to its empty answer.**
+A documented footer parser (`parse_ctx` → `pane_footer`, anchored on the `/1.0M` denominator) had no
+callers: its only caller was inside a function that nothing called. So a subsystem that had not executed
+since the board moved to another data source presented as "we have no live occupancy" rather than "we have
+one that never runs", and the same grep that found it also looked reassuring. Reviving it means proving it
+against an INPUT KNOWN TO PRODUCE A READING, because a rotted pane-read flag returns "no reading" — the
+same answer as a lane with no footer. Proved: `29.7%/1.0M` → 29.7 against the observation's 29.72, and a
+pane printing `CH12.5%` → None, so the cache-hit anchor still holds after weeks dormant.
+
+**4. A reading is wrong for exactly as long as its replacement is newest — so test the state, not the sample.**
+An occupancy field defined as "the branch's last assistant usage" reported 0.0% for a lane at 37-40%
+whenever a synthetic turn wrote an all-zero usage record. A census over one whole session: 10,033 assistant
+usage records, 100% of type `message`; 257 all-zero (2.6%), also 100% `message`. The relevant fact is not
+"2 of 31 lanes" but that ANY lane enters the state on its next turn — so a test must CONSTRUCT the
+zero-newest state, and a summary statistic about one instant is not a population claim.
+
+**5. Spend an annotation on the reader's decision, not on the field's age; wallpaper is a failing test.**
+Nearly every quiescent lane in a fleet is weeks old, so a suffix keyed on age alone lands on a third of the
+board and the row that matters looks like the rest. The gate became age > 24 h AND the reading near that
+lane's line; the deliverables became a test that a stale-but-far-from-the-line row renders CLEAN, and an
+assertion that reads equal the flagged count. An annotation channel has a budget, and "a board that flags
+too much stops being read" is a slow, invisible failure in which every individual flag was correct.
+
+**6. After shipping a gate, run the motivating instance through it — if the gate declines it, the mitigation must fire unconditionally.**
+The lane that motivated the annotation was 28.9 points below its decision line, so the gate correctly
+declined it and the disagreement it was built to surface appears nowhere on the board. That is a correct
+outcome and a bad story, and the resolution is not to widen the band: an unconditional mitigation for a
+conditional gate is PROSE, not a note. The header doc now says the number is one turn's count and may be
+true but old, so a reader who never trips the gate is still covered.
+
+**7. A confirmation test can be the violation.**
+A held workspace is withheld at the RECORD layer only: the roster hands it over as 59/59 fields `held` with
+value None, and publishes its pane id deliberately, so the transport still answers a read. Nothing was
+gained by re-crossing the boundary to confirm the report — the report plus a defensive instrument is the
+whole of the correct response, and the defensive one is the code path that shows a withheld row cannot be
+flagged, therefore cannot be read. Two consequences: the reflex "verify, do not trust" points the wrong way
+at a safety boundary, and a containment boundary may be enforced BY ACCIDENT by an unrelated assertion —
+name it in a comment and a test, or it will be refactored away as a performance nicety.
+
+**8. A false why is worse than a missing why, and every reading needs a baseline named by CONTENT.**
+A recorded mechanism (the parser is per-line, "joining the tail returns None") was refuted by measurement:
+all three joins return the value, because `%` and `/` sit adjacent inside one line. The false explanation
+would have made a harmless refactor look dangerous. It was replaced in the record rather than appended to,
+with the refuted version marked as refuted and dated. And the repro that produced it failed for a different
+reason worth naming: `herdr agent read --source visible` HARVESTS the screen, so five back-to-back reads
+returned zero non-empty lines while a paced call in the same minute returned the footer — before explaining
+why a measurement failed, check that the measurement happened. Baselines follow the same rule: name one by
+a commit you chose or a blob you hashed, never by position, because "HEAD is the state before my change"
+is false in a worktree, in a component subrepo, and in a mirror, for a different reason each time.
+
+**The instrument underneath all eight:** a check must be able to fail, and the object it can fail about must
+be the object the claim is about. Identity instead of exit codes, counts instead of presence, constructed
+states instead of samples, content instead of position, and a known-good input for anything revived.
