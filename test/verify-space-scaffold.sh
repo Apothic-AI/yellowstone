@@ -14,6 +14,11 @@
 #
 # The yellowstone space is not listed: its scaffolding is this repository's own root, so mapping it
 # into home/ would be a copy of the tree inside itself.
+#
+# Since 2026-11-28 the gate also runs a skill-pointer check (see the section
+# below the scaffold loop): every skill a mode file names must exist as a
+# loadable skill and be in the lane's profile allowlist, or the pointer is dead
+# (evaluation §6c/§8.4, Phase 5 item 18).
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LIVE_HOME="${SPACE_SCAFFOLD_HOME:-$HOME}"
@@ -106,12 +111,173 @@ for entry in "${SPACES[@]}"; do
     "$(printf '%s\n' "$m_files" | grep -c .)"
 done
 
+# --- Skill-pointer check (added 2026-11-28, skill-extraction Phase 5 item 18; eval §8.4) ---
+# A skill a mode file names must (a) exist as a loadable skill — a SKILL.md under
+# ~/.agents/skills/<name>/ (symlinks resolved) or in the fleet-skills source — and
+# (b) be in the lane's profile allowlist (leader profile for leader mode files,
+# worker profile for worker mode files). Project-level skills in a space's
+# .pi/skills/ are visible regardless of the allowlist, so they pass (b) either way.
+# Skill names are taken from pointer lines ("load the `<skill>` skill" /
+# "see the `<skill>` skill" / "the `<skill>` skill", including unbackticked
+# "the <skill> skill") and from bare backticked names that match a known skill.
+# One PASS/FAIL line per reference; any failure fails the gate.
+echo
+echo "skill-pointer check — every skill named in a mode file must exist and be allowlisted"
+skill_out="$(LIVE_HOME="$LIVE_HOME" ROOT="$ROOT" python3 - <<'PYEOF'
+import json, os, re, sys
+
+home = os.environ["LIVE_HOME"]
+root = os.environ["ROOT"]
+user_skills = os.path.join(home, ".agents", "skills")
+fleet_skills = os.path.join(root, "src", "skills", "fleet-skills")
+
+def skill_dirs(base):
+    try:
+        return {d for d in os.listdir(base)
+                if os.path.isdir(os.path.join(base, d))}
+    except OSError:
+        return set()
+
+known = skill_dirs(user_skills) | skill_dirs(fleet_skills)
+
+SPACES = [
+    ("assistant", "Documents/Assistant"),
+    ("comms", "Documents/Comms"),
+    ("overlord", ".overlord"),
+    ("self-improvement", "Documents/Fleet"),
+    ("sysops", ".sysops"),
+    ("personal", "Documents/Personal"),
+    ("pleroma", "Unity/Projects/Pleroma"),
+]
+
+# mode files: (label, role, path, space dir for project-level skills, or None)
+modes = [
+    ("global", "leader",
+     os.path.join(home, ".pi", "agent", "modes", "leader.json"), None),
+    ("global", "worker",
+     os.path.join(home, ".pi", "agent", "modes", "worker.json"), None),
+    ("overlord", "leader",
+     os.path.join(home, ".overlord", ".pi", "modes", "leader.json"),
+     os.path.join(home, ".overlord")),
+    ("overlord", "worker",
+     os.path.join(home, ".overlord", ".pi", "modes", "worker.json"),
+     os.path.join(home, ".overlord")),
+    ("yellowstone", "leader",
+     os.path.join(root, ".pi", "modes", "leader.json"), root),
+]
+for name, rel in SPACES:
+    if name == "overlord":
+        continue  # already covered by the explicit overlord entries above
+    sdir = os.path.join(home, rel)
+    for role in ("leader", "worker"):
+        modes.append((name, role,
+                      os.path.join(sdir, ".pi", "modes", role + ".json"), sdir))
+
+# project-level skills per space dir (bare-name detection + allowlist exemption)
+proj_skills = {}
+for _label, _role, _path, sdir in modes:
+    if sdir and sdir not in proj_skills:
+        proj_skills[sdir] = skill_dirs(os.path.join(sdir, ".pi", "skills"))
+for s in proj_skills.values():
+    known |= s
+
+def load_profile(role):
+    p = os.path.join(home, ".pi-profile-switch", "profiles", role + ".json")
+    try:
+        with open(p) as f:
+            return set(json.load(f)["skills"]), None
+    except (OSError, ValueError, KeyError) as e:
+        return None, "cannot read %s profile %s: %s" % (role, p, e)
+
+profiles, profile_err = {}, {}
+for role in ("leader", "worker"):
+    profiles[role], profile_err[role] = load_profile(role)
+
+NAME = r"[A-Za-z0-9][A-Za-z0-9_-]*"
+pat_pointer = re.compile(r"`(" + NAME + r")`\**\s+skill\b")
+pat_bare_word = re.compile(r"\bthe ([a-z][a-z0-9-]*) skill\b")
+pat_backticked = re.compile(r"`(" + NAME + r")`")
+
+def references(text):
+    found = []
+    for m in pat_pointer.finditer(text):
+        found.append(m.group(1))
+    for m in pat_bare_word.finditer(text):
+        found.append(m.group(1))
+    for m in pat_backticked.finditer(text):
+        if m.group(1) in known:
+            found.append(m.group(1))
+    out, seen = [], set()
+    for s in found:
+        if s not in seen:
+            seen.add(s)
+            out.append(s)
+    return out
+
+def skill_exists(skill, sdir):
+    for base in (user_skills, fleet_skills):
+        if os.path.isfile(os.path.join(base, skill, "SKILL.md")):
+            return True
+    if sdir and os.path.isfile(
+            os.path.join(sdir, ".pi", "skills", skill, "SKILL.md")):
+        return True
+    return False
+
+checked = failed = 0
+for label, role, path, sdir in modes:
+    if not os.path.isfile(path):
+        print("  skip  %-16s %s: no mode file" % (label, role))
+        continue
+    try:
+        with open(path) as f:
+            text = f.read()
+    except OSError as e:
+        print("  FAIL  %-16s %s: cannot read %s: %s" % (label, role, path, e))
+        failed += 1
+        continue
+    refs = references(text)
+    if not refs:
+        print("  ok    %-16s %s: no skill references" % (label, role))
+        continue
+    allowed = profiles.get(role)
+    for skill in refs:
+        checked += 1
+        tag = "%-16s %s %-24s" % (label, role, skill)
+        if not skill_exists(skill, sdir):
+            print("  FAIL  %s: no such skill (no SKILL.md under ~/.agents/skills,"
+                  " fleet-skills, or this space's .pi/skills)" % tag)
+            failed += 1
+        elif allowed is None:
+            print("  FAIL  %s: cannot verify allowlist — %s"
+                  % (tag, profile_err[role]))
+            failed += 1
+        elif skill in allowed:
+            print("  PASS  %s: exists, in %s profile" % (tag, role))
+        elif sdir and skill in proj_skills.get(sdir, set()):
+            print("  PASS  %s: exists, visible via this space's .pi/skills"
+                  " (profile allowlist does not apply)" % tag)
+        else:
+            print("  FAIL  %s: exists but NOT in the %s profile allowlist"
+                  % (tag, role))
+            failed += 1
+
+print("skill-pointer check: %d reference(s) checked, %d failed"
+      % (checked, failed))
+sys.exit(1 if failed else 0)
+PYEOF
+)"
+skill_rc=$?
+printf '%s\n' "$skill_out"
+skill_summary="$(printf '%s\n' "$skill_out" \
+  | awk '/^skill-pointer check:/ { line = $0 } END { print (line == "" ? "skill-pointer check: no summary (see output above)" : line) }')"
+[ "$skill_rc" -ne 0 ] && rc=1
+
 echo
 if [ "$rc" = 0 ]; then
   echo "gate passed: $identical scaffold file(s) match live · $declared_ok declared divergence(s)" \
-       "· $unauthored space(s) not yet authored"
+       "· $unauthored space(s) not yet authored · $skill_summary"
 else
   echo "gate FAILED: $differing differing · $one_sided one-sided — a copy in either direction destroys" \
-       "content, so decide each one and record it in test/space-scaffold.divergences"
+       "content, so decide each one and record it in test/space-scaffold.divergences · $skill_summary"
 fi
 exit "$rc"

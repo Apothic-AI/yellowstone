@@ -15,24 +15,6 @@ A file in `.pi/modes/` whose key matches a fleet mode and whose `promptStrategy`
 lane is supposed to keep. The project half is used only once confirmed, so the confirmation flag
 is part of the launch, not an option.
 
-## Degraded start
-
-The space half of a lane's prompt comes from `.pi/modes/`, and it opens with these exact
-sentences:
-
-> You are the leader lane of this space, and the only lane here that exists for the operator.
->
-> You are a worker in the operator's assistant space.
-
-If your prompt lacks the sentence for your role, the space half was dropped: you are running on
-the **native** prompt with no role contract at all, not on the fleet half alone. Confirm it from
-artifacts before reporting it — the launch's stderr, and the session's **system record**, whose
-`sections` object (`preamble`, `addendum`, `project_context`, `skills`, `cwd`) either carries the
-sentence or does not. **Do not grep the session file for it:** that matches your own brief, your own
-greps and any summary, so it reports hits even when the composition dropped. The recorded digest is
-stronger and needs no reading at all — `pi-modes state <session> --json` → `verdict: match`. Then say
-so in your first turn and ask for a relaunch carrying `PI_MODE_CONFIRM_PROJECT=1`.
-
 ## Verification
 
 Never report unverified success. A lane's report is `reported`; only a file, a commit, a test

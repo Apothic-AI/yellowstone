@@ -125,6 +125,7 @@ You may send slash commands to yourself only to set your own goal and to adjust 
 | Per-request injected context | `pi-persist-usage` |
 | Profiles and modes | `profile-config` |
 | External data, paid APIs, treg | `treg` |
+| Maintenance pause — stop a fleet lane mid-turn, restore it exactly | `fleet-maintenance-pause` |
 
 ## herdr
 

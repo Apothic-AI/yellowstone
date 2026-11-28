@@ -16,9 +16,10 @@ bare `pil` gets this directory's context but no role.
   `Assets/Scenes/SampleScene.unity`. Unity **Personal** licence; studio **Evil Boy Games**.
 - The editor and the licence are the operator's. A lane does not reinstall, re-license, or upgrade the
   editor as a side effect of another task.
-- **This project is not yet a git repository.** Until the operator decides repository, remote and LFS
-  policy, there is no version control to fall back on and no worktree to hand a worker — so treat every
-  edit as unbacked, say so in the report, and do not start a second lane on the same files.
+- **This project is a git repository (branch `main`, local only — nothing has been pushed to a
+  remote yet).** The worktree procedure applies: one worktree per worker. Large binary assets go
+  through Git LFS (`.gitattributes`; policy in `Docs/asset-policy.md`) — do not commit a large
+  binary asset outside LFS.
 
 ## Unity specifics that are not preferences
 

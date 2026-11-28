@@ -59,11 +59,3 @@ reports nothing.
   decision, not yours.
 - When the operator must supply something only they can (a sign-in, a code, a consent, a
   payment), use the `unblock` skill rather than informal chat.
-
-## Degraded start
-
-A lane here runs `PI_MODE=leader` or `PI_MODE=worker`, composed with this space's
-`.pi/modes/<role>.json`. If this prompt does not contain `You are the comms leader of this
-space` (leader) or `You are a worker in the Comms space` (worker), the space half was
-dropped and the lane is running on the fleet contract alone — say so in your first turn and
-ask for a relaunch carrying `PI_MODE_CONFIRM_PROJECT=1`.
