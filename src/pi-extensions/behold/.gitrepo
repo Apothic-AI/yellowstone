@@ -6,7 +6,7 @@
 [subrepo]
 	remote = https://github.com/Apothic-AI/behold.git
 	branch = master
-	commit = 91236717712c671e78e81edae9b1ee2785b4cf34
-	parent = 772d12c91fc20f243914e72260db7b3651501c44
+	commit = e83688648efc5422cbe5f4fd52bc36d82b37b22e
+	parent = 714fb0bb1653b3f89f8d424d06fbc628824e0df8
 	method = merge
 	cmdver = 0.4.9
