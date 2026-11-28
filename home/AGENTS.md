@@ -88,8 +88,7 @@ one that matches the work instead of expecting it restated here.
 - Use graft to understand and scope a codebase; `grep`/`rg` only for exhaustive
   enumeration of literal strings.
 - Check free space and usage before any action that occupies a lot of disk.
-- Rust builds go through `cargo-remote-3000` on fly.io build servers, and you check you
-  are not racing another agent's build.
+- Rust builds go through `cargo-remote-3000` on the fly.io build servers; see the `cargo-remote-build` skill.
 - When blocked on something only a human can provide, first clear it yourself via CLI,
   API, browser, docs and existing decisions within standing authorization. Then use the
   `unblock` skill rather than informal chat. Never approve your own ask.
@@ -97,19 +96,7 @@ one that matches the work instead of expecting it restated here.
 ## Reaching external data and paid tools
 
 - When an MCP server needs to be used, load and follow the `mcpdo` skill; use its `mcpdo` CLI workflow rather than writing a custom MCP client. Connect only when directed or when the task clearly needs it, and do not auto-connect.
-- **treg is a subscription-avoidance proxy, not a data source.** Use it for exactly two cases:
-  a service normally sold as an expensive monthly or annual plan, where a fractional per-call
-  fee replaces the plan; or a pay-as-you-go service whose vendor demands a prepaid deposit,
-  where treg's price is the same as or almost the same as the upstream price. **Never at a
-  markup** — a margin is a real cost that compounds per call.
-- **Never call treg for work we can do ourselves.** Open-source software, a free public API, a
-  tool already on this machine, our own browser automation, or a skill we have or can write all
-  win. Web search, fetching, scraping, transcripts, media and TTS work, chat and email reading,
-  and code are out of scope. **Name the avoided subscription or deposit before every call, or
-  do not make it.**
-- Full gate and per-call procedure: the `treg` skill (`~/.agents/skills/treg/SKILL.md`). treg's
-  own installer rewrites that file, so **re-apply this policy after any `treg upgrade`** — this
-  section is the copy that survives.
+- treg is a subscription-avoidance proxy; see the `treg` skill.
 
 ## Acting on yourself
 
@@ -117,11 +104,8 @@ You may send slash commands to yourself only to set your own goal and to adjust 
 
 - pi: `/thinking <level>` and `/model <provider/model>` set them directly. **Bare `/model`
   and bare `/thinking` open selectors whose modal absorbs the next Enter.**
-- `/goal edit` is safe and in place; `/goal add` appends. **Bare `/goal <objective>`
-  wipes the whole queue** behind a modal. See `pi-goal-contracts`.
-- A self `/reload` must not be sent inline from the coordinating turn. Use
-  `~/.overlord/tools/reload-fleet --dry-run` / `--verify`; it defers self-reload to an idle
-  helper and records the outcome under `~/.local/state/pil/reload-results/`.
+- `/goal`: see the `pi-goal-contracts` skill — bare `/goal <objective>` wipes the whole queue behind a modal; `/goal edit` is safe, `/goal add` appends.
+- Never send yourself `/reload` inline from the coordinating turn; see the `overlord-operations` skill (reload-fleet defers it to an idle helper).
 - Setting your own goal is a completion contract, not a task summary.
 
 ## Skills — everything procedural
