@@ -3,7 +3,9 @@
 
 SOURCE: `behold roster --json` — not pane reads. This board used to read every leader
 pane's footer (`herdr agent read --source visible`), one call per lane per run, to get the
-goal state and the context number. Those fields now come from behold's derived fields:
+goal state and the context number. Those fields now come from behold's derived fields, and
+the only pane read left is the occupancy cross-check on the FLAGGED subset (see `occ-Nd` /
+`live-N%` below) — bounded by a predicate the row already answers, never one call per lane:
 
     goal, goal elapsed   G-1  (the live goal-state entry: status, iteration, elapsed)
     context              T-3  (= T-1/T-2 from the session's terminal usage) — occupancy
@@ -23,6 +25,21 @@ measured the same way on every lane and it needs no pane. Measured against the f
 this lane in the same minute (2026-11-17T02:52Z): footer `34.8%/1.0M`, T-3 `34.54` — the
 same reading, so the column is comparable with what the operator has been reading.
 
+Because it is ONE turn's count, `occ%` is also a record of WHEN that turn happened, and on a
+lane that has not taken a turn for weeks the number is true but old. Two notes carry that,
+and both are spent only where the reading could change a decision:
+
+    occ-46d      the reading is 46 days old (T-1's own `observed_at`). Printed only when the
+                 reading is ALSO near that lane's decision line -- see OCC_AGE_BAND and
+                 OCC_LINE_BAND. A stale 5% lane is true-and-irrelevant: no note, no read.
+    live-29.7%   the pane footer, read at render time, disagrees with `occ%` by more than
+                 LIVE_AGREE_BAND. Never printed without an `occ-` note on the same row.
+
+`live-` is rare on purpose, and the reason is the gate, not luck: it is computed from what the
+row already holds (age AND distance from the line) BEFORE anything is read. A gate that asked
+"does the footer disagree with T-3?" could only be answered by calling the footer on every
+lane — which is exactly the per-lane read this board was rewritten to remove.
+
 
 Why this exists
 ---------------
@@ -35,9 +52,10 @@ paused or blocked goal looks like an ordinary stop.
 Design notes
 ------------
 * Status and goal state are read from two different surfaces on purpose. Lifecycle
-  comes from the herdr API (cheap, structured). Goal state comes from the pane's
-  own footer line, because `herdr agent get`/`agent list` carry no goal fields --
-  this was verified against panes that visibly report "Pursuing goal (47m)".
+  comes from the herdr API (cheap, structured), and goal state from the session's own
+  goal entry (G-1), because `herdr agent get`/`agent list` carry no goal fields. The
+  footer still carries a goal line ("Pursuing goal (47m)", verified against live panes),
+  which is why the parser below knows how to read it; nothing depends on that half now.
 * Staleness is computed across runs from a persisted snapshot, not guessed from a
   single observation. First run has no baseline, so it reports `-` rather than
   inventing an elapsed time.
@@ -52,13 +70,19 @@ Design notes
   (2026-11-17T02:52:18Z): footer `34.8%/1.0M`, `T-3` `34.54` — the same reading, so the
   column stays comparable with what the operator has been watching.
   The footer's *other* percentage, `CH99.8%`, is the cache-hit rate; it is not context.
+  The footer is read again in one case only, as the flagged-row cross-check that prints
+  `live-N%`: a stale column near the decision line can be corrected by no cheaper instrument,
+  and the gate above decides which rows those are before the read happens.
 * **A context number is never invented.** If `T-1` or `T-2` is unknown, `occ%` is `-` and
   the reason appears in the `why` block. It is not 0, and a lane with no agent is not
-  "using nothing": it has no session to measure.
+  "using nothing": it has no session to measure. The same holds for the live figure: a footer
+  that yields no reading costs the `live-` note, never the row, and it is never retried.
 * A lane with no agent has no footer, so its context is `None`, not 0. The
   difference decides whether a lane is one tranche from losing its history or
   simply not running.
-* Read-only. Never prompts, never mutates pane state.
+* Read-only. Never prompts, never mutates pane state. The only pane read is one
+  `--source visible` footer read per FLAGGED lane, the source that does not harvest
+  scrollback (see `pane_footer`).
 
 Usage
 -----
@@ -80,6 +104,7 @@ import re
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 BEHOLD = os.environ.get("BEHOLD", "behold")
@@ -119,6 +144,8 @@ GOAL_DURATION_LINE = re.compile(r"(?:Pursuing|Goal achieved|Goal paused|Goal blo
 # is optional on purpose -- `(auto)` and `(fixed)` both appear and either way the
 # percentage is the same reading. Matching the `/1.0M` denominator is what keeps
 # this off `CH99.8%`, the cache-hit rate that sits a few characters to the left.
+# The `occ%` column does NOT come from here (it is T-3, from the session). This parse
+# serves exactly one caller: annotate_occupancy()'s flagged-row cross-check.
 CTX_PATTERN = re.compile(
     r"([0-9]{1,3}(?:\.[0-9])?)%\s*/\s*([0-9.]+)\s*([KMG])\b\s*(?:\((auto|fixed)\))?",
     re.IGNORECASE,
@@ -129,6 +156,39 @@ CTX_PATTERN = re.compile(
 # the board cannot disagree about where the line is.
 CTX_RESET = 50.0
 CTX_WARN = 40.0
+
+# ---- The occupancy-annotation gate (see `occ-Nd` / `live-N%` in the module docstring) ----
+#
+# `occ%` is one turn's reading, so its age is part of its meaning. But "old" alone cannot
+# carry the note: in this fleet most quiescent lanes are weeks old, so an age suffix on its
+# own lands on a third of the board, the channel becomes wallpaper, and the one row that
+# matters looks like the rest. The note is therefore spent where it can change a decision,
+# and BOTH halves below must hold. Both are computable from the row before anything is read,
+# which is what keeps the footer read bounded by the flagged count rather than the lane count.
+#
+# Age band: one day. Derived from the reading itself -- T-1 is the LAST ASSISTANT MESSAGE's
+# token count, so an age over 24h means the lane has produced no assistant message for a full
+# day; the number is a record of a previous day's work, not a measurement of this one. The
+# live fleet splits exactly there: T-1 ages measured 2026-11-28T06:33Z were {21s, 270s, 6.7h}
+# for lanes that had taken a turn that day and then jumped to 2.2d, 2.4d, ... 47.9d — nothing
+# between 6.7h and 2.2d, so any band in that gap labels today's board identically and 24h sits
+# inside it with 3.6x margin below the first stale lane.
+OCC_AGE_BAND = 86400
+#
+# Line band: within 10 points below the lane's own reset line, or at/over it. The line comes
+# from ctx_threshold(label, reset) — the SAME function ctx_note uses, so there is one
+# definition of where the line is and per-lane overrides keep working. 10 points is the width
+# of the board's own warn band (CTX_WARN 40 -> CTX_RESET 50): the distance at which the
+# operator already treats a reading as "act at the next stop boundary". A lane further below
+# its line has nothing to act on at any age, so it gets no note and no read.
+OCC_LINE_BAND = 10.0
+#
+# Agreement band between the column and the footer, in percentage points. Both instruments
+# print rounded values (footer 1 decimal, T-3 2), and the fleet was measured against itself on
+# 2026-11-28T06:33Z: for lanes whose T-1 was hours old the two agreed to within 0.04 points,
+# and the largest same-instrument residual seen on a lane mid-turn was 0.45. 0.5 is above that
+# measured floor and far below the disagreement this note exists for (21.11 vs 29.7 = 8.59).
+LIVE_AGREE_BAND = 0.5
 
 # Per-lane overrides of the reset threshold, by lane name. Empty by standing decision, and
 # the history matters more than the mechanism here: the operator set a tighter policy for one
@@ -207,6 +267,14 @@ def parse_ctx(text: str) -> float | None:
 def pane_footer(pane_id: str) -> tuple[str | None, str, int | None, float | None]:
     """Return (goal_state, last_line, goal_elapsed_secs, context_pct) from the footer.
 
+    ONE caller, `annotate_occupancy()`, and it reads the context quarter of this tuple alone:
+    the goal state comes from behold's G-1 now, so the goal/elapsed halves are carried for a
+    reader that may want them and are not what the board is built on. That also means this
+    whole path — the read, the three-line tail scan, the `/1.0M`-anchored parse_ctx — is
+    UNMAINTAINED code that was put back into service; it was re-proved against live panes on
+    2026-11-28 (wB:p7 printed `29.7%/1.0M (auto)` and parsed as 29.7, and a pane carrying
+    `CH12.5% 7.0%/1.0M` parsed as 7.0, so the cache-hit rate is still excluded).
+
     Deliberately tolerant: a resume/approval modal or a partially drawn frame
     means the goal cannot be determined, and that is reported as unknown rather
     than as "no goal". Reading a pane that has no agent is a normal outcome here,
@@ -263,6 +331,65 @@ def pane_footer(pane_id: str) -> tuple[str | None, str, int | None, float | None
         if goal:
             break
     return goal, lines[-1][:160], elapsed, ctx
+
+
+def field_age(entry: dict, now: float | None = None) -> int | None:
+    """Age in seconds of a field's own observation, or None when the record has neither.
+
+    `age_s` when behold computed it, else `observed_at` parsed here -- the record travels with
+    the roster (`--cache off` does not hide it), so the gate never needs a pane to know how old
+    a reading is. A missing age is not "old": it yields None, and the gate stays shut.
+    """
+    age = entry.get("age_s")
+    if isinstance(age, (int, float)) and not isinstance(age, bool):
+        return int(age)
+    observed = entry.get("observed_at")
+    if isinstance(observed, str):
+        try:
+            when = datetime.strptime(observed, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        except ValueError:
+            return None
+        return int((time.time() if now is None else now) - when.timestamp())
+    return None
+
+
+def occupancy_flag(
+    ctx: object, ctx_age: int | None, label: str, reset: float = CTX_RESET
+) -> bool:
+    """Whether this row's occupancy reading may be annotated — decided before any read.
+
+    BOTH halves must hold: the reading is old beyond OCC_AGE_BAND, AND it is near (or over)
+    that lane's own reset line. Age alone is not a finding (a stale 5% lane is true and
+    irrelevant) and proximity alone is not one either (a fresh 45% lane is a live
+    measurement, and ctx_note already speaks for it at its own line).
+    """
+    if not isinstance(ctx, (int, float)) or isinstance(ctx, bool) or ctx_age is None:
+        return False
+    if ctx_age <= OCC_AGE_BAND:
+        return False
+    return ctx >= ctx_threshold(label, reset) - OCC_LINE_BAND
+
+
+def annotate_occupancy(rows: list[dict], reset: float = CTX_RESET) -> None:
+    """Set the occupancy note fields, reading a pane footer ONLY for flagged rows.
+
+    This is the bound the whole design turns on: the predicate above is answered by the row
+    (T-3 and T-1's `observed_at`, both from the roster), so `herdr agent read` runs once per
+    FLAGGED lane and never once per lane. Gating the read on the footer's own answer would
+    have meant reading every pane to find out whether reading was warranted.
+
+    A footer that yields nothing — no agent, a modal, a failed read — sets `ctx_live` to None.
+    That loses the note, never the row, and it is not retried per row in a loop.
+    """
+    for row in rows:
+        flagged = occupancy_flag(
+            row.get("ctx"), row.get("ctx_age"), row.get("label") or "", reset
+        )
+        row["occ_flagged"] = flagged
+        row["ctx_live"] = None
+        if not flagged or not row.get("pane_id"):
+            continue
+        row["ctx_live"] = pane_footer(row["pane_id"])[3]
 
 
 def load_snapshot() -> dict:
@@ -369,6 +496,9 @@ def held_rows(doc: dict) -> list[dict]:
             "goal": None,
             "goal_elapsed": None,
             "ctx": None,            # never 0.0%: nothing was read
+            "ctx_age": None,        # a withheld record has no age, so it is never annotated
+            "ctx_live": None,       # and no pane is read for it: the gate stays shut
+            "occ_flagged": False,
             "session_bytes": None,  # never 0: no session was opened
             "session_age": None,    # never 0: no session was opened
             "mode": None, "profile": None, "rooms": None, "model": None, "thinking": None,
@@ -445,6 +575,12 @@ def collect() -> list[dict]:
             "goal": goal,
             "goal_elapsed": int(goal_state["elapsed_s"]) if isinstance(goal_state, dict) and isinstance(goal_state.get("elapsed_s"), (int, float)) else None,
             "ctx": field_value(lane, "T-3"),
+            # Age of the occupancy reading, from T-1's own record. The GATE reads this, and the
+            # note appears only when it is spent (occupancy_flag) -- so annotate_occupancy()
+            # can decide what to read without reading anything first.
+            "ctx_age": field_age(field_of(lane, "T-1")),
+            "ctx_live": None,  # set only for a flagged row, by the footer cross-check
+            "occ_flagged": False,
             "session_bytes": session_bytes,
             "session_age": session_age,
             **rig,
@@ -620,6 +756,14 @@ def render(rows: list[dict], freshness_secs: int, ctx_reset: float = CTX_RESET) 
         note = ctx_note(row.get("ctx"), ctx_reset, row["label"])
         if note:
             notes.append(note)
+        # The occupancy annotations: how old the reading is, and -- for a flagged row only --
+        # what the pane footer says instead. Both stay silent unless annotate_occupancy() spent
+        # the note, so a caller that never ran that pass prints no occ- / live-.
+        if row.get("occ_flagged"):
+            notes.append(f"occ-{human(row.get('ctx_age'))}")
+            live = row.get("ctx_live")
+            if live is not None and abs(live - row["ctx"]) > LIVE_AGREE_BAND:
+                notes.append(f"live-{live:.1f}%")
         # The wedge signal: held in `working` past the threshold. Any other
         # status sitting still is correct behaviour and must not be flagged.
         #
@@ -705,10 +849,13 @@ def render(rows: list[dict], freshness_secs: int, ctx_reset: float = CTX_RESET) 
         )
         print(
             "  occ% is occupancy: T-1 (the branch's last assistant usage) over T-2 (the physical\n"
-            "  model's context window), from the session file, with no pane read. It is a measured\n"
+            "  model's context window), from the session file. It is a measured\n"
             "  position, not a projection, so it does not move by 20 points on an idle turn. Compare\n"
             "  the size column and the turn count before deciding to compact; crossing the line is a\n"
-            "  prompt to check, not an instruction to /compact."
+            "  prompt to check, not an instruction to /compact.\n"
+            "  occ-Nd on a row means the reading is that old; live-N% is the pane footer at\n"
+            "  render time on the rows where the old reading is also near the line. The footer is\n"
+            "  read for those rows and no others, so live-N% is a correction, not a second column."
         )
     if no_agent:
         print(
@@ -750,6 +897,11 @@ def main() -> int:
             if row["status"] not in ("no-agent", "held") and row["pane_id"]:
                 print(row["pane_id"])
         return 0
+
+    # After the arm early return: that mode lists pane ids and has no notes, so it must not pay
+    # for the footer cross-check. Runs before --changed filters the rows, so the number of pane
+    # reads is the board's flagged count and never depends on which rows are being shown.
+    annotate_occupancy(rows, args.ctx_reset)
 
     if args.changed:
         rows = [r for r in rows if r.get("changed")]
