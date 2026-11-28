@@ -27,6 +27,10 @@ Registration records `/proc/<pid>/stat` starttime and boot id, so dead processes
 
 If a name will not answer, use that evidence rather than guessing. `rooms_who` means **registered**, not necessarily alive — two surfaces disagreeing means check the process table and trust neither alone.
 
+`rooms_who` **under-reports live peers until lanes restart** (pi-rooms
+registration fix pending adoption), so never conclude a lane is absent or
+unreachable from it; a delivery that a lane answers is the only proof.
+
 ## Delivery has two states, and there is no ack
 
 - `rooms_dm` writing the inbox = **queued**
@@ -105,6 +109,25 @@ a state that is not the one it names.
 ## Answering
 
 `rooms_dm` records its recipients; answer everyone with `rooms_reply_all({messageId})` instead of re-deriving the list. A room message answers back into the room.
+
+**But name the recipient explicitly when a thread moves between lanes.**
+`rooms_reply_all` uses the id of the message in hand and will silently
+deliver to the wrong lane if that id belongs to an earlier exchange — that has
+happened twice. Answer a lane by `rooms_dm` with an explicit recipient when
+the thread has moved.
+
+## When to message
+
+Use rooms for coordination, not narration. Do not send incremental progress
+updates merely to report that work is continuing. Send a room post or DM when
+you are blocked on something only another agent or the operator can supply,
+when another agent is blocked or waiting for your response, or at a real
+inflection point such as a completed deliverable, a material scope/status
+change, a handoff, an authorization boundary, or a final/milestone report —
+and when it is the operator's item, file it with the `unblock` skill as a page
+ask, not a DM. A blocker you can clear yourself by acting, retrying, or
+choosing a defensible default is not a reason to message anyone. A quiet lane
+is preferred to a stream of granular progress messages.
 
 ## Rooms
 

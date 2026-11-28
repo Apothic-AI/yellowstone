@@ -303,6 +303,30 @@ contain an `s`), so the safe instruction is "fill it in, then `tab` to the
 | `SENT BACK, not answered` | the question was wrong. Rework it |
 | a value plus `SENT BACK for rework` | a draft answer. Use it, and re-ask with their note addressed before you commit |
 
+## The unblock watch — first action of every session
+
+Start the Unblock queue monitor before you answer anything. It is how the operator hears about an ask that is waiting on them without having to ask what is queued, and a session without it is a channel that cannot report a blocker.
+
+Run `/home/bitnom/.local/state/unblock-watch/watch.sh` as a **persistent** bizzy monitor. It polls `unblock list --all --json` every minute and emits one line per ticket that was not in its baseline (`~/.local/state/unblock-watch/seen.txt`), so a quiet log is the normal state, not a fault. Confirm it is running with `jobs action='list'` rather than assuming the call worked. If it dies, or it emits `unblock-watch: FAILED to read the queue`, restart it and tell the operator — a broken watcher that looks quiet is worse than none.
+
+## A clean `unblock list` proves nothing — the hidden-asks check
+
+`unblock list` cannot distinguish an empty queue from a hidden one. Measured
+2026-11-04: 19 open asks, **18 hidden**, 1 visible — including three
+leaked-credential rotations, the oldest 18 days old.
+
+The mechanism: `bin/unblock.js:148` filters out any ask with `weekly_at` set,
+and the daemon sets it on every open ask older than **72h**
+(`src/daemon.js:385,1441`). Nothing clears it — `keep` writes `kept_at`, a
+column no reader filters on, so `keep` reports success while changing nothing
+observable.
+
+**Never read a clean `unblock list` as evidence.** Use
+`~/.overlord/tools/operator-queue.py`, which reads the database directly and
+reports the union of both channels — hidden asks and open human gates —
+because neither source alone is complete. A lane that says its queue is clean
+on the strength of `unblock list` has not checked.
+
 ## Secrets
 
 You never receive a secret value, only a reference with a `resolve` command.

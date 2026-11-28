@@ -1,6 +1,6 @@
 ---
 name: overlord-operations
-description: Overlord procedure — read the leader board, arm and re-arm lane watchers, classify lanes safe/unsafe/goal-degraded, take control of leaders, run a status round, decide what is handled versus escalated, read the portfolio from derived stores instead of a root dagr run, join a space to the shared beads database, handle the comms lane and outbound channels, and respect an operator-reserved space. Use when acting as the overlord or swarm orchestrator, surveying leader lanes, chasing a wedged or goal-paused lane, answering a status question, or touching the portfolio.
+description: Overlord procedure — read the leader board, arm and re-arm lane watchers, keep leader lanes up with lane-supervise, classify lanes safe/unsafe/goal-degraded, take control of leaders, run a status round, decide what is handled versus escalated, schedule work that needs a wake, read the portfolio from derived stores instead of a root dagr run, join a space to the shared beads database, handle the comms lane and outbound channels, and respect an operator-reserved space. Use when acting as the overlord or swarm orchestrator, surveying leader lanes, chasing a wedged or goal-paused lane, answering a status question, or touching the portfolio.
 ---
 
 # Overlord operations
@@ -36,6 +36,129 @@ Watcher triggers, all three needed:
 | vanished from the agent list | pane closed / agent released |
 
 Gate staleness on `working` only; `STALE` on `idle`/`done` is a watcher defect that trains you to ignore it. Keep N well under ~50 min (a silent 502 loop was observed); remote builds legitimately run 30–40 min with no lifecycle change, so false fires are the acceptable trade. Log each transition with a timestamp *before* the settle check. Never fixed sleeps — wait-until-ready loops.
+
+## Keeping leader lanes up: lane-supervise
+
+Keeping lanes up is a timer, not a job of this lane. `lane-supervise.timer`
+runs every minute and resumes any **leader** lane whose process disappeared,
+relaunching it into its previous session with
+`pil --role leader --session <uuid>`. The resumed lane is told it was resumed
+by a machine, with the timestamp, so it can reason about the gap instead of
+silently continuing with a hole in its memory. Do not suppress that notice. A
+machine-resume notice in a transcript means no human sent it, and the gap it
+names is real work that lane may have missed.
+
+- **Do not spend turns restarting peers.** A leader that died is already
+  being handled. Check `lane-supervise --list` before acting on a dead lane;
+  if it shows `live`, you are looking at a stale reading, and if it shows
+  `DOWN` with a session id, the timer is already on it.
+- **Never resume or restart a lane yourself to recover from an outage.** A
+  manual resume races the timer and puts two writers on one session, which is
+  a worse failure than the outage.
+- **Never start a second watchdog, and never stop or reconfigure this one
+  from inside a lane.**
+- **Do not rely on it to keep something down.** If a lane must stay stopped
+  — work you deliberately parked — exclude it:
+  `lane-supervise --exclude <lane>`. Supervision resumes what it supervises,
+  so a lane you closed on purpose comes back unless it is excluded. Current
+  exclusions live in `~/.local/state/pil/supervise/_exclude.json`. Never leave
+  a hold set as a way to stop a lane coming back — use `--exclude` for that,
+  which is honest and permanent, instead of a pause that expires.
+
+Discovery is by role record (`~/.local/state/pil/roles/<lane>.env` with
+`PI_MODE=leader`), which is why a new space's leader is covered without
+editing the unit, and why a lane is discoverable **while it is down** — the
+only moment it matters. A lane is supervised only once *observed* alive (or
+added explicitly), so retired spaces with stale role records
+(`herdr-leader`, `mycord-leader`, `palette-probe`) are not resurrected.
+
+Guards, inherited from the watchdog this replaced: never resume over a live
+lane (two writers on one session is a second outage), never start fresh (a
+blank session is an outage with a healthy pid — it reports "needs a human"
+instead), record the session **UUID** not the path (instance sweeps delete
+paths), backoff 60s doubling to 30 min so an unstartable bundle cannot become
+a loop, and a shared flock with the old watchdog path.
+
+`lane-supervise --list` shows discovered lanes, their pane, whether they are
+live, their session id and any backoff; `journalctl --user -u
+lane-supervise` shows the passes. State lives in
+`~/.local/state/pil/supervise/`.
+
+**Pause it before restarting panes by hand.** `keepalive-hold start
+--reason "<what>"` before, `keepalive-hold end` after — or `keepalive-hold
+run --reason "<what>" -- <command>` for a single command. **Name the lane**
+(`--lane <lane>`, or `set-lane <lane>` per target): a named hold pauses
+supervision for that lane only, so a real death elsewhere is still caught; an
+unnamed hold pauses everything. Otherwise the timer can resume a lane in the
+window between your stop and your start, which is two writers on one session:
+the exact failure the "never resume over a live lane" rule exists to prevent.
+The pane-restarting helpers already do this (`restart-fleet`,
+`relaunch-lane.sh`, `migrate-lane.sh`, `migrate-unnamed-lane.sh`,
+`relaunch-lane-monorepo.sh`, `self-restart.sh`), so an ad-hoc sequence is the
+only case left to remember. State lives in
+`~/.local/state/pil/supervise/_hold` (`0` or absent = running); the hold
+records the owner pid, so a crashed helper auto-releases and the journal says
+so; `keepalive-hold status` reports PAUSED with the reason and age.
+
+What it does **not** do: workers (add one with `lane-supervise --add
+<lane>`), lanes with no recorded session id (`comms-leader`,
+`starla-leader`, `subtoken-leader` report "needs a human"), or anything under
+an exclude. The retired `overlord-watchdog.timer/.service` is gone;
+`overlord-watchdog.sh` remains on disk for its `--record` behaviour and as
+the documented ancestor.
+
+## Acting later without blocking
+
+Anything that must happen when you are **not** in a turn needs a schedule,
+and anything scheduled needs a **wake** — nothing scheduled opens a turn by
+itself.
+
+| Need | Mechanism |
+|---|---|
+| Wait inside this session, want a notification | `bash_bg` with an `until` loop, or `monitor` |
+| One-shot at a wall-clock time, must survive a session restart | `systemd-run --user --collect --on-active=…` |
+| Recurring | `agents-cron` (bound to a project dir, runs a pi session) |
+
+- **A scheduled action is invisible until it produces a turn.** Pair every
+  unit that acts with a second unit that prompts this pane — the wake is where
+  you verify and continue.
+- **Label a self-prompt with its provenance** — `[self-scheduled wake … - not
+  from the operator]` — so the transcript never reads as an operator
+  instruction you invented.
+- **Check the composer is empty before any self-prompt.**
+- **Background jobs die with the session; timers do not.** A watch or
+  delivery that must outlive this session belongs in systemd or `agents-cron`,
+  not in `bash_bg`. The reload helper is a deliberate exception: it is
+  detached by `reload-fleet` and leaves a durable result artifact so its
+  outcome remains observable.
+- Verify from artifacts — a log line, a unit's `Result`, a file — never from
+  having scheduled it.
+- **A command string whose first word is `$VAR` is read as an environment
+  assignment.** `systemd-run` takes any positional argument beginning with
+  `$` for `NAME=VALUE`, so a string that opens with the variable dies at
+  start with `Invalid environment variable name evaluates to an empty string`
+  — and because the redirect never runs, the log stays zero-byte and reads
+  like a silent success. Start the string with a word — `exec
+  /home/bitnom/…` — or pass an absolute path. Then verify the timer exists
+  and read the unit's journal.
+
+### The overlord's own wake
+
+`overlord-wake.timer` prompts this pane every 15 minutes, and logs to
+`~/.local/state/overlord/periodic-wake.log`. It is **not the operator**: the
+prompt says so. It skips rather than interrupt.
+
+On one of those wakes, work the checks the wake prompt names and nothing
+else: the `todo` list for work in progress or pending,
+`./tools/leader-board.py` for a lane `BLOCKED`/`STALE`/`GONE` or
+goal-degraded and unhandled, and `systemctl --user is-active
+overlord-watch.service` — the watcher is a systemd unit, so there is no
+in-session monitor job to look for and nothing to re-arm; never stand up a
+session-scoped watcher. Then the wake's reset gate, decided from the session
+in front of you: a session holding any work that predates the wake is never
+reset, whatever the three checks say. If work is outstanding, continue it; if
+not, record anything durable, reply one line and stop. A periodic wake you
+ignore is the same failure as a dead watcher.
 
 ## Taking control of leaders
 
@@ -184,6 +307,16 @@ After any change to `~/AGENTS.md` or `~/.overlord/AGENTS.md`, **reload the fleet
 - `working` lanes are skipped by default. `--interrupt-working` (alias `--end-agent-turns`, now legacy) sends `esc` only to lanes observed working, waits for idle, rechecks immediately before the reload, and **fails closed** on unknown or timed-out lanes; `--working-only` limits that to currently-working lanes, and `--idle-timeout SECONDS` sets the per-lane wait (default 30). Lanes that never reach idle are skipped and force a nonzero exit. `--allow-destructive` is required for `/clear`, `/compact`, `/exit`, `/new`, `/quit` fleet-wide.
 - `/reload` is silent by design: no turn, unchanged `state_change_seq` and status. That is correct. Judge sends by the tool's accepted/failed counts, and judge reloads by `--verify` or the result artifact — never from a receipt.
 - **Reload is not restart.** Re-deriving identity, environment, or package set needs a fresh process.
+- **`/reload` re-imports extension code (verified 2026-11-13).**
+  `ResourceLoader.reload()` calls `clearExtensionCache()`, bumping the
+  extension-cache generation, so every cached factory is discarded and each
+  extension module is re-imported from disk (`jiti.import(path,
+  {moduleCache: false})`). A changed extension therefore reaches a running
+  lane on reload — do not order relaunches to pick up extension bytes. A fresh
+  process is required only for identity, the environment, the package set, a
+  `PI_MODE`/`PI_PROFILE` value, or a changed **mode file**. Evidence:
+  `dist/core/resource-loader.js:370-374`,
+  `dist/core/extensions/loader.js:93-97,460-489`.
 - **A reload does not propagate a changed *mode* file.** `AGENTS.md` is a context file and `/reload` re-reads it; a mode file is different — editing one changes its digest, and the lane composes the space half off `native` until it re-approves. Propagate that with `~/.overlord/tools/reconcile-mode.py` (the one implementation that asks `pi-modes` for the digest, sends the pinned `--expect` command, answers both consent dialogs and attests), or relaunch carrying `PI_MODE_CONFIRM_PROJECT=1`. `/reload` will look like it worked and the drift will still be there.
 
 ## The comms lane and outbound channels

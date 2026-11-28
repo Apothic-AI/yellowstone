@@ -215,6 +215,45 @@ herdr agent read reviewer --source recent-unwrapped --lines 120
 
 If a wait fails or returns `blocked`, inspect `agent get` and `agent read` before deciding what input to send. A timeout or stalled response does not prove the prompt was never delivered; do not blindly submit it again. Use the pane surface only when raw terminal control is intentional.
 
+## Worktree lanes — the fleet spawn for code-changing workers
+
+Every worker that changes code or files in a repository starts in a worktree.
+Run `herdr worktree create` first — it creates the Git worktree and the
+workspace — and start the lane in it. This is the default, not the exception.
+Never start a lane and then ask it to make its own worktree, and never create
+the worktree yourself with `git worktree add` — that is herdr's job. Never
+start a worker in a plain herdr tab and prompt it there — except where the
+worker must run in a location not tracked by Git and that cannot be made into
+a worktree, in which case spawn it through herdr in a named tab as before. A
+checkout created from inside a running lane is not associated with this space,
+so it does not appear under it in the sidebar and the lane sits outside the
+space's topology.
+
+```bash
+herdr worktree create --workspace "$HERDR_WORKSPACE_ID" --branch <branch> --label <lane-name> [--base <ref>]
+```
+
+Run it from the space's primary workspace: `--workspace` is required (it is
+mutually exclusive with `--cwd`), and that workspace's cwd must be inside the
+repository or the command fails `not_git_worktree`. It returns the child
+workspace; its root shell pane is where the lane starts. For a checkout that
+already exists, `herdr worktree open --workspace "$HERDR_WORKSPACE_ID" --path
+<checkout>` links it — inspect the returned pane first and never start an
+agent in an occupied one.
+
+Set the tab label before starting, because the lane's name derives from it. In
+the returned root pane, launch the worker with the role and profile
+explicitly — do not run bare `pil`, because that restores the pane's default
+(often leader) profile:
+
+```bash
+herdr pane run <returned-pane-id> env PI_MODE=worker PI_PROFILE=worker PI_MODE_CONFIRM_PROJECT=1 pil
+```
+
+The worktree is a different project root, so an unconfirmed project mode drops
+the space half of the contract. Remove the checkout with `herdr worktree
+remove --workspace <worktree-workspace-id>` when done.
+
 ## Run an ordinary command in another pane
 
 Create a sibling pane with the same geometry rule, preserve the caller's working directory, and keep user focus unchanged:
