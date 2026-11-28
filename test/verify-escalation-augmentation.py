@@ -149,26 +149,6 @@ SITES = [
          pointer="escalate only if it is a genuine operator sign-in/approval",
          near="unblock"),
 
-    dict(tag="7 sysops worker-ask routing", file="home/.sysops/.pi/modes/leader.json",
-         old="you are the one who decides whether it reaches them.",
-         new="you are the one who decides whether it reaches them, and when it does you file it with the "
-             "unblock skill as a page ask.",
-         pointer="you are the one who decides whether it reaches them", near="unblock"),
-
-    dict(tag="8 yellowstone operator-list", file=".pi/modes/leader.json",
-         old="Still the operator's, and asking is correct:",
-         new="Still the operator's, and asking is correct — file it with the unblock skill as a page ask:",
-         pointer="Still the operator's, and asking is correct", near="unblock"),
-
-    dict(tag="9a pleroma repo/LFS ask", file="home/Unity/Projects/Pleroma/.pi/modes/leader.json",
-         old="until the operator settles repository and LFS policy, one lane at a time works in this tree",
-         new="until the operator settles repository and LFS policy (that ask is filed with the unblock skill "
-             "as a page ask), one lane at a time works in this tree",
-         pointer="until the operator settles repository and LFS policy", near="unblock"),
-
-    # PART 1 — the skill's two carriers of the page-vs-fields choice. The skill is
-    # already the unblock route, so the token that must sit near the change is the
-    # page ask itself: the default moved, nothing new became askable.
     dict(tag="P1 skill page-ask opener", file=SKILL,
          old="When the answer needs more than fields — a form of your own design, formatted\n"
              "context, an image, a chart, a link out, an embedded artefact — file a PAGE ask.",
@@ -366,6 +346,28 @@ for rel in changed_files:
         fail(f"{rel}: working copy differs from the committed blob (uncommitted edit)")
     else:
         ok(f"{rel}: {len(sites)} recorded insertion(s) present; working copy matches HEAD")
+
+print("\n== 6. no space file restates the global route (global mode's 'Creating a new space')")
+# A lane composes the global mode AND its space file, so the route arrives through the global
+# mode. Repeating it in a space file is a restated copy: it drifts from the original, and the
+# copy is what the lane follows. The space-specific sentence stays; only the route phrasing
+# must not appear in the space file.
+SPACE_FILES = [
+    ".pi/modes/leader.json",
+    "home/.sysops/.pi/modes/leader.json",
+    "home/Unity/Projects/Pleroma/.pi/modes/leader.json",
+]
+for rel in SPACE_FILES:
+    prompt = text_of(rel, decoded_json=True)
+    if prompt is None:
+        warnings.append(f"{rel}: not readable, restatement check skipped")
+        print(f"SKIP  {rel}: not readable")
+        continue
+    if "with the unblock skill" in prompt or "unblock skill as a page ask" in prompt:
+        fail(f"{rel}: restates the global unblock route — the route belongs in the global "
+             "mode; a space file carries only what is specific to that space")
+    else:
+        ok(f"{rel}: carries no restated route")
 
 print("\n== 5. tree and machine agree (repo copies vs installed live files)")
 home = os.path.expanduser("~")
