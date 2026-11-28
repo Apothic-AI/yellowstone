@@ -129,6 +129,21 @@ class OccupancyNoteTests(unittest.TestCase):
         flagged = sorted(call.args[0] for call in footer.call_args_list)
         self.assertEqual(flagged, ["w1:pA", "w1:pD"], "reads must be the flagged subset only")
 
+    # swarm-7oe: a WITHHELD row arrives with ctx=None and every field held, so it can never be
+    # flagged and must never be read. This is a CONTAINMENT boundary, not a budget — "held" is
+    # withheld at the record layer only, and herdr WOULD answer a read of that pane id. Without
+    # this test the boundary is protected only by the arithmetic above, so a future change that
+    # reads footers "for every row" could improve the budget tests while crossing the policy.
+    def test_a_withheld_row_is_never_read(self):
+        rows = [
+            board_row(label="held-leader", ctx=None, ctx_age=None, pane_id="w2:p1A"),
+            board_row(label="near-leader", ctx=45.0, ctx_age=20 * DAY, pane_id="w1:pA"),
+        ]
+        _output, footer = self.board(rows)
+        read = [call.args[0] for call in footer.call_args_list]
+        self.assertNotIn("w2:p1A", read, "a withheld row must never be read")
+        self.assertEqual(read, ["w1:pA"], "only the flagged row is read")
+
     # a reading that DOES differ materially is named beside the age
     def test_live_value_is_named_when_the_footer_disagrees(self):
         rows = [board_row(ctx=41.0, ctx_age=10 * DAY)]
