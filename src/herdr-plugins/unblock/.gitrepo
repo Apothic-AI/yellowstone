@@ -6,7 +6,7 @@
 [subrepo]
 	remote = https://github.com/Apothic-AI/unblock
 	branch = apothic-main
-	commit = 1e6f6216361f8f6b0d8a72fd5d20c3dc8c30e17f
-	parent = 804cf09313b55089d74d53b55216ebb66dde90df
+	commit = 67fe6436b9ca4c0327dba9a1c3e3a95b4ab87bea
+	parent = c2cffa73731aed7e5dabb0373f72277a7ef8e3d7
 	method = merge
 	cmdver = 0.4.9
