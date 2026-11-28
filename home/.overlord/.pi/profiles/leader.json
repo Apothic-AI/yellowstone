@@ -1,0 +1,6 @@
+{
+  "label": "Leader (Overlord local additions)",
+  "description": "Overlord-local additive profile: adds the treg skill to the global leader profile without narrowing it (Phase 4 pilot, ADR 0022 append composition).",
+  "promptStrategy": "append",
+  "skills": ["treg"]
+}
